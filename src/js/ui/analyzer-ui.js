@@ -39,7 +39,8 @@ import {
   escapeHtml,
   getFrameRowKey,
   getFrameTypeClass,
-  isLikelyMediaFile
+  isLikelyMediaFile,
+  shouldDownloadRemoteOnceForSharedPlayback
 } from "./ui-helpers.js";
 
 export function startUserInterface(Core, options = {}) {
@@ -60,6 +61,7 @@ const state = {
   graphMaxSize: 1,
   filePreviewUrl: "",
   filePreviewObjectUrl: false,
+  previewNetworkDeferred: false,
   dropHintHideTimer: 0,
   remoteAbortController: null,
   transientWarnings: [],
@@ -534,10 +536,38 @@ async function loadRemoteUrl(url, options = {}) {
     });
     if (probe.canStream) {
       setProgress(t("status.remoteRangeReady"), 8);
+      let sharedDownloadWarning = "";
+      if (shouldDownloadRemoteOnceForSharedPlayback(probe.resource, options)) {
+        try {
+          setProgress(t("status.remoteSharedDownload"), 8);
+          const file = await downloadRemoteMediaFile(probe.resource.url, probe.resource, {
+            baseUrl: window.location.href,
+            signal: abortController.signal,
+            onProgress: (loadedBytes, totalBytes) => {
+              const percent = totalBytes ? 8 + (loadedBytes * 52 / totalBytes) : 12;
+              setProgress(t("status.remoteSharedDownload"), percent);
+            }
+          });
+          await startAnalysis(file, {
+            keepSampleSelection: options.keepSampleSelection,
+            rethrow: true
+          });
+          return file;
+        } catch (downloadError) {
+          if (isCancellationError(downloadError)) throw downloadError;
+          sharedDownloadWarning = t("warning.remoteSharedDownloadFailed", {
+            message: getErrorMessage(downloadError)
+          });
+        }
+      }
+      const streamingWarnings = [t("warning.remotePreviewDeferred")];
+      if (sharedDownloadWarning) streamingWarnings.push(sharedDownloadWarning);
       try {
         await startAnalysis(probe.resource, {
           keepSampleSelection: options.keepSampleSelection,
           previewUrl: probe.resource.previewUrl,
+          deferPreviewNetwork: true,
+          initialWarnings: streamingWarnings,
           rethrow: true
         });
         return probe.resource;
@@ -584,6 +614,10 @@ async function loadRemoteUrl(url, options = {}) {
 
 function isCancellationError(error) {
   return Boolean(error && /cancelled|aborted/i.test(error.message || ""));
+}
+
+function getErrorMessage(error) {
+  return error && error.message ? error.message : String(error);
 }
 
 function handleFrameRowPointerActivation(event) {
@@ -1010,13 +1044,16 @@ function resetView(file, options = {}) {
 function setFilePreview(file, options = {}) {
   if (state.filePreviewUrl && state.filePreviewObjectUrl) URL.revokeObjectURL(state.filePreviewUrl);
   state.filePreviewObjectUrl = false;
+  state.previewNetworkDeferred = Boolean(options.deferPreviewNetwork);
   state.filePreviewUrl = options.previewUrl || file.previewUrl || "";
   if (!state.filePreviewUrl) {
     state.filePreviewUrl = URL.createObjectURL(file);
     state.filePreviewObjectUrl = true;
   }
+  elements.filePreview.preload = state.previewNetworkDeferred ? "none" : "metadata";
+  elements.filePreview.title = state.previewNetworkDeferred ? t("preview.remoteFetchDeferred") : "";
   elements.filePreview.src = state.filePreviewUrl;
-  elements.filePreview.load();
+  if (!state.previewNetworkDeferred) elements.filePreview.load();
   elements.mediaPreviewName.textContent = file.name || "Unnamed media";
   updateMediaPreviewMeta(file, null);
   elements.mediaPreviewBar.hidden = false;
@@ -1029,6 +1066,7 @@ function updateMediaPreviewMeta(file, analysis) {
     parts.push(formatPreviewBitrate(file.size * 8 / durationSeconds));
   }
   parts.push(file.type || t("value.unknownMime"));
+  if (state.previewNetworkDeferred) parts.push(t("preview.remoteFetchDeferred"));
   elements.mediaPreviewMeta.textContent = parts.filter(Boolean).join(" · ");
 }
 

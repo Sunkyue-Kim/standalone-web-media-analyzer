@@ -1,3 +1,5 @@
+const REMOTE_SHARED_DOWNLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
+
 function canUseSampleCatalogLocation(location) {
   return Boolean(location && (location.protocol === "http:" || location.protocol === "https:"));
 }
@@ -25,6 +27,12 @@ function getFrameTypeClass(type) {
   return "";
 }
 
+function shouldDownloadRemoteOnceForSharedPlayback(resource, options = {}) {
+  if (options.forceStreaming) return false;
+  const size = Number(resource && resource.size || 0);
+  return Number.isFinite(size) && size > 0 && size <= REMOTE_SHARED_DOWNLOAD_LIMIT_BYTES;
+}
+
 function csvCell(value) {
   const text = value === undefined || value === null ? "" : String(value);
   if (/[",\n]/.test(text)) return '"' + text.replace(/"/g, '""') + '"';
@@ -47,5 +55,7 @@ export {
   escapeHtml,
   getFrameRowKey,
   getFrameTypeClass,
-  isLikelyMediaFile
+  isLikelyMediaFile,
+  REMOTE_SHARED_DOWNLOAD_LIMIT_BYTES,
+  shouldDownloadRemoteOnceForSharedPlayback
 };

@@ -8,8 +8,12 @@ test("UI helpers keep sample catalog, media detection, escaping, CSV, and frame 
   const loader = await createSourceModuleLoader();
   const helpers = await loader.import("src/js/ui/ui-helpers.js");
 
+  assert.equal(helpers.REMOTE_SHARED_DOWNLOAD_LIMIT_BYTES, 4 * 1024 * 1024);
   assert.equal(helpers.canUseSampleCatalogLocation({ protocol: "file:" }), false);
   assert.equal(helpers.canUseSampleCatalogLocation({ protocol: "https:" }), true);
+  assert.equal(helpers.shouldDownloadRemoteOnceForSharedPlayback({ size: 4 * 1024 * 1024 }), true);
+  assert.equal(helpers.shouldDownloadRemoteOnceForSharedPlayback({ size: 4 * 1024 * 1024 + 1 }), false);
+  assert.equal(helpers.shouldDownloadRemoteOnceForSharedPlayback({ size: 100 }, { forceStreaming: true }), false);
   assert.equal(helpers.isLikelyMediaFile({ name: "clip.MOV", type: "" }), true);
   assert.equal(helpers.isLikelyMediaFile({ name: "notes.txt", type: "text/plain" }), false);
   assert.equal(helpers.isLikelyMediaFile({ name: "", type: "audio/ogg" }), true);
@@ -481,6 +485,8 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceUi, /createAnalysisWorkerClient/);
   assert.match(sourceUi, /probeRemoteMediaResource/);
   assert.match(sourceUi, /downloadRemoteMediaFile/);
+  assert.match(sourceUi, /deferPreviewNetwork/);
+  assert.match(sourceUi, /shouldDownloadRemoteOnceForSharedPlayback/);
   assert.match(sourceUi, /openRemoteUrlModal/);
   assert.match(sourceWorker, /self\.onmessage/);
   assert.match(sourceWorker, /analysisStart/);

@@ -12,6 +12,8 @@ Open `index.html` or the GitHub Pages URL, then drop a media file anywhere in th
 
 The hosted build can also load bundled validation samples from `validation/generated/`. When the app is opened directly with `file://`, the sample selector is hidden because browsers generally block relative sample loading from local files.
 
+Remote URL loading uses a traffic-conscious policy: files up to 4 MB are downloaded once and shared between analysis and playback through a Blob URL. Larger files use HTTP range reads for analysis when CORS allows it, while preview preload is deferred so the browser does not automatically fetch the same media a second time.
+
 ## Features
 
 - MP4, fragmented MP4, and MOV-style ISO BMFF box trees, sample tables, chunks, fragments, and warnings
@@ -82,6 +84,6 @@ Validation samples live under `validation/generated/` and are also exposed by th
 Current coverage snapshot from `npm run test:coverage`:
 
 - Tests: 33 passed, 0 failed
-- All files: 94.48% line coverage, 69.64% branch coverage, 93.00% function coverage
+- All files: 94.50% line coverage, 69.71% branch coverage, 93.02% function coverage
 - Strong coverage areas: binary readers, HTTP range readers, browser worker client message flow, remote URL loader fallback/progress handling, bitstream helpers, formatting, codec registry, i18n, data grid/recycler helpers, ISO BMFF sample modeling, ISO BMFF rare box parsing, source-map build wiring, and bundled sample container integration
 - Lower branch coverage remains mainly in browser-worker runtime branches and malformed/edge container branches such as oversized/invalid MP4 boxes, remote download fallback branches, MP3 ID3v1 edge metadata, and WebM lacing variants

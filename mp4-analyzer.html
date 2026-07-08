@@ -5622,6 +5622,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           "status.sampleLoadFailed": "Sample load failed: {message}",
           "status.probingRemoteUrl": "Checking remote URL",
           "status.remoteRangeReady": "HTTP range reads enabled",
+          "status.remoteSharedDownload": "Downloading once for analysis and playback",
           "status.remoteRangeFallback": "Range unavailable; downloading file first",
           "status.downloadingRemote": "Downloading remote file",
           "status.remoteLoadFailed": "Remote URL load failed: {message}",
@@ -5634,6 +5635,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           "button.exportCsv": "Export CSV",
           "button.clear": "Clear",
           "preview.loadedMedia": "Loaded media",
+          "preview.remoteFetchDeferred": "preview fetch deferred until playback",
           "tab.summary": "Summary",
           "tab.boxes": "Boxes",
           "tab.tracks": "Tracks",
@@ -5681,7 +5683,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           "option.noTrack": "No track",
           "option.samplePlaceholder": "Sample files...",
           "remote.title": "Open media URL",
-          "remote.subtitle": "Use HTTP range reads when the server and CORS policy allow it. Otherwise the file is downloaded before analysis.",
+          "remote.subtitle": "Files up to 4 MB are downloaded once for shared analysis/playback. Larger files use HTTP range analysis when CORS allows it.",
           "remote.urlLabel": "Media URL",
           "remote.urlPlaceholder": "https://example.com/video.mp4",
           "remote.statusIdle": "Range support is checked before analysis starts.",
@@ -5760,6 +5762,8 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           "warning.sampleLoadFailed": "Sample load failed. If this page is opened from file://, the browser may block loading local sample files. Use the GitHub Pages URL or open/drop the sample manually. {message}",
           "warning.remoteLoadFailed": "Remote URL load failed. Check that the URL is reachable and allows browser CORS access. {message}",
           "warning.remoteRangeFallback": "HTTP range analysis was not available, so the remote file was fully downloaded before parsing. {reason}",
+          "warning.remotePreviewDeferred": "Remote preview preload was disabled to avoid duplicate network traffic. Playing or seeking the preview may let the browser fetch the media separately.",
+          "warning.remoteSharedDownloadFailed": "Single-download playback reuse failed, so range analysis continued with preview fetch deferred. {message}",
           "box.field.type": "type",
           "box.field.description": "description",
           "box.field.path": "path",
@@ -5787,6 +5791,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           "status.sampleLoadFailed": "\uC0D8\uD50C \uB85C\uB4DC \uC2E4\uD328: {message}",
           "status.probingRemoteUrl": "\uC6D0\uACA9 URL \uD655\uC778 \uC911",
           "status.remoteRangeReady": "HTTP range \uC77D\uAE30 \uC0AC\uC6A9 \uAC00\uB2A5",
+          "status.remoteSharedDownload": "\uBD84\uC11D\uACFC \uC7AC\uC0DD \uACF5\uC720\uB97C \uC704\uD574 \uD55C \uBC88\uB9CC \uB2E4\uC6B4\uB85C\uB4DC \uC911",
           "status.remoteRangeFallback": "Range \uC0AC\uC6A9 \uBD88\uAC00, \uBA3C\uC800 \uC804\uCCB4 \uB2E4\uC6B4\uB85C\uB4DC\uD569\uB2C8\uB2E4",
           "status.downloadingRemote": "\uC6D0\uACA9 \uD30C\uC77C \uB2E4\uC6B4\uB85C\uB4DC \uC911",
           "status.remoteLoadFailed": "\uC6D0\uACA9 URL \uB85C\uB4DC \uC2E4\uD328: {message}",
@@ -5799,6 +5804,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           "button.exportCsv": "CSV \uB0B4\uBCF4\uB0B4\uAE30",
           "button.clear": "\uCD08\uAE30\uD654",
           "preview.loadedMedia": "\uB85C\uB4DC\uB41C \uBBF8\uB514\uC5B4",
+          "preview.remoteFetchDeferred": "\uC7AC\uC0DD \uC804\uAE4C\uC9C0 preview fetch \uC9C0\uC5F0",
           "tab.summary": "\uC694\uC57D",
           "tab.boxes": "\uBC15\uC2A4",
           "tab.tracks": "\uD2B8\uB799",
@@ -5846,7 +5852,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           "option.noTrack": "\uD2B8\uB799 \uC5C6\uC74C",
           "option.samplePlaceholder": "\uC0D8\uD50C \uD30C\uC77C \uC120\uD0DD...",
           "remote.title": "\uBBF8\uB514\uC5B4 URL \uC5F4\uAE30",
-          "remote.subtitle": "\uC11C\uBC84\uC640 CORS \uC815\uCC45\uC774 \uD5C8\uC6A9\uD558\uBA74 HTTP range \uC77D\uAE30\uB85C \uBD84\uC11D\uD569\uB2C8\uB2E4. \uBD88\uAC00\uB2A5\uD558\uBA74 \uD30C\uC77C\uC744 \uBA3C\uC800 \uB2E4\uC6B4\uB85C\uB4DC\uD55C \uB4A4 \uBD84\uC11D\uD569\uB2C8\uB2E4.",
+          "remote.subtitle": "4MB \uC774\uD558 \uD30C\uC77C\uC740 \uBD84\uC11D/\uC7AC\uC0DD \uACF5\uC720\uB97C \uC704\uD574 \uD55C \uBC88\uB9CC \uB2E4\uC6B4\uB85C\uB4DC\uD569\uB2C8\uB2E4. \uB354 \uD070 \uD30C\uC77C\uC740 CORS\uAC00 \uD5C8\uC6A9\uD558\uBA74 HTTP range \uBD84\uC11D\uC744 \uC0AC\uC6A9\uD569\uB2C8\uB2E4.",
           "remote.urlLabel": "\uBBF8\uB514\uC5B4 URL",
           "remote.urlPlaceholder": "https://example.com/video.mp4",
           "remote.statusIdle": "\uBD84\uC11D \uC2DC\uC791 \uC804\uC5D0 range \uC9C0\uC6D0 \uC5EC\uBD80\uB97C \uD655\uC778\uD569\uB2C8\uB2E4.",
@@ -5925,6 +5931,8 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           "warning.sampleLoadFailed": "\uC0D8\uD50C \uB85C\uB4DC\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. file://\uB85C \uC5F0 \uACBD\uC6B0 \uBE0C\uB77C\uC6B0\uC800\uAC00 \uB85C\uCEEC \uC0D8\uD50C \uD30C\uC77C \uB85C\uB529\uC744 \uB9C9\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4. GitHub Pages URL\uC744 \uC0AC\uC6A9\uD558\uAC70\uB098 \uC0D8\uD50C \uD30C\uC77C\uC744 \uC9C1\uC811 \uC5F4\uAE30/\uB4DC\uB86D\uD558\uC138\uC694. {message}",
           "warning.remoteLoadFailed": "\uC6D0\uACA9 URL \uB85C\uB4DC\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. URL \uC811\uADFC \uAC00\uB2A5 \uC5EC\uBD80\uC640 \uBE0C\uB77C\uC6B0\uC800 CORS \uD5C8\uC6A9 \uC5EC\uBD80\uB97C \uD655\uC778\uD558\uC138\uC694. {message}",
           "warning.remoteRangeFallback": "HTTP range \uBD84\uC11D\uC744 \uC0AC\uC6A9\uD560 \uC218 \uC5C6\uC5B4 \uC6D0\uACA9 \uD30C\uC77C\uC744 \uC804\uCCB4 \uB2E4\uC6B4\uB85C\uB4DC\uD55C \uB4A4 \uD30C\uC2F1\uD588\uC2B5\uB2C8\uB2E4. {reason}",
+          "warning.remotePreviewDeferred": "\uC911\uBCF5 \uB124\uD2B8\uC6CC\uD06C \uD2B8\uB798\uD53D\uC744 \uD53C\uD558\uB824\uACE0 \uC6D0\uACA9 preview preload\uB97C \uBE44\uD65C\uC131\uD654\uD588\uC2B5\uB2C8\uB2E4. preview\uB97C \uC7AC\uC0DD\uD558\uAC70\uB098 seek\uD558\uBA74 \uBE0C\uB77C\uC6B0\uC800\uAC00 \uBBF8\uB514\uC5B4\uB97C \uBCC4\uB3C4\uB85C \uAC00\uC838\uC62C \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+          "warning.remoteSharedDownloadFailed": "\uB2E8\uC77C \uB2E4\uC6B4\uB85C\uB4DC \uAE30\uBC18 \uC7AC\uC0DD \uACF5\uC720\uC5D0 \uC2E4\uD328\uD574 preview fetch\uB97C \uC9C0\uC5F0\uD55C \uC0C1\uD0DC\uB85C range \uBD84\uC11D\uC744 \uACC4\uC18D\uD588\uC2B5\uB2C8\uB2E4. {message}",
           "box.field.type": "\uD0C0\uC785",
           "box.field.description": "\uC124\uBA85",
           "box.field.path": "\uACBD\uB85C",
@@ -6465,6 +6473,11 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     if (String(type).startsWith("mixed")) return "err";
     return "";
   }
+  function shouldDownloadRemoteOnceForSharedPlayback(resource, options = {}) {
+    if (options.forceStreaming) return false;
+    const size = Number(resource && resource.size || 0);
+    return Number.isFinite(size) && size > 0 && size <= REMOTE_SHARED_DOWNLOAD_LIMIT_BYTES;
+  }
   function csvCell(value) {
     const text = value === void 0 || value === null ? "" : String(value);
     if (/[",\n]/.test(text)) return '"' + text.replace(/"/g, '""') + '"';
@@ -6479,8 +6492,10 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       "'": "&#39;"
     })[char]);
   }
+  var REMOTE_SHARED_DOWNLOAD_LIMIT_BYTES;
   var init_ui_helpers = __esm({
     "local-source:C:\\Users\\user\\Documents\\Codex\\2026-07-08\\js-html-mp4-html-mp4-i\\src\\js\\ui\\ui-helpers.js"() {
+      REMOTE_SHARED_DOWNLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
     }
   });
 
@@ -6947,6 +6962,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       graphMaxSize: 1,
       filePreviewUrl: "",
       filePreviewObjectUrl: false,
+      previewNetworkDeferred: false,
       dropHintHideTimer: 0,
       remoteAbortController: null,
       transientWarnings: [],
@@ -7390,10 +7406,38 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
         });
         if (probe.canStream) {
           setProgress(t("status.remoteRangeReady"), 8);
+          let sharedDownloadWarning = "";
+          if (shouldDownloadRemoteOnceForSharedPlayback(probe.resource, options2)) {
+            try {
+              setProgress(t("status.remoteSharedDownload"), 8);
+              const file2 = await downloadRemoteMediaFile(probe.resource.url, probe.resource, {
+                baseUrl: window.location.href,
+                signal: abortController.signal,
+                onProgress: (loadedBytes, totalBytes) => {
+                  const percent = totalBytes ? 8 + loadedBytes * 52 / totalBytes : 12;
+                  setProgress(t("status.remoteSharedDownload"), percent);
+                }
+              });
+              await startAnalysis(file2, {
+                keepSampleSelection: options2.keepSampleSelection,
+                rethrow: true
+              });
+              return file2;
+            } catch (downloadError) {
+              if (isCancellationError(downloadError)) throw downloadError;
+              sharedDownloadWarning = t("warning.remoteSharedDownloadFailed", {
+                message: getErrorMessage2(downloadError)
+              });
+            }
+          }
+          const streamingWarnings = [t("warning.remotePreviewDeferred")];
+          if (sharedDownloadWarning) streamingWarnings.push(sharedDownloadWarning);
           try {
             await startAnalysis(probe.resource, {
               keepSampleSelection: options2.keepSampleSelection,
               previewUrl: probe.resource.previewUrl,
+              deferPreviewNetwork: true,
+              initialWarnings: streamingWarnings,
               rethrow: true
             });
             return probe.resource;
@@ -7439,6 +7483,9 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     }
     function isCancellationError(error) {
       return Boolean(error && /cancelled|aborted/i.test(error.message || ""));
+    }
+    function getErrorMessage2(error) {
+      return error && error.message ? error.message : String(error);
     }
     function handleFrameRowPointerActivation(event) {
       const rowElement = event.target.closest("[data-frame-key]");
@@ -7808,13 +7855,16 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     function setFilePreview(file, options2 = {}) {
       if (state.filePreviewUrl && state.filePreviewObjectUrl) URL.revokeObjectURL(state.filePreviewUrl);
       state.filePreviewObjectUrl = false;
+      state.previewNetworkDeferred = Boolean(options2.deferPreviewNetwork);
       state.filePreviewUrl = options2.previewUrl || file.previewUrl || "";
       if (!state.filePreviewUrl) {
         state.filePreviewUrl = URL.createObjectURL(file);
         state.filePreviewObjectUrl = true;
       }
+      elements.filePreview.preload = state.previewNetworkDeferred ? "none" : "metadata";
+      elements.filePreview.title = state.previewNetworkDeferred ? t("preview.remoteFetchDeferred") : "";
       elements.filePreview.src = state.filePreviewUrl;
-      elements.filePreview.load();
+      if (!state.previewNetworkDeferred) elements.filePreview.load();
       elements.mediaPreviewName.textContent = file.name || "Unnamed media";
       updateMediaPreviewMeta(file, null);
       elements.mediaPreviewBar.hidden = false;
@@ -7826,6 +7876,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
         parts.push(formatPreviewBitrate(file.size * 8 / durationSeconds));
       }
       parts.push(file.type || t("value.unknownMime"));
+      if (state.previewNetworkDeferred) parts.push(t("preview.remoteFetchDeferred"));
       elements.mediaPreviewMeta.textContent = parts.filter(Boolean).join(" \xB7 ");
     }
     function getAnalysisDurationSeconds(analysis) {
@@ -8838,7 +8889,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       "field.autoFragmentPlaybackSynchronization": "Sync fragment to playback",
       "option.samplePlaceholder": "Sample files...",
       "remote.title": "Open media URL",
-      "remote.subtitle": "Use HTTP range reads when the server and CORS policy allow it. Otherwise the file is downloaded before analysis.",
+      "remote.subtitle": "Files up to 4 MB are downloaded once for shared analysis/playback. Larger files use HTTP range analysis when CORS allows it.",
       "remote.urlLabel": "Media URL",
       "remote.urlPlaceholder": "https://example.com/video.mp4",
       "remote.statusIdle": "Range support is checked before analysis starts.",
@@ -8877,7 +8928,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       "field.autoFragmentPlaybackSynchronization": "\uD504\uB798\uADF8\uBA3C\uD2B8 \uC7AC\uC0DD \uC704\uCE58 \uB3D9\uAE30\uD654",
       "option.samplePlaceholder": "\uC0D8\uD50C \uD30C\uC77C \uC120\uD0DD...",
       "remote.title": "\uBBF8\uB514\uC5B4 URL \uC5F4\uAE30",
-      "remote.subtitle": "\uC11C\uBC84\uC640 CORS \uC815\uCC45\uC774 \uD5C8\uC6A9\uD558\uBA74 HTTP range \uC77D\uAE30\uB85C \uBD84\uC11D\uD569\uB2C8\uB2E4. \uBD88\uAC00\uB2A5\uD558\uBA74 \uD30C\uC77C\uC744 \uBA3C\uC800 \uB2E4\uC6B4\uB85C\uB4DC\uD55C \uB4A4 \uBD84\uC11D\uD569\uB2C8\uB2E4.",
+      "remote.subtitle": "4MB \uC774\uD558 \uD30C\uC77C\uC740 \uBD84\uC11D/\uC7AC\uC0DD \uACF5\uC720\uB97C \uC704\uD574 \uD55C \uBC88\uB9CC \uB2E4\uC6B4\uB85C\uB4DC\uD569\uB2C8\uB2E4. \uB354 \uD070 \uD30C\uC77C\uC740 CORS\uAC00 \uD5C8\uC6A9\uD558\uBA74 HTTP range \uBD84\uC11D\uC744 \uC0AC\uC6A9\uD569\uB2C8\uB2E4.",
       "remote.urlLabel": "\uBBF8\uB514\uC5B4 URL",
       "remote.urlPlaceholder": "https://example.com/video.mp4",
       "remote.statusIdle": "\uBD84\uC11D \uC2DC\uC791 \uC804\uC5D0 range \uC9C0\uC6D0 \uC5EC\uBD80\uB97C \uD655\uC778\uD569\uB2C8\uB2E4.",
