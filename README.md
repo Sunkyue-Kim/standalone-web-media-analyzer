@@ -26,6 +26,40 @@ Remote URL loading uses a traffic-conscious policy: files up to 4 MB are downloa
 - English/Korean UI with a centralized i18n catalog
 - JSON and CSV export for analysis results
 
+## Limitations
+
+This is a browser-side parser and inspector, not a transcoder, decoder, or playback engine. It reads container metadata, sample tables, selected payload ranges, and codec headers where practical, but it does not decode audio/video frames into pixels or PCM samples.
+
+Remote URL loading has unavoidable browser constraints:
+
+- Remote media requires browser CORS permission. If CORS blocks `HEAD`, `GET`, or `Range` requests, the app cannot analyze that URL.
+- HTTP range analysis needs a server that returns `206 Partial Content` for `Range` requests. A reliable file size should come from `Content-Length` or `Content-Range`; cross-origin servers may need to expose `Content-Range`.
+- Files up to 4 MB are downloaded once and reused through a Blob URL for both analysis and playback.
+- Files larger than 4 MB are analyzed with script-driven range requests when possible. The preview player uses `preload="none"` so it does not automatically fetch the same media during analysis.
+- If the user later plays or seeks a large remote preview, the browser's native media element may issue its own network requests. JavaScript cannot reuse the browser media element's private fetch buffer, and the native media element cannot consume this app's range-read cache.
+- `Response.blob()` is only available after a full download completes. Partial response chunks cannot be turned into a normal Blob-backed `<video>` source before the full resource is loaded.
+- MediaSource-based reuse is not implemented. It would require a separate segmenting/playback pipeline and would not cover all supported inputs uniformly, especially regular MP4/MOV/MP3 files.
+
+Container support is intentionally scoped:
+
+- Supported containers are MP4/fMP4/MOV-style ISO BMFF, WebM/Matroska, MP3, and Ogg Opus.
+- DASH/HLS manifests, remote segment playlists, external MP4 data references, encrypted/DRM media, and robust malformed-file recovery are outside the current scope.
+- fMP4 support expects init data and `moof`/`mdat` fragments in the analyzed file or URL resource.
+- Box/element fields are parsed best-effort. Vendor/private boxes may only show type, size, offsets, raw identifiers, and warnings until explicit mappings are added.
+
+Codec and frame-type support is also scoped:
+
+- AVC/H.264 and HEVC/H.265 frame type labels are inferred from parsed video slice headers where the sample payload exposes enough bitstream data.
+- VP9/WebM keyframe status is based on WebM block/keyframe metadata, not a full VP9 bitstream decoder.
+- ProRes and unknown video codecs show container/sample metadata but do not expose I/P/B frame classification.
+- AAC, MP3, and Opus are parsed for stream configuration and packet/frame rows, but audio is not decoded.
+
+Large-file behavior is optimized for responsiveness, not full forensic recovery:
+
+- Header and metadata probes use small exact range reads.
+- Larger sample/payload reads use a 4 MB range cache with a 64 MB LRU cap.
+- Frame-type scanning still needs to read video sample payload bytes, so very large files or very high sample counts can take time even though the UI renders rows with a recycler view.
+
 ## Build
 
 ```powershell
