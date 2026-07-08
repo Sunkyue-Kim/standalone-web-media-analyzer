@@ -23,6 +23,7 @@ import {
   t
 } from "../i18n/catalogs.js";
 import { SAMPLE_FILES } from "../samples/sample-manifest.js";
+import { renderDataGridTable } from "./data-grid.js";
 import {
   canUseSampleCatalogLocation,
   csvCell,
@@ -806,17 +807,41 @@ function renderTracks() {
 }
 
 function renderTrackTable(tracks) {
-  return '<table class="table"><thead><tr><th>' + escapeHtml(t("column.track")) + '</th><th>' + escapeHtml(t("column.handler")) + '</th><th>' + escapeHtml(t("column.codec")) + '</th><th>' + escapeHtml(t("column.duration")) + '</th><th>' + escapeHtml(t("column.media")) + '</th><th>' + escapeHtml(t("column.samples")) + '</th><th>' + escapeHtml(t("column.avgBitrate")) + '</th><th>' + escapeHtml(t("column.fpsSamples")) + '</th><th>' + escapeHtml(t("column.avgSample")) + '</th><th>' + escapeHtml(t("column.codecConfig")) + '</th></tr></thead><tbody>' +
-    tracks.map((track) => {
+  return renderDataGridTable({
+    className: "tracks-grid",
+    minimumWidth: "1080px",
+    columns: [
+      { label: t("column.track"), width: "72px" },
+      { label: t("column.handler"), width: "90px" },
+      { label: t("column.codec"), width: "112px" },
+      { label: t("column.duration"), width: "100px" },
+      { label: t("column.media"), width: "150px" },
+      { label: t("column.samples"), width: "90px" },
+      { label: t("column.avgBitrate"), width: "130px" },
+      { label: t("column.fpsSamples"), width: "110px" },
+      { label: t("column.avgSample"), width: "110px" },
+      { label: t("column.codecConfig"), width: "minmax(210px, 1fr)" }
+    ],
+    rows: tracks.map((track) => {
       const summaryMetrics = getTrackSummaryMetrics(track);
-      return '<tr><td>' + track.trackId + '</td><td>' + escapeHtml(track.handlerType) + '</td><td>' + escapeHtml(track.codec) + '</td><td>' +
-        escapeHtml(formatTime(track.duration, track.timescale)) + '</td><td>' + escapeHtml(formatTrackMedia(track)) + '</td><td>' + track.sampleCount + '</td><td>' +
-        escapeHtml(summaryMetrics ? formatBitsPerSecond(summaryMetrics.averageBitrate) : t("value.notAvailable")) + '</td><td>' +
-        escapeHtml(summaryMetrics ? formatMetricNumber(summaryMetrics.sampleRate, 2) : t("value.notAvailable")) + '</td><td>' +
-        escapeHtml(summaryMetrics ? formatBytes(summaryMetrics.averageSampleSize) : t("value.notAvailable")) + '</td><td>' +
-        escapeHtml(formatTrackCodecConfig(track)) + '</td></tr>';
-    }).join("") +
-    '</tbody></table>';
+      const media = formatTrackMedia(track);
+      const codecConfig = formatTrackCodecConfig(track);
+      return {
+        cells: [
+          track.trackId,
+          track.handlerType,
+          track.codec,
+          formatTime(track.duration, track.timescale),
+          { value: media, title: media },
+          track.sampleCount,
+          summaryMetrics ? formatBitsPerSecond(summaryMetrics.averageBitrate) : t("value.notAvailable"),
+          summaryMetrics ? formatMetricNumber(summaryMetrics.sampleRate, 2) : t("value.notAvailable"),
+          summaryMetrics ? formatBytes(summaryMetrics.averageSampleSize) : t("value.notAvailable"),
+          { value: codecConfig, title: codecConfig }
+        ]
+      };
+    })
+  });
 }
 
 function formatTrackLabel(track) {
@@ -1094,13 +1119,38 @@ function renderFrameTypeDistribution(frameTypeCounts, totalRows) {
 
 function renderTopSampleRows(rows) {
   if (!rows.length) return '<section class="metric-section"><h3>' + escapeHtml(t("metrics.largestSamples")) + '</h3>' + emptyHtml("empty.noSamples") + '</section>';
-  return '<section class="metric-section"><h3>' + escapeHtml(t("metrics.largestSamples")) + '</h3><table class="table"><thead><tr><th>' + escapeHtml(t("value.sample")) + '</th><th>' + escapeHtml(t("column.time")) + '</th><th>' + escapeHtml(t("column.size")) + '</th><th>' + escapeHtml(t("column.type")) + '</th></tr></thead><tbody>' +
-    rows.map((row) => {
-      const frameRowKey = getFrameRowKey(row);
-      return '<tr class="metric-click-row" role="button" tabindex="0" data-frame-key="' + escapeHtml(frameRowKey) + '"><td>#' + row.sampleIndex + '</td><td>' +
-        escapeHtml(formatGraphTime(row)) + '</td><td>' + escapeHtml(formatBytes(row.size || 0)) + '</td><td>' + escapeHtml(formatFrameTypeLabel(row.frameType || "sample")) + '</td></tr>';
-    }).join("") +
-    '</tbody></table></section>';
+  return '<section class="metric-section"><h3>' + escapeHtml(t("metrics.largestSamples")) + '</h3>' +
+    renderDataGridTable({
+      className: "largest-samples-grid",
+      minimumWidth: "480px",
+      columns: [
+        { label: t("value.sample"), width: "90px" },
+        { label: t("column.time"), width: "120px" },
+        { label: t("column.size"), width: "110px" },
+        { label: t("column.type"), width: "minmax(110px, 1fr)" }
+      ],
+      rows: rows.map((row) => {
+        const type = row.frameType || "sample";
+        const frameRowKey = getFrameRowKey(row);
+        const ariaLabel = t("aria.seekFrame", { trackId: row.trackId, sampleIndex: row.sampleIndex, time: formatGraphTime(row) });
+        return {
+          className: "clickable metric-click-row",
+          attributes: {
+            role: "button",
+            tabindex: "0",
+            "data-frame-key": frameRowKey,
+            "aria-label": ariaLabel
+          },
+          cells: [
+            "#" + row.sampleIndex,
+            formatGraphTime(row),
+            formatBytes(row.size || 0),
+            { html: '<span class="pill ' + getFrameTypeClass(type) + '">' + escapeHtml(formatFrameTypeLabel(type)) + '</span>' }
+          ]
+        };
+      })
+    }) +
+    '</section>';
 }
 
 function renderFrames() {
@@ -1220,7 +1270,7 @@ function renderFrameRow(row, visualIndex) {
   const frameRowKey = getFrameRowKey(row);
   const selectedClass = frameRowKey === state.selectedFrameKey ? " selected" : "";
   const ariaLabel = t("aria.seekFrame", { trackId: row.trackId, sampleIndex: row.sampleIndex, time: formatGraphTime(row) });
-  return '<div class="frame-row' + selectedClass + '" role="button" tabindex="0" data-frame-key="' + escapeHtml(frameRowKey) + '" aria-label="' + escapeHtml(ariaLabel) + '" style="top:' + (visualIndex * ROW_HEIGHT) + 'px">' +
+  return '<div class="frame-row data-grid-row clickable' + selectedClass + '" role="button" tabindex="0" data-frame-key="' + escapeHtml(frameRowKey) + '" aria-label="' + escapeHtml(ariaLabel) + '" style="top:' + (visualIndex * ROW_HEIGHT) + 'px">' +
     '<div>' + row.sampleIndex + '</div><div>' + row.trackId + '</div><div><span class="pill ' + typeClass + '">' + escapeHtml(formatFrameTypeLabel(type)) + '</span></div><div title="' + escapeHtml(row.offset) + '">' + escapeHtml(row.offset) + '</div><div>' + row.size + '</div><div>' + row.dts + '</div><div>' + row.pts + '</div><div>' + row.duration + '</div><div>' + (row.isSync ? t("value.yes") : t("value.no")) + '</div><div title="' + escapeHtml(row.nalTypes.join(", ")) + '">' + escapeHtml(row.nalTypes.join(",")) + '</div><div>' + escapeHtml(chunkOrFragment) + '</div></div>';
 }
 
@@ -1268,13 +1318,33 @@ function renderFragments() {
     elements.fragmentsPanel.innerHTML = emptyHtml("empty.noMoof");
     return;
   }
-  elements.fragmentsPanel.innerHTML = '<table class="table"><thead><tr><th>#</th><th>' + escapeHtml(t("column.offset")) + '</th><th>' + escapeHtml(t("column.size")) + '</th><th>traf</th><th>trun</th><th>' + escapeHtml(t("column.samples")) + '</th></tr></thead><tbody>' +
-    moofs.map((moof, index) => {
+  elements.fragmentsPanel.innerHTML = renderDataGridTable({
+    className: "fragments-grid",
+    minimumWidth: "680px",
+    columns: [
+      { label: "#", width: "72px" },
+      { label: t("column.offset"), width: "minmax(150px, 1fr)" },
+      { label: t("column.size"), width: "130px" },
+      { label: "traf", width: "90px" },
+      { label: "trun", width: "90px" },
+      { label: t("column.samples"), width: "110px" }
+    ],
+    rows: moofs.map((moof, index) => {
       const trafs = (moof.children || []).filter((child) => child.type === "traf");
       const truns = findDescendants(moof, "trun", []);
       const samples = truns.reduce((sum, trun) => sum + (trun.fields.sampleCount || 0), 0);
-      return '<tr><td>' + (index + 1) + '</td><td>' + escapeHtml(moof.offset) + '</td><td>' + escapeHtml(moof.size) + '</td><td>' + trafs.length + '</td><td>' + truns.length + '</td><td>' + samples + '</td></tr>';
-    }).join("") + '</tbody></table>';
+      return {
+        cells: [
+          index + 1,
+          { value: moof.offset, title: moof.offset },
+          moof.size,
+          trafs.length,
+          truns.length,
+          samples
+        ]
+      };
+    })
+  });
 }
 
 function renderWarnings() {

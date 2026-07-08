@@ -20,6 +20,33 @@ test("UI helpers keep sample catalog, media detection, escaping, CSV, and frame 
   assert.equal(helpers.csvCell("a,b\n\"c\""), "\"a,b\n\"\"c\"\"\"");
 });
 
+test("data grid renderer builds reusable scrollable grid markup", async () => {
+  const loader = await createSourceModuleLoader();
+  const { renderDataGridTable } = await loader.import("src/js/ui/data-grid.js");
+  const html = renderDataGridTable({
+    className: "test-grid",
+    minimumWidth: "320px",
+    columns: [
+      { label: "Name", width: "120px" },
+      { label: "Value", width: "minmax(120px, 1fr)" }
+    ],
+    rows: [
+      {
+        className: "clickable",
+        attributes: { role: "button", "data-frame-key": "1:2" },
+        cells: ["<unsafe>", { value: "abc", title: "abc" }]
+      }
+    ]
+  });
+
+  assert.match(html, /class="data-grid-shell test-grid"/);
+  assert.match(html, /--data-grid-columns:120px minmax\(120px, 1fr\);--data-grid-width:320px;/);
+  assert.match(html, /class="data-grid-header"/);
+  assert.match(html, /class="data-grid-row clickable" role="button" data-frame-key="1:2"/);
+  assert.match(html, /&lt;unsafe&gt;/);
+  assert.match(html, /title="abc"/);
+});
+
 test("source HTML has required controls, tabs, and no external runtime assets after build", () => {
   const rootDirectory = path.resolve(__dirname, "..");
   const sourceHtml = fs.readFileSync(path.join(rootDirectory, "src", "index.html"), "utf8");

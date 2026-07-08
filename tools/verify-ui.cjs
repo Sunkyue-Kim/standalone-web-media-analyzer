@@ -138,13 +138,28 @@ function verifyResponsiveLayoutCss() {
   );
   assertCssRule(
     sourceCss,
+    /\.data-grid-shell\s*\{[\s\S]*?width:\s*100%;[\s\S]*?max-width:\s*100%;[\s\S]*?overflow:\s*hidden;/,
+    "Reusable data grid shell must constrain horizontal overflow like the frame table."
+  );
+  assertCssRule(
+    sourceCss,
+    /\.data-grid-scroll\s*\{[\s\S]*?overflow:\s*auto;[\s\S]*?scrollbar-gutter:\s*stable;/,
+    "Reusable data grid must own horizontal scrolling."
+  );
+  assertCssRule(
+    sourceCss,
+    /\.data-grid-header,[\s\S]*?\.data-grid-row\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*var\(--data-grid-columns\);/,
+    "Reusable data grid must share grid row/header layout rules."
+  );
+  assertCssRule(
+    sourceCss,
     /\.frame-wrap\s*\{[\s\S]*?width:\s*100%;[\s\S]*?max-width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*auto;[\s\S]*?contain:\s*inline-size;/,
     "Frame table wrapper must own both horizontal and vertical scrolling."
   );
   assertCssRule(
     sourceCss,
-    /\.frame-header\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?top:\s*0;/,
-    "Frame table header must stay visible inside the shared scroll container."
+    /\.data-grid-header\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?top:\s*0;/,
+    "Shared data grid header must stay visible inside its scroll container."
   );
   assertCssRule(
     sourceCss,
@@ -182,11 +197,17 @@ async function main() {
   if (!/column\.index[\s\S]*column\.track[\s\S]*column\.type[\s\S]*column\.offset/.test(sourceHtml)) {
     throw new Error("Frame table header must place Type immediately after Index and Track.");
   }
+  if (!/class="frame-header data-grid-header"/.test(sourceHtml)) {
+    throw new Error("Frame table header must use the reusable data grid header style.");
+  }
   if (!/warningOnlyFilter[\s\S]*autoPlaybackSynchronizationToggle/.test(sourceHtml)) {
     throw new Error("Playback synchronization checkbox must be stacked with the warning-only checkbox.");
   }
   if (!/row\.sampleIndex[\s\S]*row\.trackId[\s\S]*formatFrameTypeLabel\(type\)[\s\S]*row\.offset/.test(sourceUi)) {
     throw new Error("Frame table row renderer must place Type immediately after Index and Track.");
+  }
+  if (!/renderDataGridTable/.test(sourceUi) || !/className:\s*"tracks-grid"/.test(sourceUi) || !/className:\s*"fragments-grid"/.test(sourceUi) || !/className:\s*"largest-samples-grid"/.test(sourceUi)) {
+    throw new Error("Tracks, fragments, and largest samples must use the reusable data grid component.");
   }
   if (!/frameWrap\.addEventListener\("scroll"/.test(sourceUi) || /frameScroller\.addEventListener\("scroll"/.test(sourceUi)) {
     throw new Error("Frame table virtual scroll must listen on frameWrap, not frameScroller.");
@@ -244,10 +265,18 @@ async function main() {
   if (!metricsSummary || metricsSummary.averageBitrate <= 0) {
     throw new Error("Metrics summary was not rendered/calculable.");
   }
+  const tracksHtml = fakeDocument.getElementById("tracksPanel").innerHTML;
+  if (!tracksHtml.includes("data-grid-shell tracks-grid") || !tracksHtml.includes("data-grid-header")) {
+    throw new Error("Tracks panel did not render the reusable data grid.");
+  }
+  const metricsHtml = fakeDocument.getElementById("metricsBody").innerHTML;
+  if (!metricsHtml.includes("data-grid-shell largest-samples-grid") || !metricsHtml.includes("data-frame-key=")) {
+    throw new Error("Largest samples panel did not render clickable rows with the reusable data grid.");
+  }
 
   const fragmentsHtml = fakeDocument.getElementById("fragmentsPanel").innerHTML;
-  if (!fragmentsHtml.includes("<table") || !fragmentsHtml.includes("<td>5</td>")) {
-    throw new Error("Fragment panel did not render the fMP4 fragment table.");
+  if (!fragmentsHtml.includes("data-grid-shell fragments-grid") || !fragmentsHtml.includes("data-grid-header") || !fragmentsHtml.includes(">5</div>")) {
+    throw new Error("Fragment panel did not render the fMP4 fragments data grid.");
   }
 
   const frameTypes = new Set(window.MP4AnalyzerDevTools.getAnalysis().sampleRows.map((row) => row.frameType));

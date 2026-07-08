@@ -656,6 +656,76 @@ button:disabled {
   top: 0;
   z-index: 1;
 }
+.data-grid-shell {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  background: #fff;
+}
+.data-grid-scroll {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.data-grid-table {
+  width: var(--data-grid-width);
+  min-width: var(--data-grid-width);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.data-grid-header,
+.data-grid-row {
+  display: grid;
+  grid-template-columns: var(--data-grid-columns);
+  align-items: center;
+  width: var(--data-grid-width);
+  min-width: var(--data-grid-width);
+}
+.data-grid-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8fafc;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 700;
+}
+.data-grid-header div,
+.data-grid-row div {
+  padding: 0 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.data-grid-row {
+  min-height: 32px;
+  border-bottom: 1px solid #edf1f6;
+  background: #fff;
+}
+.data-grid-row:nth-child(even) {
+  background: #fbfcfe;
+}
+.data-grid-row.clickable {
+  cursor: pointer;
+}
+.data-grid-row.clickable:hover {
+  background: #eef9fb;
+}
+.data-grid-row.selected {
+  z-index: 1;
+  background: #e2f4f7;
+  outline: 1px solid rgba(31, 122, 140, 0.45);
+  outline-offset: -1px;
+}
+.data-grid-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .filters {
   display: flex;
   flex-wrap: wrap;
@@ -778,29 +848,12 @@ button:disabled {
 }
 .frame-header,
 .frame-row {
-  display: grid;
-  grid-template-columns: 72px 76px 92px minmax(120px, 1.2fr) 92px 98px 98px 90px 70px 120px 120px;
-  align-items: center;
+  --data-grid-columns: 72px 76px 92px minmax(120px, 1.2fr) 92px 98px 98px 90px 70px 120px 120px;
+  --data-grid-width: var(--frame-table-width);
 }
 .frame-header {
-  position: sticky;
-  top: 0;
-  z-index: 2;
   width: var(--frame-table-width);
   min-width: var(--frame-table-width);
-  background: #f8fafc;
-  color: var(--muted);
-  border-bottom: 1px solid var(--line);
-  font-size: 12px;
-  font-weight: 700;
-}
-.frame-header div,
-.frame-row div {
-  padding: 0 8px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .frame-scroller {
   position: relative;
@@ -823,12 +876,6 @@ button:disabled {
   width: var(--frame-table-width);
   min-width: var(--frame-table-width);
   height: 32px;
-  border-bottom: 1px solid #edf1f6;
-  background: #fff;
-  cursor: pointer;
-}
-.frame-row:nth-child(even) {
-  background: #fbfcfe;
 }
 .frame-row:hover,
 .graph-row:hover {
@@ -836,8 +883,10 @@ button:disabled {
 }
 .frame-row.selected,
 .graph-row.selected {
-  z-index: 1;
   background: #e2f4f7;
+}
+.graph-row.selected {
+  z-index: 1;
   outline: 1px solid rgba(31, 122, 140, 0.45);
   outline-offset: -1px;
 }
@@ -1438,7 +1487,7 @@ button:disabled {
             </div>
             <div id="frameTableView" class="frame-view active">
               <div id="frameWrap" class="frame-wrap">
-                <div class="frame-header">
+                <div class="frame-header data-grid-header">
                   <div data-i18n="column.index">Index</div><div data-i18n="column.track">Track</div><div data-i18n="column.type">Type</div><div data-i18n="column.offset">Offset</div><div data-i18n="column.size">Size</div><div>DTS</div><div>PTS</div><div data-i18n="column.duration">Duration</div><div data-i18n="column.sync">Sync</div><div>NAL</div><div data-i18n="column.chunkFragment">Chunk/Frag</div>
                 </div>
                 <div id="frameScroller" class="frame-scroller">
@@ -5342,6 +5391,58 @@ button:disabled {
     })[char]);
   }
 
+  // local-source:C:\Users\user\Documents\Codex\2026-07-08\js-html-mp4-html-mp4-i\src\js\ui\data-grid.js
+  function renderDataGridTable(options) {
+    const columns = options.columns || [];
+    const rows = options.rows || [];
+    const className = options.className ? " " + options.className : "";
+    const gridTemplateColumns = columns.map((column) => column.width || "minmax(0, 1fr)").join(" ");
+    const minimumWidth = options.minimumWidth || "640px";
+    const style = "--data-grid-columns:" + gridTemplateColumns + ";--data-grid-width:" + minimumWidth + ";";
+    return '<div class="data-grid-shell' + escapeHtml(className) + '" style="' + escapeHtml(style) + '"><div class="data-grid-scroll"><div class="data-grid-table">' + renderDataGridHeader(columns) + '<div class="data-grid-body">' + rows.map(renderDataGridRow).join("") + "</div></div></div></div>";
+  }
+  function renderDataGridHeader(columns) {
+    return '<div class="data-grid-header">' + columns.map((column) => {
+      return renderDataGridCell({
+        value: column.label,
+        className: column.className,
+        title: column.title
+      });
+    }).join("") + "</div>";
+  }
+  function renderDataGridRow(row) {
+    const className = row.className ? " " + row.className : "";
+    return '<div class="data-grid-row' + escapeHtml(className) + '"' + renderDataGridAttributes(row.attributes) + ">" + (row.cells || []).map(renderDataGridCell).join("") + "</div>";
+  }
+  function renderDataGridCell(cell) {
+    const normalizedCell = normalizeDataGridCell(cell);
+    const className = normalizedCell.className ? ' class="' + escapeHtml(normalizedCell.className) + '"' : "";
+    const title = normalizedCell.title ? ' title="' + escapeHtml(normalizedCell.title) + '"' : "";
+    return "<div" + className + title + ">" + normalizedCell.html + "</div>";
+  }
+  function normalizeDataGridCell(cell) {
+    if (cell && typeof cell === "object" && !Array.isArray(cell)) {
+      return {
+        html: cell.html === void 0 ? escapeHtml(String(cell.value ?? "")) : String(cell.html),
+        className: cell.className || "",
+        title: cell.title || ""
+      };
+    }
+    return {
+      html: escapeHtml(String(cell ?? "")),
+      className: "",
+      title: ""
+    };
+  }
+  function renderDataGridAttributes(attributes) {
+    if (!attributes) return "";
+    return Object.entries(attributes).map(([name, value]) => {
+      if (value === false || value === null || value === void 0) return "";
+      if (value === true) return " " + escapeHtml(name);
+      return " " + escapeHtml(name) + '="' + escapeHtml(String(value)) + '"';
+    }).join("");
+  }
+
   // local-source:C:\Users\user\Documents\Codex\2026-07-08\js-html-mp4-html-mp4-i\src\js\ui\analyzer-ui.js
   function startUserInterface(Core2) {
     if (typeof document === "undefined" || !document.getElementById) return;
@@ -6046,10 +6147,41 @@ button:disabled {
       populateMetricsTrackFilter(analysis.tracks);
     }
     function renderTrackTable(tracks) {
-      return '<table class="table"><thead><tr><th>' + escapeHtml(t("column.track")) + "</th><th>" + escapeHtml(t("column.handler")) + "</th><th>" + escapeHtml(t("column.codec")) + "</th><th>" + escapeHtml(t("column.duration")) + "</th><th>" + escapeHtml(t("column.media")) + "</th><th>" + escapeHtml(t("column.samples")) + "</th><th>" + escapeHtml(t("column.avgBitrate")) + "</th><th>" + escapeHtml(t("column.fpsSamples")) + "</th><th>" + escapeHtml(t("column.avgSample")) + "</th><th>" + escapeHtml(t("column.codecConfig")) + "</th></tr></thead><tbody>" + tracks.map((track) => {
-        const summaryMetrics = getTrackSummaryMetrics(track);
-        return "<tr><td>" + track.trackId + "</td><td>" + escapeHtml(track.handlerType) + "</td><td>" + escapeHtml(track.codec) + "</td><td>" + escapeHtml(formatTime(track.duration, track.timescale)) + "</td><td>" + escapeHtml(formatTrackMedia(track)) + "</td><td>" + track.sampleCount + "</td><td>" + escapeHtml(summaryMetrics ? formatBitsPerSecond(summaryMetrics.averageBitrate) : t("value.notAvailable")) + "</td><td>" + escapeHtml(summaryMetrics ? formatMetricNumber(summaryMetrics.sampleRate, 2) : t("value.notAvailable")) + "</td><td>" + escapeHtml(summaryMetrics ? formatBytes(summaryMetrics.averageSampleSize) : t("value.notAvailable")) + "</td><td>" + escapeHtml(formatTrackCodecConfig(track)) + "</td></tr>";
-      }).join("") + "</tbody></table>";
+      return renderDataGridTable({
+        className: "tracks-grid",
+        minimumWidth: "1080px",
+        columns: [
+          { label: t("column.track"), width: "72px" },
+          { label: t("column.handler"), width: "90px" },
+          { label: t("column.codec"), width: "112px" },
+          { label: t("column.duration"), width: "100px" },
+          { label: t("column.media"), width: "150px" },
+          { label: t("column.samples"), width: "90px" },
+          { label: t("column.avgBitrate"), width: "130px" },
+          { label: t("column.fpsSamples"), width: "110px" },
+          { label: t("column.avgSample"), width: "110px" },
+          { label: t("column.codecConfig"), width: "minmax(210px, 1fr)" }
+        ],
+        rows: tracks.map((track) => {
+          const summaryMetrics = getTrackSummaryMetrics(track);
+          const media = formatTrackMedia(track);
+          const codecConfig = formatTrackCodecConfig(track);
+          return {
+            cells: [
+              track.trackId,
+              track.handlerType,
+              track.codec,
+              formatTime(track.duration, track.timescale),
+              { value: media, title: media },
+              track.sampleCount,
+              summaryMetrics ? formatBitsPerSecond(summaryMetrics.averageBitrate) : t("value.notAvailable"),
+              summaryMetrics ? formatMetricNumber(summaryMetrics.sampleRate, 2) : t("value.notAvailable"),
+              summaryMetrics ? formatBytes(summaryMetrics.averageSampleSize) : t("value.notAvailable"),
+              { value: codecConfig, title: codecConfig }
+            ]
+          };
+        })
+      });
     }
     function formatTrackLabel(track) {
       return t("field.track") + " " + track.trackId + " (" + track.handlerType + ")";
@@ -6289,10 +6421,36 @@ button:disabled {
     }
     function renderTopSampleRows(rows) {
       if (!rows.length) return '<section class="metric-section"><h3>' + escapeHtml(t("metrics.largestSamples")) + "</h3>" + emptyHtml("empty.noSamples") + "</section>";
-      return '<section class="metric-section"><h3>' + escapeHtml(t("metrics.largestSamples")) + '</h3><table class="table"><thead><tr><th>' + escapeHtml(t("value.sample")) + "</th><th>" + escapeHtml(t("column.time")) + "</th><th>" + escapeHtml(t("column.size")) + "</th><th>" + escapeHtml(t("column.type")) + "</th></tr></thead><tbody>" + rows.map((row) => {
-        const frameRowKey = getFrameRowKey(row);
-        return '<tr class="metric-click-row" role="button" tabindex="0" data-frame-key="' + escapeHtml(frameRowKey) + '"><td>#' + row.sampleIndex + "</td><td>" + escapeHtml(formatGraphTime(row)) + "</td><td>" + escapeHtml(formatBytes(row.size || 0)) + "</td><td>" + escapeHtml(formatFrameTypeLabel(row.frameType || "sample")) + "</td></tr>";
-      }).join("") + "</tbody></table></section>";
+      return '<section class="metric-section"><h3>' + escapeHtml(t("metrics.largestSamples")) + "</h3>" + renderDataGridTable({
+        className: "largest-samples-grid",
+        minimumWidth: "480px",
+        columns: [
+          { label: t("value.sample"), width: "90px" },
+          { label: t("column.time"), width: "120px" },
+          { label: t("column.size"), width: "110px" },
+          { label: t("column.type"), width: "minmax(110px, 1fr)" }
+        ],
+        rows: rows.map((row) => {
+          const type = row.frameType || "sample";
+          const frameRowKey = getFrameRowKey(row);
+          const ariaLabel = t("aria.seekFrame", { trackId: row.trackId, sampleIndex: row.sampleIndex, time: formatGraphTime(row) });
+          return {
+            className: "clickable metric-click-row",
+            attributes: {
+              role: "button",
+              tabindex: "0",
+              "data-frame-key": frameRowKey,
+              "aria-label": ariaLabel
+            },
+            cells: [
+              "#" + row.sampleIndex,
+              formatGraphTime(row),
+              formatBytes(row.size || 0),
+              { html: '<span class="pill ' + getFrameTypeClass(type) + '">' + escapeHtml(formatFrameTypeLabel(type)) + "</span>" }
+            ]
+          };
+        })
+      }) + "</section>";
     }
     function renderFrames() {
       if (!state.analysis) return;
@@ -6401,7 +6559,7 @@ button:disabled {
       const frameRowKey = getFrameRowKey(row);
       const selectedClass = frameRowKey === state.selectedFrameKey ? " selected" : "";
       const ariaLabel = t("aria.seekFrame", { trackId: row.trackId, sampleIndex: row.sampleIndex, time: formatGraphTime(row) });
-      return '<div class="frame-row' + selectedClass + '" role="button" tabindex="0" data-frame-key="' + escapeHtml(frameRowKey) + '" aria-label="' + escapeHtml(ariaLabel) + '" style="top:' + visualIndex * ROW_HEIGHT + 'px"><div>' + row.sampleIndex + "</div><div>" + row.trackId + '</div><div><span class="pill ' + typeClass + '">' + escapeHtml(formatFrameTypeLabel(type)) + '</span></div><div title="' + escapeHtml(row.offset) + '">' + escapeHtml(row.offset) + "</div><div>" + row.size + "</div><div>" + row.dts + "</div><div>" + row.pts + "</div><div>" + row.duration + "</div><div>" + (row.isSync ? t("value.yes") : t("value.no")) + '</div><div title="' + escapeHtml(row.nalTypes.join(", ")) + '">' + escapeHtml(row.nalTypes.join(",")) + "</div><div>" + escapeHtml(chunkOrFragment) + "</div></div>";
+      return '<div class="frame-row data-grid-row clickable' + selectedClass + '" role="button" tabindex="0" data-frame-key="' + escapeHtml(frameRowKey) + '" aria-label="' + escapeHtml(ariaLabel) + '" style="top:' + visualIndex * ROW_HEIGHT + 'px"><div>' + row.sampleIndex + "</div><div>" + row.trackId + '</div><div><span class="pill ' + typeClass + '">' + escapeHtml(formatFrameTypeLabel(type)) + '</span></div><div title="' + escapeHtml(row.offset) + '">' + escapeHtml(row.offset) + "</div><div>" + row.size + "</div><div>" + row.dts + "</div><div>" + row.pts + "</div><div>" + row.duration + "</div><div>" + (row.isSync ? t("value.yes") : t("value.no")) + '</div><div title="' + escapeHtml(row.nalTypes.join(", ")) + '">' + escapeHtml(row.nalTypes.join(",")) + "</div><div>" + escapeHtml(chunkOrFragment) + "</div></div>";
     }
     function renderGraphRow(row, visualIndex) {
       const type = row.frameType || "unknown";
@@ -6440,12 +6598,33 @@ button:disabled {
         elements.fragmentsPanel.innerHTML = emptyHtml("empty.noMoof");
         return;
       }
-      elements.fragmentsPanel.innerHTML = '<table class="table"><thead><tr><th>#</th><th>' + escapeHtml(t("column.offset")) + "</th><th>" + escapeHtml(t("column.size")) + "</th><th>traf</th><th>trun</th><th>" + escapeHtml(t("column.samples")) + "</th></tr></thead><tbody>" + moofs.map((moof, index) => {
-        const trafs = (moof.children || []).filter((child) => child.type === "traf");
-        const truns = findDescendants(moof, "trun", []);
-        const samples = truns.reduce((sum, trun) => sum + (trun.fields.sampleCount || 0), 0);
-        return "<tr><td>" + (index + 1) + "</td><td>" + escapeHtml(moof.offset) + "</td><td>" + escapeHtml(moof.size) + "</td><td>" + trafs.length + "</td><td>" + truns.length + "</td><td>" + samples + "</td></tr>";
-      }).join("") + "</tbody></table>";
+      elements.fragmentsPanel.innerHTML = renderDataGridTable({
+        className: "fragments-grid",
+        minimumWidth: "680px",
+        columns: [
+          { label: "#", width: "72px" },
+          { label: t("column.offset"), width: "minmax(150px, 1fr)" },
+          { label: t("column.size"), width: "130px" },
+          { label: "traf", width: "90px" },
+          { label: "trun", width: "90px" },
+          { label: t("column.samples"), width: "110px" }
+        ],
+        rows: moofs.map((moof, index) => {
+          const trafs = (moof.children || []).filter((child) => child.type === "traf");
+          const truns = findDescendants(moof, "trun", []);
+          const samples = truns.reduce((sum, trun) => sum + (trun.fields.sampleCount || 0), 0);
+          return {
+            cells: [
+              index + 1,
+              { value: moof.offset, title: moof.offset },
+              moof.size,
+              trafs.length,
+              truns.length,
+              samples
+            ]
+          };
+        })
+      });
     }
     function renderWarnings() {
       const warnings = state.transientWarnings.slice();
