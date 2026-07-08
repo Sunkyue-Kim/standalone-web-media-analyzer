@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const acorn = require("acorn");
 
 const rootDirectory = path.resolve(__dirname, "..");
 const htmlPath = path.join(rootDirectory, "mp4-analyzer.html");
@@ -77,8 +78,17 @@ class FakeElement {
   click() {}
   load() {}
   closest() { return null; }
+  contains(candidate) {
+    if (candidate === this) return true;
+    if (this.id === "boxTree" && (this._treeRows || []).includes(candidate)) return true;
+    return this.children.includes(candidate);
+  }
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] || null;
+  }
   querySelectorAll(selector) {
     if (selector === ".tree-row") return this._treeRows || [];
+    if (selector === ".tree-row.selected") return (this._treeRows || []).filter((row) => row.classList.contains("selected"));
     return [];
   }
 }
@@ -136,6 +146,7 @@ function createFakeStyleDeclaration() {
 
 function createFakeDocument() {
   const elements = new Map();
+  const eventListeners = new Map();
   return {
     documentElement: new FakeElement("html"),
     body: new FakeElement("body"),
@@ -147,9 +158,26 @@ function createFakeDocument() {
     querySelectorAll() {
       return [];
     },
+    querySelector() {
+      return null;
+    },
     createElement(tagName) {
       return new FakeElement(tagName);
     },
+    addEventListener(type, listener) {
+      if (!eventListeners.has(type)) eventListeners.set(type, []);
+      eventListeners.get(type).push(listener);
+    },
+    removeEventListener(type, listener) {
+      const listeners = eventListeners.get(type) || [];
+      eventListeners.set(type, listeners.filter((candidate) => candidate !== listener));
+    },
+    dispatchEvent(event) {
+      const listeners = eventListeners.get(event.type) || [];
+      for (const listener of listeners) listener(event);
+      return true;
+    },
+    _eventListeners: eventListeners,
     _elements: elements
   };
 }
@@ -231,6 +259,16 @@ function verifyResponsiveLayoutCss() {
   );
   assertCssRule(
     sourceCss,
+    /\.tab-panel\.active\s*\{[\s\S]*?display:\s*grid;[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;/,
+    "Generic tab panels must use the shared constrained layout instead of panel-specific scrolling."
+  );
+  assertCssRule(
+    sourceCss,
+    /\.tab-panel-body\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;[\s\S]*?overflow:\s*auto;/,
+    "Generic tab panel bodies must own overflow without expanding the page width."
+  );
+  assertCssRule(
+    sourceCss,
     /\.data-grid-shell\s*\{[\s\S]*?width:\s*100%;[\s\S]*?max-width:\s*100%;[\s\S]*?overflow:\s*hidden;/,
     "Reusable data grid shell must constrain horizontal overflow like the frame table."
   );
@@ -243,6 +281,16 @@ function verifyResponsiveLayoutCss() {
     sourceCss,
     /\.data-grid-table\s*\{[\s\S]*?width:\s*max\(100%,\s*var\(--data-grid-width\)\);[\s\S]*?min-width:\s*var\(--data-grid-width\);/,
     "Reusable data grid must fill available width while preserving its minimum scroll width."
+  );
+  assertCssRule(
+    sourceCss,
+    /\.fragments-controls\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(220px,\s*1fr\) max-content;/,
+    "Fragments controls must reserve enough room for the playback synchronization label and right-align row count."
+  );
+  assertCssRule(
+    sourceCss,
+    /\.fragments-controls \.frame-count-text\s*\{[\s\S]*?justify-self:\s*end;[\s\S]*?text-align:\s*right;/,
+    "Fragments row count must stay right-aligned in the controls row."
   );
   assertCssRule(
     sourceCss,
@@ -301,6 +349,16 @@ function verifyResponsiveLayoutCss() {
   );
   assertCssRule(
     sourceCss,
+    /@media\s*\(max-width:\s*700px\)\s*\{[\s\S]*?\.tab-panel\.active\s*\{[\s\S]*?min-height:\s*calc\(100dvh - 48px\);[\s\S]*?overflow:\s*hidden;/,
+    "Mobile generic tab panels must prevent Summary/Tracks content from creating page-level horizontal overflow."
+  );
+  assertCssRule(
+    sourceCss,
+    /@media\s*\(max-width:\s*700px\)\s*\{[\s\S]*?\.tab-panel-body\s*\{[\s\S]*?max-width:\s*100%;[\s\S]*?overflow:\s*auto;/,
+    "Mobile generic tab panel bodies must own their own overflow."
+  );
+  assertCssRule(
+    sourceCss,
     /@media\s*\(max-width:\s*700px\)\s*\{[\s\S]*?\.frames-panel\.active\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(320px,\s*auto\);/,
     "Mobile frame panel must preserve a minimum table row instead of collapsing below filters."
   );
@@ -317,10 +375,37 @@ function verifyResponsiveLayoutCss() {
   }
 }
 
+function verifyNoExecutableStatementsAfterUserInterfaceReturn(sourceUi) {
+  const syntaxTree = acorn.parse(sourceUi, {
+    ecmaVersion: "latest",
+    sourceType: "module",
+    locations: true
+  });
+  const exportNode = syntaxTree.body.find((node) =>
+    node.type === "ExportNamedDeclaration" &&
+    node.declaration &&
+    node.declaration.id &&
+    node.declaration.id.name === "startUserInterface"
+  );
+  if (!exportNode) throw new Error("Could not find startUserInterface export.");
+  let sawReturnStatement = false;
+  const unreachableStatements = [];
+  for (const statement of exportNode.declaration.body.body) {
+    if (sawReturnStatement && statement.type !== "FunctionDeclaration") {
+      unreachableStatements.push(statement.type + " at line " + statement.loc.start.line);
+    }
+    if (statement.type === "ReturnStatement") sawReturnStatement = true;
+  }
+  if (unreachableStatements.length) {
+    throw new Error("Executable UI setup code appears after return: " + unreachableStatements.join(", "));
+  }
+}
+
 async function main() {
   const sourceHtml = fs.readFileSync(sourceHtmlPath, "utf8");
   const sourceUi = fs.readFileSync(sourceUiPath, "utf8");
   verifyResponsiveLayoutCss();
+  verifyNoExecutableStatementsAfterUserInterfaceReturn(sourceUi);
 
   if (!/column\.index[\s\S]*column\.track[\s\S]*column\.type[\s\S]*column\.offset/.test(sourceHtml)) {
     throw new Error("Frame table header must place Type immediately after Index and Track.");
@@ -328,11 +413,29 @@ async function main() {
   if (!/id="frameHeader"\s+class="frame-header data-grid-header"/.test(sourceHtml)) {
     throw new Error("Frame table header must use the reusable data grid header style.");
   }
+  if (!/id="summaryPanel"\s+class="panel tab-panel active"[\s\S]*?id="summaryBody"\s+class="tab-panel-body"/.test(sourceHtml)) {
+    throw new Error("Summary tab must use the reusable tab panel body.");
+  }
+  if (!/id="tracksPanel"\s+class="panel tab-panel"[\s\S]*?id="tracksBody"\s+class="tab-panel-body"/.test(sourceHtml)) {
+    throw new Error("Tracks tab must use the reusable tab panel body.");
+  }
+  if (!/id="warningsPanel"\s+class="panel tab-panel"[\s\S]*?id="warningsBody"\s+class="tab-panel-body"/.test(sourceHtml)) {
+    throw new Error("Warnings tab must use the reusable tab panel body.");
+  }
   if (!/warningOnlyFilter[\s\S]*autoPlaybackSynchronizationToggle/.test(sourceHtml)) {
     throw new Error("Playback synchronization checkbox must be stacked with the warning-only checkbox.");
   }
+  if (!/id="fragmentPlaybackSynchronizationToggle"/.test(sourceHtml) || !/id="fragmentsBody"/.test(sourceHtml)) {
+    throw new Error("Fragments tab must expose playback synchronization controls and a render body.");
+  }
   if (!/row\.sampleIndex[\s\S]*row\.trackId[\s\S]*formatFrameTypeLabel\(type\)[\s\S]*row\.offset/.test(sourceUi)) {
     throw new Error("Frame table row renderer must place Type immediately after Index and Track.");
+  }
+  if (/row\.pts\s*\|\|\s*row\.dts/.test(sourceUi)) {
+    throw new Error("UI time calculations must treat zero PTS as a valid frame start time.");
+  }
+  if (!/getFirstFiniteNumber\(\[row\.pts,\s*row\.dts\]/.test(sourceUi)) {
+    throw new Error("UI time calculations must use explicit timestamp fallback instead of truthiness.");
   }
   if (!/renderDataGridTable/.test(sourceUi) || !/className:\s*"tracks-grid"/.test(sourceUi) || !/className:\s*"fragments-grid"/.test(sourceUi) || !/className:\s*"largest-samples-grid"/.test(sourceUi)) {
     throw new Error("Tracks, fragments, and largest samples must use the reusable data grid component.");
@@ -360,6 +463,9 @@ async function main() {
   }
   if (!/boxTree\.addEventListener\("click", handleBoxTreeClick\)/.test(sourceUi) || !/boxTree\.addEventListener\("pointerup", handleBoxTreePointerUp\)/.test(sourceUi)) {
     throw new Error("Box tree must bind robust pointer and click selection handlers.");
+  }
+  if (!/document\.addEventListener\("click", handleDocumentBoxTreeClick, true\)/.test(sourceUi) || !/document\.addEventListener\("pointerup", handleDocumentBoxTreePointerUp, true\)/.test(sourceUi)) {
+    throw new Error("Box tree must also bind document-level capture handlers for reliable selection.");
   }
 
   const sourceSampleFieldMatch = sourceHtml.match(/<label[^>]+id="sampleField"[^>]*>/);
@@ -409,7 +515,28 @@ async function main() {
   if (!metricsSummary || metricsSummary.averageBitrate <= 0) {
     throw new Error("Metrics summary was not rendered/calculable.");
   }
-  const tracksHtml = fakeDocument.getElementById("tracksPanel").innerHTML;
+  fakeDocument.getElementById("metricsWindowInput").value = "30";
+  const metricsDebug = window.MP4AnalyzerDevTools.getMetricsDebug();
+  if (!metricsDebug || !metricsDebug.firstMovingAveragePoint) {
+    throw new Error("Metrics debug data was not available.");
+  }
+  if (metricsDebug.firstMovingAveragePoint.sampleCount !== 30) {
+    throw new Error("Moving average must use a full fixed-size first window.");
+  }
+  if (metricsDebug.movingAveragePointCount !== summary.sampleRows - 30 + 1) {
+    throw new Error(
+      "Moving average point count must reflect fixed-size windows only. " +
+      "points=" + metricsDebug.movingAveragePointCount +
+      " rows=" + summary.sampleRows
+    );
+  }
+  if (
+    !Number.isFinite(Number(metricsDebug.firstMovingAveragePoint.windowStartSampleIndex)) ||
+    !Number.isFinite(Number(metricsDebug.firstMovingAveragePoint.windowEndSampleIndex))
+  ) {
+    throw new Error("Moving average debug should expose its fixed window sample range.");
+  }
+  const tracksHtml = fakeDocument.getElementById("tracksBody").innerHTML;
   if (!tracksHtml.includes("data-grid-shell tracks-grid") || !tracksHtml.includes("data-grid-header")) {
     throw new Error("Tracks panel did not render the reusable data grid.");
   }
@@ -418,37 +545,81 @@ async function main() {
     throw new Error("Largest samples panel did not render clickable rows with the reusable data grid.");
   }
 
-  const fragmentsHtml = fakeDocument.getElementById("fragmentsPanel").innerHTML;
-  if (!fragmentsHtml.includes("data-grid-shell fragments-grid") || !fragmentsHtml.includes("data-grid-header") || !fragmentsHtml.includes(">5</div>")) {
+  const fragmentsHtml = fakeDocument.getElementById("fragmentsBody").innerHTML;
+  if (
+    !fragmentsHtml.includes("data-grid-shell fragments-grid") ||
+    !fragmentsHtml.includes("data-grid-header") ||
+    !fragmentsHtml.includes("data-fragment-index=\"1\"") ||
+    !fragmentsHtml.includes("Start time") ||
+    !fragmentsHtml.includes("End time")
+  ) {
     throw new Error("Fragment panel did not render the fMP4 fragments data grid.");
+  }
+  const fragmentRows = window.MP4AnalyzerDevTools.getFragmentRows();
+  if (fragmentRows.length !== 5) {
+    throw new Error(`Expected 5 selectable fragments, got ${fragmentRows.length}.`);
+  }
+  const firstFragment = fragmentRows[0];
+  if (!firstFragment || Math.abs(Number(firstFragment.startTimeSeconds)) > 0.000001) {
+    throw new Error(
+      "First fMP4 fragment must start at decode time 0 from tfdt/DTS, got " +
+      (firstFragment ? firstFragment.startTimeSeconds : "missing")
+    );
+  }
+  if (!firstFragment.startFrameRow || Number(firstFragment.startFrameRow.dts) !== 0) {
+    throw new Error("First fMP4 fragment start frame must be selected by decode time.");
+  }
+  const secondFragment = window.MP4AnalyzerDevTools.selectFragmentByIndex(2);
+  if (!secondFragment || secondFragment.fragmentIndex !== 2 || !secondFragment.startFrameRow) {
+    throw new Error("Selecting a fragment should return its start frame.");
+  }
+  if (window.MP4AnalyzerDevTools.getSelectedFragmentIndex() !== 2) {
+    throw new Error("Selecting a fragment should update the selected fragment index.");
+  }
+  if (window.MP4AnalyzerDevTools.getSelectedFrameKey() !== secondFragment.startFrameRow.trackId + ":" + secondFragment.startFrameRow.sampleIndex) {
+    throw new Error("Selecting a fragment should select the fragment start frame.");
+  }
+  const fragmentSynchronizationResult = window.MP4AnalyzerDevTools.synchronizeFragmentSelectionToPlayback(2);
+  if (
+    !fragmentSynchronizationResult ||
+    fragmentSynchronizationResult.fragmentIndex !== window.MP4AnalyzerDevTools.getSelectedFragmentIndex() ||
+    !(fragmentSynchronizationResult.startTimeSeconds <= 2 && fragmentSynchronizationResult.endTimeSeconds >= 2)
+  ) {
+    throw new Error("Fragment playback synchronization did not select the fragment containing the playback time.");
   }
 
   const boxTree = fakeDocument.getElementById("boxTree");
   const firstBoxRow = boxTree.querySelectorAll(".tree-row")[0];
   if (!firstBoxRow) throw new Error("Box tree did not render clickable rows.");
   const clickListeners = boxTree.eventListeners && boxTree.eventListeners.get("click") || [];
-  if (clickListeners.length) {
-    boxTree.dispatchEvent({
-      type: "click",
-      target: {
-        parentElement: firstBoxRow
-      }
-    });
-  } else {
-    window.MP4AnalyzerDevTools.selectBoxByPath(firstBoxRow.dataset.path);
+  const documentClickListeners = fakeDocument._eventListeners && fakeDocument._eventListeners.get("click") || [];
+  if (!clickListeners.length || !documentClickListeners.length) {
+    throw new Error("Box tree click handlers were not registered.");
   }
+  let preventedDefault = false;
+  fakeDocument.dispatchEvent({
+    type: "click",
+    target: firstBoxRow,
+    preventDefault() {
+      preventedDefault = true;
+    }
+  });
   const selectedBox = window.MP4AnalyzerDevTools.getSelectedBox();
   if (!selectedBox || selectedBox.path !== firstBoxRow.dataset.path) {
     const analysis = window.MP4AnalyzerDevTools.getAnalysis();
+    const debug = window.MP4AnalyzerDevTools.getBoxSelectionDebug();
     throw new Error(
       "Clicking a box tree row did not update the selected box. " +
       "clicked=" + firstBoxRow.dataset.path +
       " selected=" + (selectedBox && selectedBox.path || "") +
       " firstAnalysisPath=" + (analysis && analysis.allBoxes[0] && analysis.allBoxes[0].path || "") +
       " rowCount=" + boxTree.querySelectorAll(".tree-row").length +
-      " clickListeners=" + clickListeners.length
+      " clickListeners=" + clickListeners.length +
+      " documentClickListeners=" + documentClickListeners.length +
+      " debug=" + JSON.stringify(debug)
     );
   }
+  if (!preventedDefault) throw new Error("Box tree click should prevent default button behavior.");
   const boxDetailHtml = fakeDocument.getElementById("boxDetail").innerHTML;
   if (!boxDetailHtml.includes(selectedBox.path) || !boxDetailHtml.includes("Parsed fields")) {
     throw new Error("Clicking a box tree row did not render box details.");

@@ -51,8 +51,10 @@ const state = {
   activeTab: options.initialActiveTab || "summary",
   selectedBox: null,
   selectedFrameKey: "",
+  selectedFragmentIndex: 0,
   filteredRows: [],
   graphRows: [],
+  fragmentRows: [],
   frameViewMode: "table",
   graphMaxSize: 1,
   filePreviewUrl: "",
@@ -62,8 +64,11 @@ const state = {
   progressRawLabel: t("status.initial"),
   progressPercentValue: 0,
   lastPlaybackSynchronizationFrameKey: "",
+  lastPlaybackSynchronizationFragmentIndex: 0,
   playbackSynchronizationRequestId: 0,
-  playbackSynchronizationRequestType: ""
+  playbackSynchronizationRequestType: "",
+  boxTreeActivationCount: 0,
+  lastBoxTreeActivation: null
 };
 
 const elements = {
@@ -84,12 +89,17 @@ const elements = {
   boxTree: document.getElementById("boxTree"),
   boxDetail: document.getElementById("boxDetail"),
   summaryPanel: document.getElementById("summaryPanel"),
+  summaryBody: document.getElementById("summaryBody"),
   boxesPanel: document.getElementById("boxesPanel"),
   tracksPanel: document.getElementById("tracksPanel"),
+  tracksBody: document.getElementById("tracksBody"),
   framesPanel: document.getElementById("framesPanel"),
   metricsPanel: document.getElementById("metricsPanel"),
   fragmentsPanel: document.getElementById("fragmentsPanel"),
+  fragmentsBody: document.getElementById("fragmentsBody"),
+  fragmentCountText: document.getElementById("fragmentCountText"),
   warningsPanel: document.getElementById("warningsPanel"),
+  warningsBody: document.getElementById("warningsBody"),
   progressText: document.getElementById("progressText"),
   progressPercent: document.getElementById("progressPercent"),
   progressFill: document.getElementById("progressFill"),
@@ -100,6 +110,7 @@ const elements = {
   maxSizeFilter: document.getElementById("maxSizeFilter"),
   warningOnlyFilter: document.getElementById("warningOnlyFilter"),
   autoPlaybackSynchronizationToggle: document.getElementById("autoPlaybackSynchronizationToggle"),
+  fragmentPlaybackSynchronizationToggle: document.getElementById("fragmentPlaybackSynchronizationToggle"),
   clearFiltersButton: document.getElementById("clearFiltersButton"),
   frameGraphButton: document.getElementById("frameGraphButton"),
   frameTableButton: document.getElementById("frameTableButton"),
@@ -144,13 +155,20 @@ const devToolsApi = {
   getAnalysis: () => state.analysis,
   getFilteredRows: () => state.filteredRows,
   getSelectedFrameKey: () => state.selectedFrameKey,
+  getSelectedFragmentIndex: () => state.selectedFragmentIndex,
+  getFragmentRows: () => state.fragmentRows.slice(),
   getSelectedBox: () => state.selectedBox,
   selectBoxByPath: (path) => selectBoxByPath(path),
+  getBoxSelectionDebug: () => getBoxSelectionDebug(),
+  activateFirstBoxForTest: () => {
+    const firstRow = elements.boxTree.querySelector(".tree-row");
+    return firstRow ? selectBoxByPath(firstRow.dataset.path, firstRow) : null;
+  },
   setAutoPlaybackSynchronization: (enabled) => {
     elements.autoPlaybackSynchronizationToggle.checked = Boolean(enabled);
     state.lastPlaybackSynchronizationFrameKey = "";
     if (!elements.autoPlaybackSynchronizationToggle.checked) {
-      stopPlaybackSynchronizationLoop();
+      if (!shouldRunPlaybackSynchronizationLoop()) stopPlaybackSynchronizationLoop();
       return "";
     }
     const row = synchronizeFrameSelectionToPlayback({ force: true });
@@ -170,11 +188,36 @@ const devToolsApi = {
       graphScrollTop: elements.graphScroller.scrollTop
     } : null;
   },
+  synchronizeFragmentSelectionToPlayback: (playbackSeconds) => {
+    if (Number.isFinite(Number(playbackSeconds))) elements.filePreview.currentTime = Number(playbackSeconds);
+    elements.fragmentPlaybackSynchronizationToggle.checked = true;
+    state.lastPlaybackSynchronizationFragmentIndex = 0;
+    const fragment = synchronizeFragmentSelectionToPlayback({ force: true });
+    startPlaybackSynchronizationLoop();
+    return fragment;
+  },
+  selectFragmentByIndex: (fragmentIndex) => activateFragmentByIndex(Number(fragmentIndex)),
   getMetricsSummary: () => {
     const track = getSelectedMetricsTrack();
     if (!track) return null;
     const rows = getRowsForTrack(track.trackId);
     return buildTrackMetrics(track, rows, getMetricsWindowSize()).summary;
+  },
+  getMetricsDebug: () => {
+    const track = getSelectedMetricsTrack();
+    if (!track) return null;
+    const rows = getRowsForTrack(track.trackId);
+    const windowSize = getMetricsWindowSize();
+    const metrics = buildTrackMetrics(track, rows, windowSize);
+    return {
+      trackId: track.trackId,
+      windowSize,
+      rows: rows.length,
+      movingAveragePointCount: metrics.movingAveragePoints.length,
+      firstMovingAveragePoint: metrics.movingAveragePoints[0] || null,
+      lastMovingAveragePoint: metrics.movingAveragePoints[metrics.movingAveragePoints.length - 1] || null,
+      summary: metrics.summary
+    };
   },
   runSmokeTests: () => Core.runParserSelfTests(),
   canUseSamples: () => canUseSampleCatalog(),
@@ -223,6 +266,12 @@ for (const tabButton of document.querySelectorAll(".tab")) {
   tabButton.addEventListener("click", () => setActiveTab(tabButton.dataset.tab));
 }
 
+elements.boxTree.addEventListener("click", handleBoxTreeClick);
+elements.boxTree.addEventListener("pointerup", handleBoxTreePointerUp);
+elements.boxTree.addEventListener("keydown", handleBoxTreeKeyDown);
+document.addEventListener("click", handleDocumentBoxTreeClick, true);
+document.addEventListener("pointerup", handleDocumentBoxTreePointerUp, true);
+
 elements.cancelButton.addEventListener("click", () => {
   analysisWorkerClient.cancel();
   setProgress("Cancelling...", 0);
@@ -240,9 +289,11 @@ elements.graphScroller.addEventListener("scroll", scheduleFrameRender);
 elements.frameSpacer.addEventListener("click", handleFrameRowPointerActivation);
 elements.graphSpacer.addEventListener("click", handleFrameRowPointerActivation);
 elements.metricsBody.addEventListener("click", handleFrameRowPointerActivation);
+elements.fragmentsBody.addEventListener("click", handleFragmentRowPointerActivation);
 elements.frameSpacer.addEventListener("keydown", handleFrameRowKeyboardActivation);
 elements.graphSpacer.addEventListener("keydown", handleFrameRowKeyboardActivation);
 elements.metricsBody.addEventListener("keydown", handleFrameRowKeyboardActivation);
+elements.fragmentsBody.addEventListener("keydown", handleFragmentRowKeyboardActivation);
 elements.frameGraphButton.addEventListener("click", () => setFrameViewMode("graph"));
 elements.frameTableButton.addEventListener("click", () => setFrameViewMode("table"));
 elements.autoPlaybackSynchronizationToggle.addEventListener("change", () => {
@@ -251,23 +302,32 @@ elements.autoPlaybackSynchronizationToggle.addEventListener("change", () => {
     synchronizeFrameSelectionToPlayback({ force: true });
     startPlaybackSynchronizationLoop();
   } else {
-    stopPlaybackSynchronizationLoop();
+    if (!shouldRunPlaybackSynchronizationLoop()) stopPlaybackSynchronizationLoop();
   }
 });
-elements.filePreview.addEventListener("timeupdate", () => synchronizeFrameSelectionToPlayback());
+elements.fragmentPlaybackSynchronizationToggle.addEventListener("change", () => {
+  state.lastPlaybackSynchronizationFragmentIndex = 0;
+  if (elements.fragmentPlaybackSynchronizationToggle.checked) {
+    synchronizeFragmentSelectionToPlayback({ force: true });
+    startPlaybackSynchronizationLoop();
+  } else {
+    if (!shouldRunPlaybackSynchronizationLoop()) stopPlaybackSynchronizationLoop();
+  }
+});
+elements.filePreview.addEventListener("timeupdate", () => synchronizeSelectionsToPlayback());
 elements.filePreview.addEventListener("play", startPlaybackSynchronizationLoop);
 elements.filePreview.addEventListener("playing", startPlaybackSynchronizationLoop);
 elements.filePreview.addEventListener("pause", () => {
   stopPlaybackSynchronizationLoop();
-  synchronizeFrameSelectionToPlayback({ force: true });
+  synchronizeSelectionsToPlayback({ force: true });
 });
 elements.filePreview.addEventListener("ended", () => {
   stopPlaybackSynchronizationLoop();
-  synchronizeFrameSelectionToPlayback({ force: true });
+  synchronizeSelectionsToPlayback({ force: true });
 });
-elements.filePreview.addEventListener("seeking", () => synchronizeFrameSelectionToPlayback({ force: true }));
-elements.filePreview.addEventListener("seeked", () => synchronizeFrameSelectionToPlayback({ force: true }));
-elements.filePreview.addEventListener("loadedmetadata", () => synchronizeFrameSelectionToPlayback({ force: true }));
+elements.filePreview.addEventListener("seeking", () => synchronizeSelectionsToPlayback({ force: true }));
+elements.filePreview.addEventListener("seeked", () => synchronizeSelectionsToPlayback({ force: true }));
+elements.filePreview.addEventListener("loadedmetadata", () => synchronizeSelectionsToPlayback({ force: true }));
 for (const input of [elements.trackFilter, elements.typeFilter, elements.syncFilter, elements.minSizeFilter, elements.maxSizeFilter, elements.warningOnlyFilter]) {
   input.addEventListener("input", renderFrames);
   input.addEventListener("change", renderFrames);
@@ -322,12 +382,14 @@ function refreshDynamicLanguage() {
     renderAll();
     renderSelectedBox();
   } else {
-    elements.summaryPanel.innerHTML = emptyHtml("empty.summary");
+    elements.summaryBody.innerHTML = emptyHtml("empty.summary");
     elements.boxDetail.innerHTML = emptyHtml("empty.boxDetailInitial");
-    elements.tracksPanel.innerHTML = emptyHtml("empty.noTracks");
+    elements.tracksBody.innerHTML = emptyHtml("empty.noTracks");
     elements.metricsBody.innerHTML = emptyHtml("empty.metrics");
-    elements.fragmentsPanel.innerHTML = emptyHtml("empty.noFragments");
-    elements.warningsPanel.innerHTML = emptyHtml("empty.noWarnings");
+    state.fragmentRows = [];
+    elements.fragmentsBody.innerHTML = emptyHtml("empty.noFragments");
+    elements.fragmentCountText.textContent = t("count.rows", { count: 0 });
+    elements.warningsBody.innerHTML = emptyHtml("empty.noWarnings");
     elements.frameCountText.textContent = t("count.rows", { count: 0 });
     elements.graphAxisUnit.textContent = t("unit.bytes");
     renderFrameTableLayout([]);
@@ -425,6 +487,20 @@ function handleFrameRowKeyboardActivation(event) {
   if (row) activateFrameRow(row);
 }
 
+function handleFragmentRowPointerActivation(event) {
+  const rowElement = event.target.closest("[data-fragment-index]");
+  if (!rowElement) return;
+  activateFragmentByIndex(Number(rowElement.dataset.fragmentIndex));
+}
+
+function handleFragmentRowKeyboardActivation(event) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const rowElement = event.target.closest("[data-fragment-index]");
+  if (!rowElement) return;
+  event.preventDefault();
+  activateFragmentByIndex(Number(rowElement.dataset.fragmentIndex));
+}
+
 function findFrameRowByKey(frameKey) {
   if (!state.analysis || !frameKey) return null;
   return state.analysis.sampleRows.find((row) => getFrameRowKey(row) === frameKey) || null;
@@ -432,15 +508,49 @@ function findFrameRowByKey(frameKey) {
 
 function activateFrameRow(row) {
   state.selectedFrameKey = getFrameRowKey(row);
+  const previousFragmentIndex = state.selectedFragmentIndex;
+  synchronizeFragmentSelectionToFrameRow(row);
   seekPreviewToFrameRow(row);
   scheduleFrameRender();
+  if (previousFragmentIndex !== state.selectedFragmentIndex) renderFragments();
+}
+
+function activateFragmentByIndex(fragmentIndex) {
+  if (!Number.isFinite(fragmentIndex)) return null;
+  const fragment = findFragmentRowByIndex(fragmentIndex);
+  if (!fragment) return null;
+  state.selectedFragmentIndex = fragment.fragmentIndex;
+  state.lastPlaybackSynchronizationFragmentIndex = fragment.fragmentIndex;
+  if (fragment.startFrameRow) {
+    state.selectedFrameKey = getFrameRowKey(fragment.startFrameRow);
+    seekPreviewToFragment(fragment);
+  }
+  renderFragments();
+  scheduleFrameRender();
+  return fragment;
+}
+
+function findFragmentRowByIndex(fragmentIndex) {
+  return ensureFragmentRows().find((fragment) => fragment.fragmentIndex === fragmentIndex) || null;
 }
 
 function seekPreviewToFrameRow(row) {
+  seekPreviewToSeconds(getRowTimeSeconds(row));
+}
+
+function seekPreviewToFragment(fragment) {
+  const fragmentStartSeconds = Number(fragment && fragment.startTimeSeconds);
+  if (Number.isFinite(fragmentStartSeconds)) {
+    seekPreviewToSeconds(fragmentStartSeconds);
+    return;
+  }
+  if (fragment && fragment.startFrameRow) seekPreviewToFrameRow(fragment.startFrameRow);
+}
+
+function seekPreviewToSeconds(timeSeconds) {
   if (!elements.filePreview || !elements.filePreview.src) return;
-  const rowTimeSeconds = getRowTimeSeconds(row);
-  if (!Number.isFinite(rowTimeSeconds)) return;
-  const seekSeconds = Math.max(0, rowTimeSeconds);
+  if (!Number.isFinite(timeSeconds)) return;
+  const seekSeconds = Math.max(0, timeSeconds);
   const applySeek = () => {
     try {
       const duration = Number(elements.filePreview.duration);
@@ -492,18 +602,25 @@ function requestNextPlaybackSynchronizationStep() {
 function runPlaybackSynchronizationStep() {
   state.playbackSynchronizationRequestId = 0;
   state.playbackSynchronizationRequestType = "";
-  synchronizeFrameSelectionToPlayback();
+  synchronizeSelectionsToPlayback();
   if (shouldRunPlaybackSynchronizationLoop()) requestNextPlaybackSynchronizationStep();
 }
 
 function shouldRunPlaybackSynchronizationLoop() {
   return Boolean(
-    elements.autoPlaybackSynchronizationToggle.checked &&
+    (elements.autoPlaybackSynchronizationToggle.checked || elements.fragmentPlaybackSynchronizationToggle.checked) &&
     elements.filePreview &&
     elements.filePreview.src &&
     elements.filePreview.paused === false &&
     !elements.filePreview.ended
   );
+}
+
+function synchronizeSelectionsToPlayback(options = {}) {
+  return {
+    frame: synchronizeFrameSelectionToPlayback(options),
+    fragment: synchronizeFragmentSelectionToPlayback(options)
+  };
 }
 
 function synchronizeFrameSelectionToPlayback(options = {}) {
@@ -517,9 +634,66 @@ function synchronizeFrameSelectionToPlayback(options = {}) {
   if (!shouldUpdate) return row;
   state.selectedFrameKey = frameRowKey;
   state.lastPlaybackSynchronizationFrameKey = frameRowKey;
+  const previousFragmentIndex = state.selectedFragmentIndex;
+  synchronizeFragmentSelectionToFrameRow(row);
   scrollSynchronizedFrameRowIntoView(row);
   scheduleFrameRender();
+  if (previousFragmentIndex !== state.selectedFragmentIndex) renderFragments();
   return row;
+}
+
+function synchronizeFragmentSelectionToPlayback(options = {}) {
+  if (!state.analysis || !elements.fragmentPlaybackSynchronizationToggle.checked) return null;
+  const playbackSeconds = Number(elements.filePreview.currentTime);
+  if (!Number.isFinite(playbackSeconds)) return null;
+  const fragment = findFragmentForPlaybackTime(playbackSeconds);
+  if (!fragment) return null;
+  const shouldUpdate = options.force ||
+    fragment.fragmentIndex !== state.selectedFragmentIndex ||
+    fragment.fragmentIndex !== state.lastPlaybackSynchronizationFragmentIndex;
+  if (!shouldUpdate) return fragment;
+  state.selectedFragmentIndex = fragment.fragmentIndex;
+  state.lastPlaybackSynchronizationFragmentIndex = fragment.fragmentIndex;
+  if (fragment.startFrameRow && !elements.autoPlaybackSynchronizationToggle.checked) {
+    state.selectedFrameKey = getFrameRowKey(fragment.startFrameRow);
+    scheduleFrameRender();
+  }
+  renderFragments();
+  return fragment;
+}
+
+function synchronizeFragmentSelectionToFrameRow(row) {
+  const fragmentIndex = Number(row && row.fragmentIndex);
+  if (!Number.isFinite(fragmentIndex) || fragmentIndex <= 0) return null;
+  const fragment = findFragmentRowByIndex(fragmentIndex);
+  if (!fragment) return null;
+  state.selectedFragmentIndex = fragment.fragmentIndex;
+  state.lastPlaybackSynchronizationFragmentIndex = fragment.fragmentIndex;
+  return fragment;
+}
+
+function findFragmentForPlaybackTime(playbackSeconds) {
+  const fragmentRows = ensureFragmentRows();
+  if (!fragmentRows.length) return null;
+  let bestFragment = null;
+  let bestDistance = Infinity;
+  for (const fragment of fragmentRows) {
+    if (!Number.isFinite(fragment.startTimeSeconds) || !Number.isFinite(fragment.endTimeSeconds)) continue;
+    const endTimeSeconds = Math.max(fragment.endTimeSeconds, fragment.startTimeSeconds + 0.000001);
+    const distance = playbackSeconds >= fragment.startTimeSeconds && playbackSeconds < endTimeSeconds
+      ? 0
+      : Math.min(Math.abs(playbackSeconds - fragment.startTimeSeconds), Math.abs(playbackSeconds - endTimeSeconds));
+    if (distance < bestDistance) {
+      bestFragment = fragment;
+      bestDistance = distance;
+    }
+  }
+  return bestFragment;
+}
+
+function ensureFragmentRows() {
+  if (!state.fragmentRows.length && state.analysis) state.fragmentRows = buildFragmentRows(state.analysis);
+  return state.fragmentRows;
 }
 
 function findFrameRowForPlaybackTime(playbackSeconds) {
@@ -648,7 +822,7 @@ async function startAnalysis(file, options = {}) {
   } catch (error) {
     setBusy(false);
     setProgress("Failed: " + error.message, 0);
-    elements.summaryPanel.innerHTML = emptyHtml("status.failed", { message: error.message });
+    elements.summaryBody.innerHTML = emptyHtml("status.failed", { message: error.message });
   }
 }
 
@@ -682,16 +856,20 @@ function resetView(file, options = {}) {
   state.analysis = null;
   state.selectedBox = null;
   state.selectedFrameKey = "";
+  state.selectedFragmentIndex = 0;
   state.lastPlaybackSynchronizationFrameKey = "";
+  state.lastPlaybackSynchronizationFragmentIndex = 0;
+  state.fragmentRows = [];
   state.transientWarnings = [];
   if (!options.keepSampleSelection && elements.sampleSelect) elements.sampleSelect.value = "";
   setFilePreview(file);
   elements.boxTree.innerHTML = "";
-  elements.summaryPanel.innerHTML = emptyHtml("empty.parsingStructure");
+  elements.summaryBody.innerHTML = emptyHtml("empty.parsingStructure");
   elements.boxDetail.innerHTML = emptyHtml("empty.selectBox");
-  elements.tracksPanel.innerHTML = emptyHtml("empty.noTracks");
-  elements.fragmentsPanel.innerHTML = emptyHtml("empty.noFragments");
-  elements.warningsPanel.innerHTML = emptyHtml("empty.noWarnings");
+  elements.tracksBody.innerHTML = emptyHtml("empty.noTracks");
+  elements.fragmentsBody.innerHTML = emptyHtml("empty.noFragments");
+  elements.fragmentCountText.textContent = t("count.rows", { count: 0 });
+  elements.warningsBody.innerHTML = emptyHtml("empty.noWarnings");
   elements.metricsBody.innerHTML = emptyHtml("empty.parsingMetrics");
   elements.frameWrap.scrollTop = 0;
   elements.frameWrap.scrollLeft = 0;
@@ -746,7 +924,7 @@ function getAnalysisDurationSeconds(analysis) {
     const track = trackById.get(row.trackId);
     const timescale = Number(track && track.timescale);
     if (!timescale) continue;
-    const rowEnd = (Number(row.pts || row.dts || 0) + Number(row.duration || 0)) / timescale;
+    const rowEnd = (getFirstFiniteNumber([row.pts, row.dts], 0) + Number(row.duration || 0)) / timescale;
     if (Number.isFinite(rowEnd)) maxDurationSeconds = Math.max(maxDurationSeconds, rowEnd);
   }
   return maxDurationSeconds;
@@ -782,6 +960,7 @@ function setActiveTab(tabName) {
   document.getElementById(tabName + "Panel").classList.add("active");
   if (tabName === "frames") renderFrames();
   if (tabName === "metrics") renderMetrics();
+  if (tabName === "fragments") renderFragments();
 }
 
 function setFrameViewMode(mode) {
@@ -820,7 +999,7 @@ function renderSummary() {
     cards.push(summaryCard(t(codecTrackCount.labelKey), String(codecTrackCount.count)));
   }
   cards.push(summaryCard(t("summary.warnings"), String(analysis.warnings.length)));
-  elements.summaryPanel.innerHTML = [
+  elements.summaryBody.innerHTML = [
     '<div class="summary-grid">',
     cards.join(""),
     '</div>',
@@ -844,15 +1023,20 @@ function renderBoxNode(node) {
     '<span class="type">' + escapeHtml(node.type) + '</span><span class="size">' + formatBytes(Number(node.size)) + ' @ ' + escapeHtml(node.offset) + '</span></button>' + childHtml + '</div>';
 }
 
-elements.boxTree.addEventListener("click", handleBoxTreeClick);
-elements.boxTree.addEventListener("pointerup", handleBoxTreePointerUp);
-elements.boxTree.addEventListener("keydown", handleBoxTreeKeyDown);
-
 function handleBoxTreeClick(event) {
   activateBoxTreeEvent(event);
 }
 
 function handleBoxTreePointerUp(event) {
+  if (event.button !== undefined && event.button !== 0) return;
+  activateBoxTreeEvent(event);
+}
+
+function handleDocumentBoxTreeClick(event) {
+  activateBoxTreeEvent(event);
+}
+
+function handleDocumentBoxTreePointerUp(event) {
   if (event.button !== undefined && event.button !== 0) return;
   activateBoxTreeEvent(event);
 }
@@ -864,8 +1048,11 @@ function handleBoxTreeKeyDown(event) {
 }
 
 function activateBoxTreeEvent(event) {
+  if (event.__boxTreeSelectionHandled) return;
   const row = findClosestElement(event.target, ".tree-row");
-  if (!row || !state.analysis) return;
+  if (!row || !state.analysis || !isBoxTreeRow(row)) return;
+  event.__boxTreeSelectionHandled = true;
+  if (typeof event.preventDefault === "function") event.preventDefault();
   selectBoxByPath(row.dataset.path, row);
   setActiveTab("boxes");
 }
@@ -877,11 +1064,56 @@ function findClosestElement(target, selector) {
 
 function selectBoxByPath(path, row) {
   if (!state.analysis || !path) return null;
-  state.selectedBox = state.analysis.allBoxes.find((box) => box.path === path) || null;
+  state.boxTreeActivationCount += 1;
+  state.lastBoxTreeActivation = {
+    path,
+    hadRow: Boolean(row),
+    rowInTree: Boolean(row && isBoxTreeRow(row)),
+    matched: false
+  };
+  state.selectedBox = findBoxByPath(path);
+  state.lastBoxTreeActivation.matched = Boolean(state.selectedBox);
   const selectedRow = row || Array.from(elements.boxTree.querySelectorAll(".tree-row")).find((node) => node.dataset.path === path) || null;
   for (const node of elements.boxTree.querySelectorAll(".tree-row")) node.classList.toggle("selected", node === selectedRow);
   renderSelectedBox();
   return state.selectedBox;
+}
+
+function isBoxTreeRow(row) {
+  return Boolean(row && elements.boxTree && typeof elements.boxTree.contains === "function" && elements.boxTree.contains(row));
+}
+
+function findBoxByPath(path) {
+  const fromFlatList = state.analysis.allBoxes.find((box) => box.path === path);
+  if (fromFlatList) return fromFlatList;
+  return findBoxByPathInTree(state.analysis.topBoxes, path);
+}
+
+function findBoxByPathInTree(nodes, path) {
+  for (const node of nodes || []) {
+    if (node.path === path) return node;
+    const childMatch = findBoxByPathInTree(node.children, path);
+    if (childMatch) return childMatch;
+  }
+  return null;
+}
+
+function getBoxSelectionDebug() {
+  const firstRow = elements.boxTree.querySelector(".tree-row");
+  const selectedRow = elements.boxTree.querySelector(".tree-row.selected");
+  return {
+    hasAnalysis: Boolean(state.analysis),
+    topBoxesCount: state.analysis ? state.analysis.topBoxes.length : 0,
+    allBoxesCount: state.analysis ? state.analysis.allBoxes.length : 0,
+    treeRowCount: elements.boxTree.querySelectorAll(".tree-row").length,
+    firstRowPath: firstRow ? firstRow.dataset.path : "",
+    firstBoxPath: state.analysis && state.analysis.allBoxes[0] ? state.analysis.allBoxes[0].path : "",
+    selectedBoxPath: state.selectedBox ? state.selectedBox.path : "",
+    selectedRowPath: selectedRow ? selectedRow.dataset.path : "",
+    activationCount: state.boxTreeActivationCount,
+    lastActivation: state.lastBoxTreeActivation,
+    detailText: elements.boxDetail.textContent || ""
+  };
 }
 
 function renderSelectedBox() {
@@ -926,10 +1158,10 @@ function getLocalizedBoxInfo(type) {
 function renderTracks() {
   const analysis = state.analysis;
   if (!analysis.tracks.length) {
-    elements.tracksPanel.innerHTML = emptyHtml("empty.noTracks");
+    elements.tracksBody.innerHTML = emptyHtml("empty.noTracks");
     return;
   }
-  elements.tracksPanel.innerHTML = renderTrackTable(analysis.tracks);
+  elements.tracksBody.innerHTML = renderTrackTable(analysis.tracks);
   elements.trackFilter.innerHTML = '<option value="">' + escapeHtml(t("option.all")) + '</option>' + analysis.tracks.map((track) => '<option value="' + track.trackId + '">' + escapeHtml(formatTrackLabel(track)) + '</option>').join("");
   populateMetricsTrackFilter(analysis.tracks);
 }
@@ -1114,30 +1346,48 @@ function buildTrackMetrics(track, rows, windowSize) {
 
 function buildMovingAveragePoints(track, rows, windowSize) {
   const points = [];
-  const windowRows = [];
+  if (!rows.length) return points;
+  const boundedWindowSize = Math.max(1, Math.min(Math.floor(Number(windowSize) || 1), rows.length));
+  const sampleMetrics = rows.map((row, index) => ({
+    row,
+    size: Number(row.size) || 0,
+    durationSeconds: getSampleDurationSeconds(row, track, rows, index)
+  }));
   let windowBytes = 0;
   let windowDuration = 0;
-  for (let index = 0; index < rows.length; index += 1) {
-    const row = rows[index];
-    const durationSeconds = getSampleDurationSeconds(row, track, rows, index);
-    const size = Number(row.size) || 0;
-    windowRows.push({ row, size, durationSeconds });
-    windowBytes += size;
-    windowDuration += durationSeconds;
-    while (windowRows.length > windowSize) {
-      const removed = windowRows.shift();
-      windowBytes -= removed.size;
-      windowDuration -= removed.durationSeconds;
-    }
-    const pointCount = windowRows.length;
+  for (let index = 0; index < boundedWindowSize; index += 1) {
+    windowBytes += sampleMetrics[index].size;
+    windowDuration += sampleMetrics[index].durationSeconds;
+  }
+  const windowCount = sampleMetrics.length - boundedWindowSize + 1;
+  for (let startIndex = 0; startIndex < windowCount; startIndex += 1) {
+    const first = sampleMetrics[startIndex];
+    const last = sampleMetrics[startIndex + boundedWindowSize - 1];
     points.push({
-      time: getRowTimeSeconds(row),
+      time: getWindowCenterTimeSeconds(first, last),
       bitrate: windowDuration > 0 ? windowBytes * 8 / windowDuration : 0,
-      fps: windowDuration > 0 ? pointCount / windowDuration : 0,
-      row
+      fps: windowDuration > 0 ? boundedWindowSize / windowDuration : 0,
+      sampleCount: boundedWindowSize,
+      windowStartSampleIndex: first.row.sampleIndex,
+      windowEndSampleIndex: last.row.sampleIndex,
+      row: first.row
     });
+    const nextIndex = startIndex + boundedWindowSize;
+    if (nextIndex < sampleMetrics.length) {
+      windowBytes += sampleMetrics[nextIndex].size - first.size;
+      windowDuration += sampleMetrics[nextIndex].durationSeconds - first.durationSeconds;
+    }
   }
   return points;
+}
+
+function getWindowCenterTimeSeconds(first, last) {
+  const windowStartTime = getRowTimeSeconds(first.row);
+  const windowEndTime = getRowTimeSeconds(last.row) + Math.max(0, last.durationSeconds);
+  if (!Number.isFinite(windowStartTime) || !Number.isFinite(windowEndTime) || windowEndTime <= windowStartTime) {
+    return windowStartTime;
+  }
+  return windowStartTime + (windowEndTime - windowStartTime) / 2;
 }
 
 function getSampleDurationSeconds(row, track, rows, index) {
@@ -1335,6 +1585,14 @@ function compareRowsByPresentationTime(left, right) {
   return left.sampleIndex - right.sampleIndex;
 }
 
+function compareRowsByDecodeTime(left, right) {
+  const leftTime = getRowDecodeTimeSeconds(left);
+  const rightTime = getRowDecodeTimeSeconds(right);
+  if (leftTime !== rightTime) return leftTime - rightTime;
+  if (left.trackId !== right.trackId) return left.trackId - right.trackId;
+  return left.sampleIndex - right.sampleIndex;
+}
+
 function getRowTrack(row) {
   if (!state.analysis) return null;
   return state.analysis.tracks.find((track) => track.trackId === row.trackId) || null;
@@ -1342,8 +1600,9 @@ function getRowTrack(row) {
 
 function getRowTimeSeconds(row) {
   const track = getRowTrack(row);
-  if (!track || !track.timescale) return Number(row.pts || row.dts || row.sampleIndex || 0);
-  return Number(row.pts || row.dts || 0) / Number(track.timescale);
+  const timestamp = getFirstFiniteNumber([row.pts, row.dts], null);
+  if (!track || !track.timescale) return timestamp === null ? getFirstFiniteNumber([row.sampleIndex], 0) : timestamp;
+  return (timestamp === null ? 0 : timestamp) / Number(track.timescale);
 }
 
 function getRowDurationSeconds(row) {
@@ -1351,6 +1610,22 @@ function getRowDurationSeconds(row) {
   const rowDuration = Number(row.duration);
   if (!track || !track.timescale || !Number.isFinite(rowDuration) || rowDuration <= 0) return 0;
   return rowDuration / Number(track.timescale);
+}
+
+function getRowDecodeTimeSeconds(row) {
+  const track = getRowTrack(row);
+  const timestamp = getFirstFiniteNumber([row.dts, row.pts], null);
+  if (!track || !track.timescale) return timestamp === null ? getFirstFiniteNumber([row.sampleIndex], 0) : timestamp;
+  return (timestamp === null ? 0 : timestamp) / Number(track.timescale);
+}
+
+function getFirstFiniteNumber(values, fallbackValue) {
+  for (const value of values) {
+    if (value === undefined || value === null || value === "") continue;
+    const numberValue = Number(value);
+    if (Number.isFinite(numberValue)) return numberValue;
+  }
+  return fallbackValue;
 }
 
 function renderGraphAxis() {
@@ -1461,44 +1736,144 @@ function formatFrameTypeLabel(type) {
 
 function formatGraphTime(row) {
   const track = getRowTrack(row);
-  if (!track || !track.timescale) return String(row.pts || row.dts || row.sampleIndex);
-  return formatTime(row.pts, track.timescale);
+  const timestamp = getFirstFiniteNumber([row.pts, row.dts], null);
+  if (!track || !track.timescale || timestamp === null) {
+    return String(timestamp === null ? getFirstFiniteNumber([row.sampleIndex], 0) : timestamp);
+  }
+  return formatTime(timestamp, track.timescale);
 }
 
 function renderFragments() {
-  const analysis = state.analysis;
-  const moofs = analysis.topBoxes.filter((box) => box.type === "moof");
-  if (!moofs.length) {
-    elements.fragmentsPanel.innerHTML = emptyHtml("empty.noMoof");
+  if (!state.analysis) {
+    state.fragmentRows = [];
+    elements.fragmentCountText.textContent = t("count.rows", { count: 0 });
+    elements.fragmentsBody.innerHTML = emptyHtml("empty.noFragments");
     return;
   }
-  elements.fragmentsPanel.innerHTML = renderDataGridTable({
+  const analysis = state.analysis;
+  const fragmentRows = buildFragmentRows(analysis);
+  state.fragmentRows = fragmentRows;
+  elements.fragmentCountText.textContent = t("count.rows", { count: fragmentRows.length });
+  if (state.selectedFragmentIndex && !fragmentRows.some((fragment) => fragment.fragmentIndex === state.selectedFragmentIndex)) {
+    state.selectedFragmentIndex = 0;
+    state.lastPlaybackSynchronizationFragmentIndex = 0;
+  }
+  if (!fragmentRows.length) {
+    elements.fragmentsBody.innerHTML = emptyHtml("empty.noMoof");
+    return;
+  }
+  elements.fragmentsBody.innerHTML = renderDataGridTable({
     className: "fragments-grid",
-    minimumWidth: "680px",
+    minimumWidth: "1040px",
     columns: [
       { label: "#", width: "72px" },
+      { label: t("column.startTime"), width: "120px" },
+      { label: t("column.endTime"), width: "120px" },
+      { label: t("column.duration"), width: "105px" },
+      { label: t("column.startFrame"), width: "120px" },
+      { label: t("column.samples"), width: "95px" },
       { label: t("column.offset"), width: "minmax(150px, 1fr)" },
       { label: t("column.size"), width: "130px" },
       { label: "traf", width: "90px" },
-      { label: "trun", width: "90px" },
-      { label: t("column.samples"), width: "110px" }
+      { label: "trun", width: "90px" }
     ],
-    rows: moofs.map((moof, index) => {
-      const trafs = (moof.children || []).filter((child) => child.type === "traf");
-      const truns = findDescendants(moof, "trun", []);
-      const samples = truns.reduce((sum, trun) => sum + (trun.fields.sampleCount || 0), 0);
+    rows: fragmentRows.map((fragment) => {
+      const selectedClass = fragment.fragmentIndex === state.selectedFragmentIndex ? "selected" : "";
+      const ariaLabel = t("aria.seekFragment", {
+        fragmentIndex: fragment.fragmentIndex,
+        time: formatFragmentTime(fragment.startTimeSeconds)
+      });
       return {
+        className: "clickable " + selectedClass,
+        attributes: {
+          role: "button",
+          tabindex: "0",
+          "data-fragment-index": fragment.fragmentIndex,
+          "aria-label": ariaLabel
+        },
         cells: [
-          index + 1,
-          { value: moof.offset, title: moof.offset },
-          moof.size,
-          trafs.length,
-          truns.length,
-          samples
+          fragment.fragmentIndex,
+          formatFragmentTime(fragment.startTimeSeconds),
+          formatFragmentTime(fragment.endTimeSeconds),
+          formatFragmentDuration(fragment),
+          fragment.startFrameLabel,
+          fragment.sampleCount,
+          { value: fragment.offset, title: fragment.offset },
+          fragment.size,
+          fragment.trafCount,
+          fragment.trunCount
         ]
       };
     })
   });
+}
+
+function buildFragmentRows(analysis) {
+  const moofs = analysis.topBoxes
+    .filter((box) => box.type === "moof")
+    .slice()
+    .sort((left, right) => Number(left.offsetBig - right.offsetBig));
+  if (!moofs.length) return [];
+  const rowsByFragmentIndex = new Map();
+  for (const row of analysis.sampleRows) {
+    const fragmentIndex = Number(row.fragmentIndex);
+    if (!Number.isFinite(fragmentIndex) || fragmentIndex <= 0) continue;
+    if (!rowsByFragmentIndex.has(fragmentIndex)) rowsByFragmentIndex.set(fragmentIndex, []);
+    rowsByFragmentIndex.get(fragmentIndex).push(row);
+  }
+  return moofs.map((moof, index) => {
+    const fragmentIndex = index + 1;
+    const trafs = (moof.children || []).filter((child) => child.type === "traf");
+    const truns = findDescendants(moof, "trun", []);
+    const declaredSampleCount = truns.reduce((sum, trun) => sum + (trun.fields.sampleCount || 0), 0);
+    const sampleRows = (rowsByFragmentIndex.get(fragmentIndex) || []).slice().sort(compareRowsByDecodeTime);
+    const videoRows = sampleRows.filter((row) => {
+      const track = getRowTrack(row);
+      return track && track.handlerType === "vide";
+    });
+    const timeRows = videoRows.length ? videoRows : sampleRows;
+    const startFrameRow = (videoRows.length ? videoRows : sampleRows)[0] || null;
+    const timeRange = getRowsDecodeTimeRangeSeconds(timeRows);
+    return {
+      fragmentIndex,
+      offset: moof.offset,
+      size: moof.size,
+      trafCount: trafs.length,
+      trunCount: truns.length,
+      declaredSampleCount,
+      sampleCount: sampleRows.length || declaredSampleCount,
+      startTimeSeconds: timeRange.start,
+      endTimeSeconds: timeRange.end,
+      startFrameRow,
+      startFrameLabel: startFrameRow ? "#" + startFrameRow.sampleIndex + " T" + startFrameRow.trackId : t("value.notAvailable"),
+      sampleRows,
+      moof
+    };
+  });
+}
+
+function getRowsDecodeTimeRangeSeconds(rows) {
+  if (!rows.length) return { start: NaN, end: NaN };
+  let startTimeSeconds = Infinity;
+  let endTimeSeconds = -Infinity;
+  for (const row of rows) {
+    const rowTimeSeconds = getRowDecodeTimeSeconds(row);
+    if (!Number.isFinite(rowTimeSeconds)) continue;
+    const rowEndTimeSeconds = rowTimeSeconds + Math.max(0, getRowDurationSeconds(row));
+    startTimeSeconds = Math.min(startTimeSeconds, rowTimeSeconds);
+    endTimeSeconds = Math.max(endTimeSeconds, rowEndTimeSeconds);
+  }
+  if (!Number.isFinite(startTimeSeconds) || !Number.isFinite(endTimeSeconds)) return { start: NaN, end: NaN };
+  return { start: startTimeSeconds, end: endTimeSeconds };
+}
+
+function formatFragmentTime(timeSeconds) {
+  return Number.isFinite(timeSeconds) ? formatMetricNumber(timeSeconds, 3) + "s" : t("fragments.noTimeRange");
+}
+
+function formatFragmentDuration(fragment) {
+  const durationSeconds = fragment.endTimeSeconds - fragment.startTimeSeconds;
+  return Number.isFinite(durationSeconds) && durationSeconds >= 0 ? formatMetricNumber(durationSeconds, 3) + "s" : t("fragments.noTimeRange");
 }
 
 function renderWarnings() {
@@ -1513,10 +1888,10 @@ function renderWarnings() {
     }
   }
   if (!warnings.length) {
-    elements.warningsPanel.innerHTML = emptyHtml("empty.noWarnings");
+    elements.warningsBody.innerHTML = emptyHtml("empty.noWarnings");
     return;
   }
-  elements.warningsPanel.innerHTML = '<div class="warning-list">' + warnings.map((warning) => '<div class="warning-item">' + escapeHtml(warning) + '</div>').join("") + '</div>';
+  elements.warningsBody.innerHTML = '<div class="warning-list">' + warnings.map((warning) => '<div class="warning-item">' + escapeHtml(warning) + '</div>').join("") + '</div>';
 }
 
 function renderKv(values) {

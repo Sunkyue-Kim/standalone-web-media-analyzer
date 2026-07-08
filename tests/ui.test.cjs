@@ -196,9 +196,11 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   for (const id of [
     "fileInput", "languageSelect", "sampleField", "sampleSelect", "openButton",
     "scanButton", "cancelButton", "exportJsonButton", "exportCsvButton",
-    "mediaPreviewBar", "summaryPanel", "boxesPanel", "tracksPanel",
-    "framesPanel", "metricsPanel", "fragmentsPanel", "warningsPanel",
+    "mediaPreviewBar", "summaryPanel", "summaryBody", "boxesPanel", "tracksPanel",
+    "tracksBody", "framesPanel", "metricsPanel", "fragmentsPanel", "warningsPanel",
+    "warningsBody",
     "frameGraphButton", "frameTableButton", "autoPlaybackSynchronizationToggle",
+    "fragmentPlaybackSynchronizationToggle", "fragmentCountText", "fragmentsBody",
     "frameWrap", "frameHeader", "frameScroller", "graphScroller"
   ]) {
     assert.match(sourceHtml, new RegExp("id=\"" + id + "\""));
@@ -212,6 +214,8 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceHtml, /id="autoPlaybackSynchronizationToggle" type="checkbox" checked/);
   assert.match(sourceUi, /requestVideoFrameCallback/);
   assert.match(sourceUi, /requestAnimationFrame\(runPlaybackSynchronizationStep\)/);
+  assert.match(sourceUi, /synchronizeFragmentSelectionToPlayback/);
+  assert.match(sourceUi, /handleFragmentRowPointerActivation/);
   assert.match(sourceUi, /createRecyclerView/);
   assert.match(sourceUi, /createDataGridLayout/);
   assert.match(sourceUi, /renderDataGridCells/);

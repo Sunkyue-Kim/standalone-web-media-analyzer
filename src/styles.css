@@ -65,8 +65,8 @@
     }
 
     .brand {
-      min-width: 232px;
-      flex: 0 1 280px;
+      min-width: 300px;
+      flex: 0 0 300px;
     }
 
     .brand h1 {
@@ -380,6 +380,22 @@
       display: block;
     }
 
+    .tab-panel.active {
+      display: grid;
+      grid-template-rows: minmax(0, 1fr);
+      min-width: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .tab-panel-body {
+      min-width: 0;
+      max-width: 100%;
+      min-height: 0;
+      overflow: auto;
+      padding: 18px;
+    }
+
     .boxes-panel.active {
       display: block;
       padding: 0;
@@ -435,6 +451,13 @@
       overflow: hidden;
     }
 
+    .fragments-panel.active {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      padding: 0;
+      overflow: hidden;
+    }
+
     .metrics-controls {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -445,12 +468,42 @@
       align-items: end;
     }
 
+    .fragments-controls {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) max-content;
+      align-items: center;
+      gap: 10px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      background: #f8fafc;
+      min-width: 0;
+    }
+
+    .fragments-controls .checkbox-field {
+      flex: none;
+      width: auto;
+      white-space: nowrap;
+    }
+
+    .fragments-controls .frame-count-text {
+      flex: none;
+      width: auto;
+      justify-self: end;
+      text-align: right;
+    }
+
     .metrics-body {
       min-height: 0;
       overflow: auto;
       padding: 14px;
       display: grid;
       gap: 14px;
+    }
+
+    .fragments-body {
+      min-height: 0;
+      overflow: auto;
+      padding: 14px;
     }
 
     .metrics-summary-grid {
@@ -1294,9 +1347,24 @@
         overflow: visible;
         padding: 12px;
       }
+      .tab-panel.active {
+        min-height: calc(100vh - 48px);
+        min-height: calc(100dvh - 48px);
+        overflow: hidden;
+        padding: 0;
+      }
+      .tab-panel-body {
+        min-width: 0;
+        max-width: 100%;
+        min-height: calc(100vh - 48px);
+        min-height: calc(100dvh - 48px);
+        overflow: auto;
+        padding: 12px;
+      }
       .boxes-panel.active,
       .frames-panel.active,
-      .metrics-panel.active {
+      .metrics-panel.active,
+      .fragments-panel.active {
         min-height: calc(100vh - 48px);
         min-height: calc(100dvh - 48px);
         overflow: visible;
@@ -1326,7 +1394,19 @@
       .metrics-panel.active {
         grid-template-rows: auto minmax(320px, auto);
       }
+      .fragments-panel.active {
+        grid-template-rows: auto minmax(320px, auto);
+      }
+      .fragments-controls {
+        grid-template-columns: minmax(0, 1fr) max-content;
+        padding: 10px;
+      }
       .metrics-body {
+        min-height: 320px;
+        overflow: visible;
+        padding: 10px;
+      }
+      .fragments-body {
         min-height: 320px;
         overflow: visible;
         padding: 10px;

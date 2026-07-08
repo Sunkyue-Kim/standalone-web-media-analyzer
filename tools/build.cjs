@@ -37,22 +37,11 @@ async function buildSingleFileOutputs(templateHtml) {
     js: normalJs
   });
 
-  const minifiedHtmlBeforeHtmlPass = inlineAssets({
+  const minifiedHtml = await buildMinifiedSingleFileHtml({
     templateHtml,
     css: minifiedCss,
     js: minifiedJs
   });
-
-  const minifiedHtml = (await minifyHtml(minifiedHtmlBeforeHtmlPass, {
-    collapseBooleanAttributes: true,
-    collapseWhitespace: true,
-    conservativeCollapse: true,
-    minifyCSS: false,
-    minifyJS: false,
-    removeAttributeQuotes: false,
-    removeComments: true,
-    removeOptionalTags: false
-  })).trim() + "\n";
 
   await fs.writeFile(outputHtmlPath, normalHtml, "utf8");
   await fs.writeFile(outputPagesHtmlPath, minifiedHtml, "utf8");
@@ -231,20 +220,56 @@ function localSourcePlugin() {
 }
 
 function inlineAssets({ templateHtml, css, js }) {
+  return replaceTemplateAssets({
+    templateHtml,
+    cssReplacement: `<style>\n${css}\n</style>`,
+    scriptReplacement: `<script>\n${escapeInlineScript(js)}\n</script>`
+  });
+}
+
+function escapeInlineScript(script) {
+  return script
+    .replace(/<\/script/gi, "<\\/script")
+    .replace(/<!--/g, "\\x3C!--");
+}
+
+async function buildMinifiedSingleFileHtml({ templateHtml, css, js }) {
+  const stylePlaceholder = "MP4_ANALYZER_INLINE_STYLE_PLACEHOLDER";
+  const scriptPlaceholder = "MP4_ANALYZER_INLINE_SCRIPT_PLACEHOLDER";
+  const htmlWithPlaceholders = replaceTemplateAssets({
+    templateHtml,
+    cssReplacement: `<style>${stylePlaceholder}</style>`,
+    scriptReplacement: `<script>${scriptPlaceholder}</script>`
+  });
+  const minifiedShell = await minifyHtml(htmlWithPlaceholders, {
+    collapseBooleanAttributes: true,
+    collapseWhitespace: true,
+    conservativeCollapse: true,
+    minifyCSS: false,
+    minifyJS: false,
+    removeAttributeQuotes: false,
+    removeComments: true,
+    removeOptionalTags: false
+  });
+  return minifiedShell
+    .replace(stylePlaceholder, css)
+    .replace(scriptPlaceholder, "\n" + escapeInlineScript(js) + "\n")
+    .trim() + "\n";
+}
+
+function replaceTemplateAssets({ templateHtml, cssReplacement, scriptReplacement }) {
   const withCss = templateHtml.replace(
     /<link\s+rel="stylesheet"\s+href="\.\/styles\.css"\s*>/i,
-    `<style>\n${css}\n</style>`
+    cssReplacement
   );
   return withCss.replace(
     /<script\s+src="\.\/app\.js"><\/script>/i,
-    `<script>\n${js}\n</script>`
+    scriptReplacement
   );
 }
 
 async function verifySingleFileHtml(filePath, html) {
-  const scriptMatch = html.match(/<script>([\s\S]*)<\/script>/i);
-  if (!scriptMatch) throw new Error(`${filePath} has no inline script.`);
-  const script = scriptMatch[1];
+  const script = extractSingleInlineScript(filePath, html);
   new Function(script);
 
   const previousWindow = global.window;
@@ -263,6 +288,15 @@ async function verifySingleFileHtml(filePath, html) {
     if (previousDocument === undefined) delete global.document;
     else global.document = previousDocument;
   }
+}
+
+function extractSingleInlineScript(filePath, html) {
+  const startMarker = "<script>";
+  const endMarker = "</script>";
+  const startIndex = html.indexOf(startMarker);
+  const endIndex = html.lastIndexOf(endMarker);
+  if (startIndex < 0 || endIndex <= startIndex) throw new Error(`${filePath} has no inline script.`);
+  return html.slice(startIndex + startMarker.length, endIndex);
 }
 
 async function verifyChunkedHtml({ html, appOutputPath, workerOutputPath }) {

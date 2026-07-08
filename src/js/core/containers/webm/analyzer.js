@@ -107,7 +107,7 @@ async function analyzeWebmFile(file, options) {
     track.sampleCount = sampleRows.filter((row) => row.trackId === track.trackId).length;
     const endTime = sampleRows
       .filter((row) => row.trackId === track.trackId)
-      .reduce((maxValue, row) => Math.max(maxValue, Number(row.pts || row.dts || 0) + Number(row.duration || 0)), 0);
+      .reduce((maxValue, row) => Math.max(maxValue, getSampleTimestamp(row) + Number(row.duration || 0)), 0);
     if (!Number(track.duration)) track.duration = String(endTime);
   }
   onProgress("Structure parsed", 100);
@@ -120,6 +120,15 @@ async function analyzeWebmFile(file, options) {
     sampleRows,
     warnings
   };
+}
+
+function getSampleTimestamp(row) {
+  for (const value of [row.pts, row.dts]) {
+    if (value === undefined || value === null || value === "") continue;
+    const numberValue = Number(value);
+    if (Number.isFinite(numberValue)) return numberValue;
+  }
+  return 0;
 }
 
 async function parseEbmlElements(reader, startBig, endBig, parentPath, depth, warnings, onProgress) {

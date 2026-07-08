@@ -25,6 +25,7 @@ const BOOTSTRAP_I18N = {
     "empty.noFragments": "No fragments parsed.",
     "empty.noWarnings": "No warnings.",
     "field.sample": "Sample",
+    "field.autoFragmentPlaybackSynchronization": "Sync fragment to playback",
     "option.samplePlaceholder": "Sample files...",
     "drop.title": "Drop media file to analyze",
     "drop.subtitle": "Release anywhere in this window for MP4/fMP4/MOV, WebM, MP3, or Ogg Opus parsing."
@@ -55,6 +56,7 @@ const BOOTSTRAP_I18N = {
     "empty.noFragments": "파싱된 프래그먼트가 없습니다.",
     "empty.noWarnings": "경고가 없습니다.",
     "field.sample": "샘플",
+    "field.autoFragmentPlaybackSynchronization": "프래그먼트 재생 위치 동기화",
     "option.samplePlaceholder": "샘플 파일 선택...",
     "drop.title": "분석할 미디어 파일 드롭",
     "drop.subtitle": "이 창 어디에서든 MP4/fMP4/MOV, WebM, MP3, Ogg Opus 파일을 놓으면 파싱합니다."

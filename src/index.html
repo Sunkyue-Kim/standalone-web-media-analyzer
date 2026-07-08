@@ -25,7 +25,7 @@
         <label class="language-field">
           <span data-i18n="language.label">Language</span>
           <select id="languageSelect" aria-label="Language" data-i18n-aria-label="language.label">
-            <option value="en">ENG</option>
+            <option value="en">English</option>
             <option value="ko">한국어</option>
           </select>
         </label>
@@ -64,8 +64,10 @@
           <button class="tab" data-tab="warnings" data-i18n="tab.warnings">Warnings</button>
         </nav>
         <section class="content">
-          <div id="summaryPanel" class="panel active">
-            <div class="empty" data-i18n="empty.summary">Open or drop a file to inspect MP4 structure and samples.</div>
+          <div id="summaryPanel" class="panel tab-panel active">
+            <div id="summaryBody" class="tab-panel-body">
+              <div class="empty" data-i18n="empty.summary">Open or drop a file to inspect MP4 structure and samples.</div>
+            </div>
           </div>
           <div id="boxesPanel" class="panel boxes-panel">
             <div class="boxes-layout">
@@ -78,8 +80,10 @@
               </section>
             </div>
           </div>
-          <div id="tracksPanel" class="panel">
-            <div class="empty" data-i18n="empty.noTracks">No tracks parsed.</div>
+          <div id="tracksPanel" class="panel tab-panel">
+            <div id="tracksBody" class="tab-panel-body">
+              <div class="empty" data-i18n="empty.noTracks">No tracks parsed.</div>
+            </div>
           </div>
           <div id="framesPanel" class="panel frames-panel">
             <div class="filters">
@@ -173,11 +177,22 @@
               <div class="empty" data-i18n="empty.metrics">Open a file to inspect bitrate and FPS metrics.</div>
             </div>
           </div>
-          <div id="fragmentsPanel" class="panel">
-            <div class="empty" data-i18n="empty.noFragments">No fragments parsed.</div>
+          <div id="fragmentsPanel" class="panel fragments-panel">
+            <div class="fragments-controls">
+              <label class="checkbox-field">
+                <input id="fragmentPlaybackSynchronizationToggle" type="checkbox" checked>
+                <span data-i18n="field.autoFragmentPlaybackSynchronization">Sync fragment to playback</span>
+              </label>
+              <span id="fragmentCountText" class="frame-count-text">0 rows</span>
+            </div>
+            <div id="fragmentsBody" class="fragments-body">
+              <div class="empty" data-i18n="empty.noFragments">No fragments parsed.</div>
+            </div>
           </div>
-          <div id="warningsPanel" class="panel">
-            <div class="empty" data-i18n="empty.noWarnings">No warnings.</div>
+          <div id="warningsPanel" class="panel tab-panel">
+            <div id="warningsBody" class="tab-panel-body">
+              <div class="empty" data-i18n="empty.noWarnings">No warnings.</div>
+            </div>
           </div>
         </section>
       </main>
