@@ -32,6 +32,9 @@ test("registered containers analyze bundled samples and frame scanner fills know
   const loader = await createSourceModuleLoader();
   const containers = await loader.import("src/js/core/containers/registry.js");
   const frameScanner = await loader.import("src/js/core/codecs/frame-scanner.js");
+  const { BOX_TYPE_INFO } = await loader.import("src/js/core/containers/isobmff/box-types.js");
+  const { BOX_TYPE_I18N } = await loader.import("src/js/i18n/catalogs.js");
+  const seenBoxTypes = new Set();
 
   for (const [fileName, type, containerId, trackCount, sampleCount, expectedFrameTypes] of sampleExpectations) {
     const progress = [];
@@ -47,12 +50,19 @@ test("registered containers analyze bundled samples and frame scanner fills know
     assert.equal(analysis.sampleRows.length, sampleCount, fileName);
     assert.equal(analysis.warnings.length, 0, fileName);
     assert.ok(progress.some((entry) => entry[1] === 100), fileName + " should report completion");
+    for (const box of analysis.allBoxes) seenBoxTypes.add(box.type);
 
     const frameTypeCounts = countFrameTypes(analysis.sampleRows);
     for (const expectedFrameType of expectedFrameTypes) {
       assert.ok(frameTypeCounts[expectedFrameType] > 0, fileName + " missing " + expectedFrameType);
     }
     assert.equal(frameTypeCounts.unknown || 0, 0, fileName);
+  }
+
+  for (const boxType of seenBoxTypes) {
+    assert.ok(!boxType.startsWith("EBML_"), boxType + " should have a parsed WebM/Matroska element name.");
+    assert.ok(BOX_TYPE_INFO[boxType], boxType + " should have an English box description.");
+    assert.ok(BOX_TYPE_I18N.ko[boxType], boxType + " should have a Korean box description.");
   }
 });
 

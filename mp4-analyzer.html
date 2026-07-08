@@ -1401,13 +1401,73 @@ button:disabled {
       name: "EBML Header",
       description: "Extensible Binary Meta Language header that identifies a Matroska/WebM-style file."
     },
+    EBMLVersion: {
+      name: "EBML Version",
+      description: "Version of the EBML document structure used by the file."
+    },
+    EBMLReadVersion: {
+      name: "EBML Read Version",
+      description: "Minimum EBML parser version required to read this file."
+    },
+    EBMLMaxIDLength: {
+      name: "EBML Maximum ID Length",
+      description: "Maximum byte length used by EBML element IDs in this file."
+    },
+    EBMLMaxSizeLength: {
+      name: "EBML Maximum Size Length",
+      description: "Maximum byte length used by EBML element size fields in this file."
+    },
+    DocType: {
+      name: "Document Type",
+      description: "EBML document type, such as webm or matroska."
+    },
+    DocTypeVersion: {
+      name: "Document Type Version",
+      description: "Version of the declared EBML document type."
+    },
+    DocTypeReadVersion: {
+      name: "Document Type Read Version",
+      description: "Minimum reader version required for the declared EBML document type."
+    },
     Segment: {
       name: "Matroska Segment",
       description: "Top-level WebM/Matroska segment containing metadata, tracks, clusters, and cues."
     },
+    SeekHead: {
+      name: "Seek Head",
+      description: "WebM/Matroska index that points to important top-level elements in the segment."
+    },
+    Seek: {
+      name: "Seek Entry",
+      description: "One entry in SeekHead, pairing an element ID with its segment-relative position."
+    },
+    SeekID: {
+      name: "Seek ID",
+      description: "Binary EBML element ID referenced by a Seek entry."
+    },
+    SeekPosition: {
+      name: "Seek Position",
+      description: "Segment-relative byte position of the element referenced by a Seek entry."
+    },
     Info: {
       name: "Segment Info",
       description: "WebM/Matroska timing metadata such as timecode scale and duration."
+    },
+    TimecodeScale: {
+      name: "Timecode Scale",
+      description: "Nanoseconds per timecode unit used to convert WebM timestamps to real time."
+    },
+    Duration: {
+      name: "Duration",
+      description: "Segment duration expressed in units of TimecodeScale."
+    },
+    MuxingApp: {
+      name: "Muxing Application",
+      description: "Application or library that muxed the WebM/Matroska file."
+    },
+    WritingApp: {
+      name: "Writing Application",
+      description: "Application that wrote or finalized the WebM/Matroska file."
     },
     Tracks: {
       name: "Tracks",
@@ -1417,9 +1477,89 @@ button:disabled {
       name: "Track Entry",
       description: "Describes one WebM/Matroska track, including type, codec, dimensions, and audio settings."
     },
+    TrackNumber: {
+      name: "Track Number",
+      description: "Small integer used by blocks to identify which track a payload belongs to."
+    },
+    TrackUID: {
+      name: "Track UID",
+      description: "Stable unique identifier for a WebM/Matroska track."
+    },
+    TrackType: {
+      name: "Track Type",
+      description: "Numeric track category such as video, audio, subtitles, or metadata."
+    },
+    CodecID: {
+      name: "Codec ID",
+      description: "WebM/Matroska codec identifier such as V_VP9 or A_OPUS."
+    },
+    CodecPrivate: {
+      name: "Codec Private",
+      description: "Codec-specific initialization bytes, such as OpusHead for Opus tracks."
+    },
+    DefaultDuration: {
+      name: "Default Duration",
+      description: "Default duration of each block or frame for this track, in nanoseconds."
+    },
+    Language: {
+      name: "Language",
+      description: "Language code associated with the track."
+    },
+    FlagDefault: {
+      name: "Default Track Flag",
+      description: "Indicates whether players should treat this track as default."
+    },
+    FlagInterlaced: {
+      name: "Interlaced Flag",
+      description: "Indicates whether video frames in this track are interlaced."
+    },
+    FlagLacing: {
+      name: "Lacing Flag",
+      description: "Indicates whether blocks in this track may use lacing to store multiple frames."
+    },
+    CodecDelay: {
+      name: "Codec Delay",
+      description: "Codec delay or pre-skip in nanoseconds, commonly used by Opus."
+    },
+    SeekPreRoll: {
+      name: "Seek Pre-roll",
+      description: "Amount of audio to decode before the seek target, commonly used by Opus."
+    },
+    Video: {
+      name: "Video Settings",
+      description: "WebM/Matroska video track settings such as pixel dimensions."
+    },
+    PixelWidth: {
+      name: "Pixel Width",
+      description: "Stored width of the encoded video frame in pixels."
+    },
+    PixelHeight: {
+      name: "Pixel Height",
+      description: "Stored height of the encoded video frame in pixels."
+    },
+    Audio: {
+      name: "Audio Settings",
+      description: "WebM/Matroska audio track settings such as sampling rate and channel count."
+    },
+    SamplingFrequency: {
+      name: "Sampling Frequency",
+      description: "Audio sampling frequency for this track."
+    },
+    Channels: {
+      name: "Channels",
+      description: "Number of audio channels in this track."
+    },
+    BitDepth: {
+      name: "Bit Depth",
+      description: "Audio bit depth when the track declares one."
+    },
     Cluster: {
       name: "Cluster",
       description: "WebM/Matroska media data cluster containing timestamped blocks."
+    },
+    Timecode: {
+      name: "Cluster Timecode",
+      description: "Base timecode for blocks contained in this cluster."
     },
     SimpleBlock: {
       name: "Simple Block",
@@ -1432,6 +1572,78 @@ button:disabled {
     Block: {
       name: "Block",
       description: "Encoded WebM/Matroska frame payload inside a BlockGroup."
+    },
+    DiscardPadding: {
+      name: "Discard Padding",
+      description: "Amount of padding to discard from a decoded block, often used for audio trimming."
+    },
+    Cues: {
+      name: "Cues",
+      description: "WebM/Matroska random-access index containing cue points."
+    },
+    CuePoint: {
+      name: "Cue Point",
+      description: "One random-access point in the WebM/Matroska cue index."
+    },
+    CueTime: {
+      name: "Cue Time",
+      description: "Timestamp of a cue point."
+    },
+    CueTrackPositions: {
+      name: "Cue Track Positions",
+      description: "Cluster and track position information for a cue point."
+    },
+    CueTrack: {
+      name: "Cue Track",
+      description: "Track number associated with a cue position."
+    },
+    CueClusterPosition: {
+      name: "Cue Cluster Position",
+      description: "Segment-relative byte position of the cluster for a cue point."
+    },
+    CueRelativePosition: {
+      name: "Cue Relative Position",
+      description: "Byte position of the referenced block relative to the containing cluster."
+    },
+    Tags: {
+      name: "Tags",
+      description: "Container for WebM/Matroska metadata tags."
+    },
+    Tag: {
+      name: "Tag",
+      description: "One WebM/Matroska metadata tag entry."
+    },
+    Targets: {
+      name: "Targets",
+      description: "Declares which segment, track, chapter, or attachment a tag applies to."
+    },
+    TagTrackUID: {
+      name: "Tag Track UID",
+      description: "Track UID targeted by a WebM/Matroska metadata tag."
+    },
+    SimpleTag: {
+      name: "Simple Tag",
+      description: "A single WebM/Matroska metadata key/value tag."
+    },
+    TagName: {
+      name: "Tag Name",
+      description: "Name or key of a WebM/Matroska metadata tag."
+    },
+    TagString: {
+      name: "Tag String",
+      description: "Text value of a WebM/Matroska metadata tag."
+    },
+    TagLanguage: {
+      name: "Tag Language",
+      description: "Language code for a WebM/Matroska metadata tag value."
+    },
+    TagDefault: {
+      name: "Tag Default",
+      description: "Indicates whether this tag value is the default for its language."
+    },
+    Void: {
+      name: "Void",
+      description: "Unused EBML padding that can be overwritten without changing file layout."
     },
     OggPage: {
       name: "Ogg Page",
@@ -1664,6 +1876,10 @@ button:disabled {
     ilst: {
       name: "Item List Box",
       description: "QuickTime/iTunes metadata item list."
+    },
+    "\xA9too": {
+      name: "Encoding Tool Metadata Item",
+      description: "QuickTime/iTunes metadata item that usually stores the encoder or muxing tool name."
     },
     udta: {
       name: "User Data Box",
@@ -3719,9 +3935,14 @@ button:disabled {
     [17029, "DocTypeReadVersion"],
     [408125543, "Segment"],
     [290298740, "SeekHead"],
+    [19899, "Seek"],
+    [21419, "SeekID"],
+    [21420, "SeekPosition"],
     [357149030, "Info"],
     [2807729, "TimecodeScale"],
     [17545, "Duration"],
+    [19840, "MuxingApp"],
+    [22337, "WritingApp"],
     [374648427, "Tracks"],
     [174, "TrackEntry"],
     [215, "TrackNumber"],
@@ -3730,6 +3951,12 @@ button:disabled {
     [134, "CodecID"],
     [25506, "CodecPrivate"],
     [2352003, "DefaultDuration"],
+    [2274716, "Language"],
+    [136, "FlagDefault"],
+    [154, "FlagInterlaced"],
+    [156, "FlagLacing"],
+    [22186, "CodecDelay"],
+    [22203, "SeekPreRoll"],
     [224, "Video"],
     [176, "PixelWidth"],
     [186, "PixelHeight"],
@@ -3741,22 +3968,77 @@ button:disabled {
     [231, "Timecode"],
     [163, "SimpleBlock"],
     [160, "BlockGroup"],
-    [161, "Block"]
+    [161, "Block"],
+    [30114, "DiscardPadding"],
+    [475249515, "Cues"],
+    [187, "CuePoint"],
+    [179, "CueTime"],
+    [183, "CueTrackPositions"],
+    [247, "CueTrack"],
+    [241, "CueClusterPosition"],
+    [240, "CueRelativePosition"],
+    [307544935, "Tags"],
+    [29555, "Tag"],
+    [25536, "Targets"],
+    [25541, "TagTrackUID"],
+    [26568, "SimpleTag"],
+    [17827, "TagName"],
+    [17543, "TagString"],
+    [17530, "TagLanguage"],
+    [17540, "TagDefault"],
+    [236, "Void"]
   ]);
   var MASTER_ELEMENT_IDS = /* @__PURE__ */ new Set([
     440786851,
     408125543,
     290298740,
+    19899,
     357149030,
     374648427,
     174,
     224,
     225,
     524531317,
-    160
+    160,
+    475249515,
+    187,
+    183,
+    307544935,
+    29555,
+    25536,
+    26568
   ]);
-  var UNSIGNED_INTEGER_IDS = /* @__PURE__ */ new Set([17030, 17143, 17138, 17139, 17031, 17029, 2807729, 215, 29637, 131, 2352003, 176, 186, 159, 25188, 231]);
-  var STRING_IDS = /* @__PURE__ */ new Set([17026, 134]);
+  var UNSIGNED_INTEGER_IDS = /* @__PURE__ */ new Set([
+    17030,
+    17143,
+    17138,
+    17139,
+    17031,
+    17029,
+    21420,
+    2807729,
+    215,
+    29637,
+    131,
+    2352003,
+    136,
+    154,
+    156,
+    22186,
+    22203,
+    176,
+    186,
+    159,
+    25188,
+    231,
+    179,
+    247,
+    241,
+    240,
+    25541,
+    17540
+  ]);
+  var STRING_IDS = /* @__PURE__ */ new Set([17026, 134, 2274716, 19840, 22337, 17827, 17543, 17530]);
   var FLOAT_IDS = /* @__PURE__ */ new Set([17545, 181]);
   var webmContainer = {
     id: "webm",
@@ -4592,14 +4874,67 @@ button:disabled {
   var BOX_TYPE_I18N = {
     ko: {
       EBML: ["EBML Header / EBML \uD5E4\uB354", "Matroska/WebM \uACC4\uC5F4 \uD30C\uC77C\uC744 \uC2DD\uBCC4\uD558\uB294 Extensible Binary Meta Language \uD5E4\uB354\uC785\uB2C8\uB2E4."],
+      EBMLVersion: ["EBML Version / EBML \uBC84\uC804", "\uD30C\uC77C\uC774 \uC0AC\uC6A9\uD558\uB294 EBML document structure \uBC84\uC804\uC785\uB2C8\uB2E4."],
+      EBMLReadVersion: ["EBML Read Version / EBML \uC77D\uAE30 \uBC84\uC804", "\uC774 \uD30C\uC77C\uC744 \uC77D\uAE30 \uC704\uD574 \uD544\uC694\uD55C \uCD5C\uC18C EBML parser \uBC84\uC804\uC785\uB2C8\uB2E4."],
+      EBMLMaxIDLength: ["EBML Maximum ID Length / EBML \uCD5C\uB300 ID \uAE38\uC774", "\uC774 \uD30C\uC77C\uC5D0\uC11C EBML element ID\uAC00 \uC0AC\uC6A9\uD560 \uC218 \uC788\uB294 \uCD5C\uB300 byte \uAE38\uC774\uC785\uB2C8\uB2E4."],
+      EBMLMaxSizeLength: ["EBML Maximum Size Length / EBML \uCD5C\uB300 \uD06C\uAE30 \uAE38\uC774", "\uC774 \uD30C\uC77C\uC5D0\uC11C EBML element size field\uAC00 \uC0AC\uC6A9\uD560 \uC218 \uC788\uB294 \uCD5C\uB300 byte \uAE38\uC774\uC785\uB2C8\uB2E4."],
+      DocType: ["Document Type / \uBB38\uC11C \uD0C0\uC785", "webm \uB610\uB294 matroska \uAC19\uC740 EBML document type\uC785\uB2C8\uB2E4."],
+      DocTypeVersion: ["Document Type Version / \uBB38\uC11C \uD0C0\uC785 \uBC84\uC804", "\uC120\uC5B8\uB41C EBML document type\uC758 \uBC84\uC804\uC785\uB2C8\uB2E4."],
+      DocTypeReadVersion: ["Document Type Read Version / \uBB38\uC11C \uD0C0\uC785 \uC77D\uAE30 \uBC84\uC804", "\uC120\uC5B8\uB41C EBML document type\uC744 \uC77D\uAE30 \uC704\uD574 \uD544\uC694\uD55C \uCD5C\uC18C reader \uBC84\uC804\uC785\uB2C8\uB2E4."],
       Segment: ["Matroska Segment / Matroska \uC138\uADF8\uBA3C\uD2B8", "metadata, tracks, clusters, cues\uB97C \uB2F4\uB294 WebM/Matroska \uCD5C\uC0C1\uC704 \uC138\uADF8\uBA3C\uD2B8\uC785\uB2C8\uB2E4."],
+      SeekHead: ["Seek Head / \uD0D0\uC0C9 \uD5E4\uB4DC", "\uC138\uADF8\uBA3C\uD2B8 \uC548\uC758 \uC8FC\uC694 \uCD5C\uC0C1\uC704 element \uC704\uCE58\uB97C \uAC00\uB9AC\uD0A4\uB294 WebM/Matroska index\uC785\uB2C8\uB2E4."],
+      Seek: ["Seek Entry / \uD0D0\uC0C9 \uC5D4\uD2B8\uB9AC", "element ID\uC640 \uC138\uADF8\uBA3C\uD2B8 \uAE30\uC900 \uC704\uCE58\uB97C \uC9DD\uC9C0\uC5B4 \uC800\uC7A5\uD558\uB294 SeekHead \uC5D4\uD2B8\uB9AC\uC785\uB2C8\uB2E4."],
+      SeekID: ["Seek ID / \uD0D0\uC0C9 ID", "Seek entry\uAC00 \uCC38\uC870\uD558\uB294 binary EBML element ID\uC785\uB2C8\uB2E4."],
+      SeekPosition: ["Seek Position / \uD0D0\uC0C9 \uC704\uCE58", "Seek entry\uAC00 \uCC38\uC870\uD558\uB294 element\uC758 \uC138\uADF8\uBA3C\uD2B8 \uAE30\uC900 byte \uC704\uCE58\uC785\uB2C8\uB2E4."],
       Info: ["Segment Info / \uC138\uADF8\uBA3C\uD2B8 \uC815\uBCF4", "timecode scale, duration \uAC19\uC740 WebM/Matroska timing metadata\uC785\uB2C8\uB2E4."],
+      TimecodeScale: ["Timecode Scale / \uD0C0\uC784\uCF54\uB4DC \uC2A4\uCF00\uC77C", "WebM timestamp\uB97C \uC2E4\uC81C \uC2DC\uAC04\uC73C\uB85C \uBCC0\uD658\uD558\uAE30 \uC704\uD55C timecode unit\uB2F9 nanosecond \uAC12\uC785\uB2C8\uB2E4."],
+      Duration: ["Duration / \uAE38\uC774", "TimecodeScale \uB2E8\uC704\uB85C \uD45C\uD604\uB41C \uC138\uADF8\uBA3C\uD2B8 \uC804\uCCB4 \uAE38\uC774\uC785\uB2C8\uB2E4."],
+      MuxingApp: ["Muxing Application / muxing \uC571", "WebM/Matroska \uD30C\uC77C\uC744 muxing\uD55C \uC560\uD50C\uB9AC\uCF00\uC774\uC158 \uB610\uB294 \uB77C\uC774\uBE0C\uB7EC\uB9AC\uC785\uB2C8\uB2E4."],
+      WritingApp: ["Writing Application / writing \uC571", "WebM/Matroska \uD30C\uC77C\uC744 \uC791\uC131\uD558\uAC70\uB098 \uB9C8\uBB34\uB9AC\uD55C \uC560\uD50C\uB9AC\uCF00\uC774\uC158\uC785\uB2C8\uB2E4."],
       Tracks: ["Tracks / \uD2B8\uB799 \uCEE8\uD14C\uC774\uB108", "WebM/Matroska \uD2B8\uB799 \uC124\uBA85\uC744 \uB2F4\uB294 \uCEE8\uD14C\uC774\uB108\uC785\uB2C8\uB2E4."],
       TrackEntry: ["Track Entry / \uD2B8\uB799 \uC5D4\uD2B8\uB9AC", "\uD2B8\uB799 \uD0C0\uC785, \uCF54\uB371, \uC601\uC0C1 \uD06C\uAE30, \uC624\uB514\uC624 \uC124\uC815\uC744 \uC124\uBA85\uD558\uB294 \uD55C \uD2B8\uB799\uC758 metadata\uC785\uB2C8\uB2E4."],
+      TrackNumber: ["Track Number / \uD2B8\uB799 \uBC88\uD638", "block payload\uAC00 \uC5B4\uB5A4 \uD2B8\uB799\uC5D0 \uC18D\uD558\uB294\uC9C0 \uC2DD\uBCC4\uD558\uB294 \uC791\uC740 \uC815\uC218\uC785\uB2C8\uB2E4."],
+      TrackUID: ["Track UID / \uD2B8\uB799 UID", "WebM/Matroska \uD2B8\uB799\uC758 stable unique identifier\uC785\uB2C8\uB2E4."],
+      TrackType: ["Track Type / \uD2B8\uB799 \uD0C0\uC785", "video, audio, subtitles, metadata \uAC19\uC740 \uD2B8\uB799 \uCE74\uD14C\uACE0\uB9AC\uB97C \uB098\uD0C0\uB0B4\uB294 \uC22B\uC790\uC785\uB2C8\uB2E4."],
+      CodecID: ["Codec ID / \uCF54\uB371 ID", "V_VP9, A_OPUS \uAC19\uC740 WebM/Matroska \uCF54\uB371 \uC2DD\uBCC4\uC790\uC785\uB2C8\uB2E4."],
+      CodecPrivate: ["Codec Private / \uCF54\uB371 private \uB370\uC774\uD130", "OpusHead \uAC19\uC740 codec-specific \uCD08\uAE30\uD654 byte\uC785\uB2C8\uB2E4."],
+      DefaultDuration: ["Default Duration / \uAE30\uBCF8 \uAE38\uC774", "\uC774 \uD2B8\uB799\uC758 block \uB610\uB294 frame \uAE30\uBCF8 duration\uC774\uBA70 nanosecond \uB2E8\uC704\uC785\uB2C8\uB2E4."],
+      Language: ["Language / \uC5B8\uC5B4", "\uD2B8\uB799\uC5D0 \uC5F0\uACB0\uB41C language code\uC785\uB2C8\uB2E4."],
+      FlagDefault: ["Default Track Flag / \uAE30\uBCF8 \uD2B8\uB799 \uD50C\uB798\uADF8", "\uD50C\uB808\uC774\uC5B4\uAC00 \uC774 \uD2B8\uB799\uC744 \uAE30\uBCF8 \uD2B8\uB799\uC73C\uB85C \uCDE8\uAE09\uD560\uC9C0 \uB098\uD0C0\uB0C5\uB2C8\uB2E4."],
+      FlagInterlaced: ["Interlaced Flag / interlaced \uD50C\uB798\uADF8", "\uC774 \uBE44\uB514\uC624 \uD2B8\uB799\uC758 frame\uC774 interlaced\uC778\uC9C0 \uB098\uD0C0\uB0C5\uB2C8\uB2E4."],
+      FlagLacing: ["Lacing Flag / lacing \uD50C\uB798\uADF8", "\uC774 \uD2B8\uB799\uC758 block\uC774 \uC5EC\uB7EC frame\uC744 \uB2F4\uB294 lacing\uC744 \uC0AC\uC6A9\uD560 \uC218 \uC788\uB294\uC9C0 \uB098\uD0C0\uB0C5\uB2C8\uB2E4."],
+      CodecDelay: ["Codec Delay / \uCF54\uB371 \uC9C0\uC5F0", "Opus \uB4F1\uC5D0\uC11C \uC4F0\uB294 codec delay \uB610\uB294 pre-skip \uAC12\uC774\uBA70 nanosecond \uB2E8\uC704\uC785\uB2C8\uB2E4."],
+      SeekPreRoll: ["Seek Pre-roll / \uD0D0\uC0C9 pre-roll", "seek target \uC774\uC804\uC5D0 \uB514\uCF54\uB4DC\uD574\uC57C \uD558\uB294 \uC624\uB514\uC624 \uC591\uC785\uB2C8\uB2E4. Opus\uC5D0\uC11C \uC8FC\uB85C \uC0AC\uC6A9\uB429\uB2C8\uB2E4."],
+      Video: ["Video Settings / \uBE44\uB514\uC624 \uC124\uC815", "pixel dimension \uAC19\uC740 WebM/Matroska \uBE44\uB514\uC624 \uD2B8\uB799 \uC124\uC815 \uCEE8\uD14C\uC774\uB108\uC785\uB2C8\uB2E4."],
+      PixelWidth: ["Pixel Width / \uD53D\uC140 \uB108\uBE44", "\uC778\uCF54\uB529\uB41C \uBE44\uB514\uC624 frame\uC758 \uC800\uC7A5 \uB108\uBE44\uC785\uB2C8\uB2E4."],
+      PixelHeight: ["Pixel Height / \uD53D\uC140 \uB192\uC774", "\uC778\uCF54\uB529\uB41C \uBE44\uB514\uC624 frame\uC758 \uC800\uC7A5 \uB192\uC774\uC785\uB2C8\uB2E4."],
+      Audio: ["Audio Settings / \uC624\uB514\uC624 \uC124\uC815", "sampling rate, channel count \uAC19\uC740 WebM/Matroska \uC624\uB514\uC624 \uD2B8\uB799 \uC124\uC815 \uCEE8\uD14C\uC774\uB108\uC785\uB2C8\uB2E4."],
+      SamplingFrequency: ["Sampling Frequency / \uC0D8\uD50C\uB9C1 \uC8FC\uD30C\uC218", "\uC624\uB514\uC624 \uD2B8\uB799\uC758 sampling frequency\uC785\uB2C8\uB2E4."],
+      Channels: ["Channels / \uCC44\uB110 \uC218", "\uC624\uB514\uC624 \uD2B8\uB799\uC758 \uCC44\uB110 \uC218\uC785\uB2C8\uB2E4."],
+      BitDepth: ["Bit Depth / \uBE44\uD2B8 \uAE4A\uC774", "\uD2B8\uB799\uC774 \uC120\uC5B8\uD55C \uC624\uB514\uC624 bit depth\uC785\uB2C8\uB2E4."],
       Cluster: ["Cluster / \uD074\uB7EC\uC2A4\uD130", "timestamped block\uC744 \uB2F4\uB294 WebM/Matroska \uBBF8\uB514\uC5B4 \uB370\uC774\uD130 \uD074\uB7EC\uC2A4\uD130\uC785\uB2C8\uB2E4."],
+      Timecode: ["Cluster Timecode / \uD074\uB7EC\uC2A4\uD130 \uD0C0\uC784\uCF54\uB4DC", "\uC774 \uD074\uB7EC\uC2A4\uD130 \uC548\uC758 block\uB4E4\uC774 \uAE30\uC900\uC73C\uB85C \uC0BC\uB294 base timecode\uC785\uB2C8\uB2E4."],
       SimpleBlock: ["Simple Block / \uC2EC\uD50C \uBE14\uB85D", "track number, flags, encoded frame payload\uB97C \uB2F4\uB294 timestamped WebM/Matroska block\uC785\uB2C8\uB2E4."],
       BlockGroup: ["Block Group / \uBE14\uB85D \uADF8\uB8F9", "discard padding \uAC19\uC740 block-level side metadata\uB97C \uD568\uAED8 \uB2F4\uC744 \uC218 \uC788\uB294 WebM/Matroska block \uCEE8\uD14C\uC774\uB108\uC785\uB2C8\uB2E4."],
       Block: ["Block / \uBE14\uB85D", "BlockGroup \uB0B4\uBD80\uC758 encoded WebM/Matroska frame payload\uC785\uB2C8\uB2E4."],
+      DiscardPadding: ["Discard Padding / discard padding", "decoded block\uC5D0\uC11C \uBC84\uB9B4 padding \uC591\uC785\uB2C8\uB2E4. \uC624\uB514\uC624 trimming\uC5D0 \uC8FC\uB85C \uC0AC\uC6A9\uB429\uB2C8\uB2E4."],
+      Cues: ["Cues / cue \uC778\uB371\uC2A4", "cue point\uB97C \uB2F4\uB294 WebM/Matroska random-access index \uCEE8\uD14C\uC774\uB108\uC785\uB2C8\uB2E4."],
+      CuePoint: ["Cue Point / cue point", "WebM/Matroska cue index \uC548\uC758 \uD558\uB098\uC758 random-access point\uC785\uB2C8\uB2E4."],
+      CueTime: ["Cue Time / cue \uC2DC\uAC04", "cue point\uC758 timestamp\uC785\uB2C8\uB2E4."],
+      CueTrackPositions: ["Cue Track Positions / cue \uD2B8\uB799 \uC704\uCE58", "cue point\uC758 cluster\uC640 track \uC704\uCE58 \uC815\uBCF4\uB97C \uB2F4\uC2B5\uB2C8\uB2E4."],
+      CueTrack: ["Cue Track / cue \uD2B8\uB799", "cue position\uC774 \uC5F0\uACB0\uB41C track number\uC785\uB2C8\uB2E4."],
+      CueClusterPosition: ["Cue Cluster Position / cue \uD074\uB7EC\uC2A4\uD130 \uC704\uCE58", "cue point\uAC00 \uAC00\uB9AC\uD0A4\uB294 cluster\uC758 \uC138\uADF8\uBA3C\uD2B8 \uAE30\uC900 byte \uC704\uCE58\uC785\uB2C8\uB2E4."],
+      CueRelativePosition: ["Cue Relative Position / cue \uC0C1\uB300 \uC704\uCE58", "\uCC38\uC870\uB41C block\uC758 containing cluster \uAE30\uC900 byte \uC704\uCE58\uC785\uB2C8\uB2E4."],
+      Tags: ["Tags / \uD0DC\uADF8 \uCEE8\uD14C\uC774\uB108", "WebM/Matroska metadata tag \uCEE8\uD14C\uC774\uB108\uC785\uB2C8\uB2E4."],
+      Tag: ["Tag / \uD0DC\uADF8", "\uD558\uB098\uC758 WebM/Matroska metadata tag \uC5D4\uD2B8\uB9AC\uC785\uB2C8\uB2E4."],
+      Targets: ["Targets / \uB300\uC0C1", "tag\uAC00 \uC801\uC6A9\uB418\uB294 segment, track, chapter, attachment \uB4F1\uC744 \uC120\uC5B8\uD569\uB2C8\uB2E4."],
+      TagTrackUID: ["Tag Track UID / \uD0DC\uADF8 \uB300\uC0C1 \uD2B8\uB799 UID", "WebM/Matroska metadata tag\uAC00 \uB300\uC0C1\uC73C\uB85C \uC0BC\uB294 track UID\uC785\uB2C8\uB2E4."],
+      SimpleTag: ["Simple Tag / \uB2E8\uC21C \uD0DC\uADF8", "\uD558\uB098\uC758 WebM/Matroska metadata key/value tag\uC785\uB2C8\uB2E4."],
+      TagName: ["Tag Name / \uD0DC\uADF8 \uC774\uB984", "WebM/Matroska metadata tag\uC758 key \uB610\uB294 \uC774\uB984\uC785\uB2C8\uB2E4."],
+      TagString: ["Tag String / \uD0DC\uADF8 \uBB38\uC790\uC5F4", "WebM/Matroska metadata tag\uC758 text value\uC785\uB2C8\uB2E4."],
+      TagLanguage: ["Tag Language / \uD0DC\uADF8 \uC5B8\uC5B4", "metadata tag value\uC758 language code\uC785\uB2C8\uB2E4."],
+      TagDefault: ["Tag Default / \uAE30\uBCF8 \uD0DC\uADF8", "\uC774 tag value\uAC00 \uD574\uB2F9 \uC5B8\uC5B4\uC758 \uAE30\uBCF8\uAC12\uC778\uC9C0 \uB098\uD0C0\uB0C5\uB2C8\uB2E4."],
+      Void: ["Void / \uBE48 \uACF5\uAC04", "\uD30C\uC77C layout\uC744 \uBC14\uAFB8\uC9C0 \uC54A\uACE0 \uB36E\uC5B4\uC4F8 \uC218 \uC788\uB294 unused EBML padding\uC785\uB2C8\uB2E4."],
       OggPage: ["Ogg Page / Ogg \uD398\uC774\uC9C0", "lacing value\uB85C Opus packet\uC744 \uC870\uB9BD\uD558\uB294 Ogg \uCEE8\uD14C\uC774\uB108 \uD398\uC774\uC9C0\uC785\uB2C8\uB2E4."],
       ID3v2: ["ID3v2 Tag / ID3v2 \uD0DC\uADF8", "MP3 MPEG audio frame \uC55E\uCABD\uC5D0 \uC800\uC7A5\uB418\uB294 metadata tag\uC785\uB2C8\uB2E4."],
       ID3v1: ["ID3v1 Tag / ID3v1 \uD0DC\uADF8", "\uD30C\uC77C \uB9C8\uC9C0\uB9C9 128 byte\uC5D0 \uC800\uC7A5\uB418\uB294 legacy MP3 metadata tag\uC785\uB2C8\uB2E4."],
@@ -4658,6 +4993,7 @@ button:disabled {
       mfro: ["Movie Fragment Random Access Offset Box / \uBB34\uBE44 \uD504\uB798\uADF8\uBA3C\uD2B8 \uB79C\uB364 \uC561\uC138\uC2A4 \uC624\uD504\uC14B \uBC15\uC2A4", "backward lookup\uC744 \uC704\uD574 mfra box size\uB97C \uC800\uC7A5\uD569\uB2C8\uB2E4."],
       meta: ["Metadata Box / \uBA54\uD0C0\uB370\uC774\uD130 \uBC15\uC2A4", "timed \uB610\uB294 file-level metadata \uCEE8\uD14C\uC774\uB108\uC785\uB2C8\uB2E4."],
       ilst: ["Item List Box / \uC544\uC774\uD15C \uB9AC\uC2A4\uD2B8 \uBC15\uC2A4", "QuickTime/iTunes metadata item list\uC785\uB2C8\uB2E4."],
+      "\xA9too": ["Encoding Tool Metadata Item / \uC778\uCF54\uB529 \uB3C4\uAD6C \uBA54\uD0C0\uB370\uC774\uD130", "encoder \uB610\uB294 muxing tool \uC774\uB984\uC744 \uC800\uC7A5\uD558\uB294 QuickTime/iTunes metadata item\uC785\uB2C8\uB2E4."],
       udta: ["User Data Box / \uC0AC\uC6A9\uC790 \uB370\uC774\uD130 \uBC15\uC2A4", "user data\uC640 metadata \uCEE8\uD14C\uC774\uB108\uC785\uB2C8\uB2E4."],
       tref: ["Track Reference Box / \uD2B8\uB799 \uCC38\uC870 \uBC15\uC2A4", "\uD2B8\uB799 \uC0AC\uC774\uC758 reference\uB97C \uB2F4\uB294 \uCEE8\uD14C\uC774\uB108\uC785\uB2C8\uB2E4."],
       sinf: ["Protection Scheme Information Box / \uBCF4\uD638 \uC2A4\uD0B4 \uC815\uBCF4 \uBC15\uC2A4", "encryption \uB610\uB294 protection scheme metadata \uCEE8\uD14C\uC774\uB108\uC785\uB2C8\uB2E4."],

@@ -17,13 +17,73 @@ export const BOX_TYPE_INFO = {
     name: "EBML Header",
     description: "Extensible Binary Meta Language header that identifies a Matroska/WebM-style file."
   },
+  EBMLVersion: {
+    name: "EBML Version",
+    description: "Version of the EBML document structure used by the file."
+  },
+  EBMLReadVersion: {
+    name: "EBML Read Version",
+    description: "Minimum EBML parser version required to read this file."
+  },
+  EBMLMaxIDLength: {
+    name: "EBML Maximum ID Length",
+    description: "Maximum byte length used by EBML element IDs in this file."
+  },
+  EBMLMaxSizeLength: {
+    name: "EBML Maximum Size Length",
+    description: "Maximum byte length used by EBML element size fields in this file."
+  },
+  DocType: {
+    name: "Document Type",
+    description: "EBML document type, such as webm or matroska."
+  },
+  DocTypeVersion: {
+    name: "Document Type Version",
+    description: "Version of the declared EBML document type."
+  },
+  DocTypeReadVersion: {
+    name: "Document Type Read Version",
+    description: "Minimum reader version required for the declared EBML document type."
+  },
   Segment: {
     name: "Matroska Segment",
     description: "Top-level WebM/Matroska segment containing metadata, tracks, clusters, and cues."
   },
+  SeekHead: {
+    name: "Seek Head",
+    description: "WebM/Matroska index that points to important top-level elements in the segment."
+  },
+  Seek: {
+    name: "Seek Entry",
+    description: "One entry in SeekHead, pairing an element ID with its segment-relative position."
+  },
+  SeekID: {
+    name: "Seek ID",
+    description: "Binary EBML element ID referenced by a Seek entry."
+  },
+  SeekPosition: {
+    name: "Seek Position",
+    description: "Segment-relative byte position of the element referenced by a Seek entry."
+  },
   Info: {
     name: "Segment Info",
     description: "WebM/Matroska timing metadata such as timecode scale and duration."
+  },
+  TimecodeScale: {
+    name: "Timecode Scale",
+    description: "Nanoseconds per timecode unit used to convert WebM timestamps to real time."
+  },
+  Duration: {
+    name: "Duration",
+    description: "Segment duration expressed in units of TimecodeScale."
+  },
+  MuxingApp: {
+    name: "Muxing Application",
+    description: "Application or library that muxed the WebM/Matroska file."
+  },
+  WritingApp: {
+    name: "Writing Application",
+    description: "Application that wrote or finalized the WebM/Matroska file."
   },
   Tracks: {
     name: "Tracks",
@@ -33,9 +93,89 @@ export const BOX_TYPE_INFO = {
     name: "Track Entry",
     description: "Describes one WebM/Matroska track, including type, codec, dimensions, and audio settings."
   },
+  TrackNumber: {
+    name: "Track Number",
+    description: "Small integer used by blocks to identify which track a payload belongs to."
+  },
+  TrackUID: {
+    name: "Track UID",
+    description: "Stable unique identifier for a WebM/Matroska track."
+  },
+  TrackType: {
+    name: "Track Type",
+    description: "Numeric track category such as video, audio, subtitles, or metadata."
+  },
+  CodecID: {
+    name: "Codec ID",
+    description: "WebM/Matroska codec identifier such as V_VP9 or A_OPUS."
+  },
+  CodecPrivate: {
+    name: "Codec Private",
+    description: "Codec-specific initialization bytes, such as OpusHead for Opus tracks."
+  },
+  DefaultDuration: {
+    name: "Default Duration",
+    description: "Default duration of each block or frame for this track, in nanoseconds."
+  },
+  Language: {
+    name: "Language",
+    description: "Language code associated with the track."
+  },
+  FlagDefault: {
+    name: "Default Track Flag",
+    description: "Indicates whether players should treat this track as default."
+  },
+  FlagInterlaced: {
+    name: "Interlaced Flag",
+    description: "Indicates whether video frames in this track are interlaced."
+  },
+  FlagLacing: {
+    name: "Lacing Flag",
+    description: "Indicates whether blocks in this track may use lacing to store multiple frames."
+  },
+  CodecDelay: {
+    name: "Codec Delay",
+    description: "Codec delay or pre-skip in nanoseconds, commonly used by Opus."
+  },
+  SeekPreRoll: {
+    name: "Seek Pre-roll",
+    description: "Amount of audio to decode before the seek target, commonly used by Opus."
+  },
+  Video: {
+    name: "Video Settings",
+    description: "WebM/Matroska video track settings such as pixel dimensions."
+  },
+  PixelWidth: {
+    name: "Pixel Width",
+    description: "Stored width of the encoded video frame in pixels."
+  },
+  PixelHeight: {
+    name: "Pixel Height",
+    description: "Stored height of the encoded video frame in pixels."
+  },
+  Audio: {
+    name: "Audio Settings",
+    description: "WebM/Matroska audio track settings such as sampling rate and channel count."
+  },
+  SamplingFrequency: {
+    name: "Sampling Frequency",
+    description: "Audio sampling frequency for this track."
+  },
+  Channels: {
+    name: "Channels",
+    description: "Number of audio channels in this track."
+  },
+  BitDepth: {
+    name: "Bit Depth",
+    description: "Audio bit depth when the track declares one."
+  },
   Cluster: {
     name: "Cluster",
     description: "WebM/Matroska media data cluster containing timestamped blocks."
+  },
+  Timecode: {
+    name: "Cluster Timecode",
+    description: "Base timecode for blocks contained in this cluster."
   },
   SimpleBlock: {
     name: "Simple Block",
@@ -48,6 +188,78 @@ export const BOX_TYPE_INFO = {
   Block: {
     name: "Block",
     description: "Encoded WebM/Matroska frame payload inside a BlockGroup."
+  },
+  DiscardPadding: {
+    name: "Discard Padding",
+    description: "Amount of padding to discard from a decoded block, often used for audio trimming."
+  },
+  Cues: {
+    name: "Cues",
+    description: "WebM/Matroska random-access index containing cue points."
+  },
+  CuePoint: {
+    name: "Cue Point",
+    description: "One random-access point in the WebM/Matroska cue index."
+  },
+  CueTime: {
+    name: "Cue Time",
+    description: "Timestamp of a cue point."
+  },
+  CueTrackPositions: {
+    name: "Cue Track Positions",
+    description: "Cluster and track position information for a cue point."
+  },
+  CueTrack: {
+    name: "Cue Track",
+    description: "Track number associated with a cue position."
+  },
+  CueClusterPosition: {
+    name: "Cue Cluster Position",
+    description: "Segment-relative byte position of the cluster for a cue point."
+  },
+  CueRelativePosition: {
+    name: "Cue Relative Position",
+    description: "Byte position of the referenced block relative to the containing cluster."
+  },
+  Tags: {
+    name: "Tags",
+    description: "Container for WebM/Matroska metadata tags."
+  },
+  Tag: {
+    name: "Tag",
+    description: "One WebM/Matroska metadata tag entry."
+  },
+  Targets: {
+    name: "Targets",
+    description: "Declares which segment, track, chapter, or attachment a tag applies to."
+  },
+  TagTrackUID: {
+    name: "Tag Track UID",
+    description: "Track UID targeted by a WebM/Matroska metadata tag."
+  },
+  SimpleTag: {
+    name: "Simple Tag",
+    description: "A single WebM/Matroska metadata key/value tag."
+  },
+  TagName: {
+    name: "Tag Name",
+    description: "Name or key of a WebM/Matroska metadata tag."
+  },
+  TagString: {
+    name: "Tag String",
+    description: "Text value of a WebM/Matroska metadata tag."
+  },
+  TagLanguage: {
+    name: "Tag Language",
+    description: "Language code for a WebM/Matroska metadata tag value."
+  },
+  TagDefault: {
+    name: "Tag Default",
+    description: "Indicates whether this tag value is the default for its language."
+  },
+  Void: {
+    name: "Void",
+    description: "Unused EBML padding that can be overwritten without changing file layout."
   },
   OggPage: {
     name: "Ogg Page",
@@ -280,6 +492,10 @@ export const BOX_TYPE_INFO = {
   ilst: {
     name: "Item List Box",
     description: "QuickTime/iTunes metadata item list."
+  },
+  "©too": {
+    name: "Encoding Tool Metadata Item",
+    description: "QuickTime/iTunes metadata item that usually stores the encoder or muxing tool name."
   },
   udta: {
     name: "User Data Box",
