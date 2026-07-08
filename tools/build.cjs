@@ -25,11 +25,11 @@ async function build() {
 
 async function buildSingleFileOutputs(templateHtml) {
   const normalCss = await buildCss({ minify: false });
-  const normalWorkerJs = await buildWorkerJavaScript({ minify: false });
-  const normalJs = await buildJavaScript({ minify: false, workerJs: normalWorkerJs });
+  const normalWorkerJs = await buildWorkerJavaScript({ minify: false, sourceMap: false });
+  const normalJs = await buildJavaScript({ minify: false, sourceMap: false, workerJs: normalWorkerJs });
   const minifiedCss = await buildCss({ minify: true });
-  const minifiedWorkerJs = await buildWorkerJavaScript({ minify: true });
-  const minifiedJs = await buildJavaScript({ minify: true, workerJs: minifiedWorkerJs });
+  const minifiedWorkerJs = await buildWorkerJavaScript({ minify: true, sourceMap: true });
+  const minifiedJs = await buildJavaScript({ minify: true, sourceMap: true, workerJs: minifiedWorkerJs });
 
   const normalHtml = inlineAssets({
     templateHtml,
@@ -75,6 +75,8 @@ async function buildChunkedOutput(templateHtml) {
     outdir: outputChunkedAssetsDirectory,
     format: "esm",
     minify: true,
+    sourcemap: true,
+    sourcesContent: true,
     target: ["chrome115", "edge115", "firefox115", "safari16"],
     outExtension: { ".js": ".mjs" },
     entryNames: "[name]-[hash]",
@@ -122,7 +124,7 @@ async function buildCss({ minify }) {
   return result.code.trim();
 }
 
-async function buildJavaScript({ minify, workerJs }) {
+async function buildJavaScript({ minify, sourceMap, workerJs }) {
   const entrySource = await fs.readFile(path.join(sourceDirectory, "app.js"), "utf8");
   const result = await esbuild.build({
     stdin: {
@@ -133,15 +135,18 @@ async function buildJavaScript({ minify, workerJs }) {
     },
     plugins: [localSourcePlugin()],
     bundle: true,
+    banner: { js: createInlineWorkerSourceScript(workerJs) },
     write: false,
     format: "iife",
     minify,
+    sourcemap: sourceMap ? "inline" : false,
+    sourcesContent: true,
     target: ["chrome115", "edge115", "firefox115", "safari16"]
   });
-  return createInlineWorkerSourceScript(workerJs) + "\n" + result.outputFiles[0].text.trim();
+  return result.outputFiles[0].text.trim();
 }
 
-async function buildWorkerJavaScript({ minify }) {
+async function buildWorkerJavaScript({ minify, sourceMap }) {
   const entrySource = await fs.readFile(path.join(sourceDirectory, "js", "worker", "analyzer-worker.js"), "utf8");
   const result = await esbuild.build({
     stdin: {
@@ -155,6 +160,8 @@ async function buildWorkerJavaScript({ minify }) {
     write: false,
     format: "iife",
     minify,
+    sourcemap: sourceMap ? "inline" : false,
+    sourcesContent: true,
     target: ["chrome115", "edge115", "firefox115", "safari16"]
   });
   return result.outputFiles[0].text.trim();
@@ -271,6 +278,9 @@ function replaceTemplateAssets({ templateHtml, cssReplacement, scriptReplacement
 async function verifySingleFileHtml(filePath, html) {
   const script = extractSingleInlineScript(filePath, html);
   new Function(script);
+  if (path.basename(filePath) === path.basename(outputPagesHtmlPath)) {
+    verifyInlineJavaScriptSourceMaps(filePath, script);
+  }
 
   const previousWindow = global.window;
   const previousDocument = global.document;
@@ -303,6 +313,10 @@ async function verifyChunkedHtml({ html, appOutputPath, workerOutputPath }) {
   if (!/<script\s+type="module"\s+src=/.test(html)) throw new Error("chunked HTML must load app as a module script.");
   if (!/MP4AnalyzerWorkerModuleUrl/.test(html)) throw new Error("chunked HTML must expose the worker module URL.");
   await fs.access(workerOutputPath);
+  await verifyChunkedJavaScriptSourceMaps(outputChunkedAssetsDirectory, new Set([
+    path.resolve(appOutputPath),
+    path.resolve(workerOutputPath)
+  ]));
 
   const previousWindow = global.window;
   const previousDocument = global.document;
@@ -320,6 +334,63 @@ async function verifyChunkedHtml({ html, appOutputPath, workerOutputPath }) {
     if (previousDocument === undefined) delete global.document;
     else global.document = previousDocument;
   }
+}
+
+function verifyInlineJavaScriptSourceMaps(filePath, script) {
+  const sourceMapMatches = [...script.matchAll(/sourceMappingURL=data:application\/json(?:;charset=utf-8)?;base64,([A-Za-z0-9+/=]+)/g)];
+  if (sourceMapMatches.length < 2) {
+    throw new Error(`${filePath} must include inline app and worker source maps.`);
+  }
+  for (const match of sourceMapMatches) {
+    verifySourceMapObject(filePath, JSON.parse(Buffer.from(match[1], "base64").toString("utf8")), {
+      requireOriginalSources: true
+    });
+  }
+}
+
+async function verifyChunkedJavaScriptSourceMaps(assetsDirectory, requiredSourcePaths) {
+  const javascriptPaths = await collectFiles(assetsDirectory, (filePath) => filePath.endsWith(".mjs"));
+  if (javascriptPaths.length === 0) throw new Error("chunked build must emit JavaScript assets.");
+  for (const javascriptPath of javascriptPaths) {
+    const javascript = await fs.readFile(javascriptPath, "utf8");
+    const sourceMapMatch = javascript.match(/\/\/# sourceMappingURL=([^\s]+\.map)\s*$/);
+    if (!sourceMapMatch) {
+      throw new Error(`${javascriptPath} must reference a source map.`);
+    }
+    const sourceMapPath = path.resolve(path.dirname(javascriptPath), sourceMapMatch[1]);
+    const sourceMap = JSON.parse(await fs.readFile(sourceMapPath, "utf8"));
+    verifySourceMapObject(sourceMapPath, sourceMap, {
+      requireOriginalSources: requiredSourcePaths.has(path.resolve(javascriptPath))
+    });
+  }
+}
+
+function verifySourceMapObject(sourcePath, sourceMap, { requireOriginalSources }) {
+  if (sourceMap.version !== 3) throw new Error(`${sourcePath} has an unsupported source map version.`);
+  if (!Array.isArray(sourceMap.sources)) {
+    throw new Error(`${sourcePath} source map has invalid sources.`);
+  }
+  if (sourceMap.sources.length === 0 && requireOriginalSources) {
+    throw new Error(`${sourcePath} source map has no sources.`);
+  }
+  if (sourceMap.sources.length === 0) return;
+  if (!Array.isArray(sourceMap.sourcesContent) || !sourceMap.sourcesContent.some((source) => source && source.length > 0)) {
+    throw new Error(`${sourcePath} source map must include sourcesContent.`);
+  }
+}
+
+async function collectFiles(directoryPath, predicate) {
+  const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const entryPath = path.join(directoryPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await collectFiles(entryPath, predicate));
+    } else if (predicate(entryPath)) {
+      files.push(entryPath);
+    }
+  }
+  return files;
 }
 
 build().catch((error) => {

@@ -259,6 +259,7 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   const sourceUi = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "analyzer-ui.js"), "utf8");
   const sourceWorker = fs.readFileSync(path.join(rootDirectory, "src", "js", "worker", "analyzer-worker.js"), "utf8");
   const builtHtml = fs.readFileSync(path.join(rootDirectory, "mp4-analyzer.html"), "utf8");
+  const builtMinifiedHtml = fs.readFileSync(path.join(rootDirectory, "index.html"), "utf8");
   const chunkedHtmlPath = path.join(rootDirectory, "chunked", "index.html");
 
   for (const id of [
@@ -300,12 +301,33 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(builtHtml, /MP4AnalyzerWorkerSource/);
   assert.match(builtHtml, /window\.MP4AnalyzerCore/);
   assert.match(builtHtml, /window\.MP4AnalyzerDevTools/);
+  const inlineSourceMapCount = (builtMinifiedHtml.match(/sourceMappingURL=data:application\/json(?:;charset=utf-8)?;base64,/g) || []).length;
+  assert.ok(inlineSourceMapCount >= 2, "minified single-file output must include app and worker inline source maps");
   if (fs.existsSync(chunkedHtmlPath)) {
     const chunkedHtml = fs.readFileSync(chunkedHtmlPath, "utf8");
     assert.match(chunkedHtml, /<base href="\.\.\/">/);
     assert.match(chunkedHtml, /MP4AnalyzerWorkerModuleUrl/);
     assert.match(chunkedHtml, /<script type="module" src="chunked\/assets\/app-/);
     assert.doesNotMatch(chunkedHtml, /MP4AnalyzerWorkerSource/);
+    const javascriptAssetPaths = collectFiles(path.join(rootDirectory, "chunked", "assets"), (filePath) => filePath.endsWith(".mjs"));
+    let sourceBackedEntryMapCount = 0;
+    for (const javascriptAssetPath of javascriptAssetPaths) {
+      const javascript = fs.readFileSync(javascriptAssetPath, "utf8");
+      const sourceMapMatch = javascript.match(/\/\/# sourceMappingURL=([^\s]+\.map)\s*$/);
+      assert.ok(sourceMapMatch, `${javascriptAssetPath} must reference a source map`);
+      const sourceMapPath = path.resolve(path.dirname(javascriptAssetPath), sourceMapMatch[1]);
+      const sourceMap = JSON.parse(fs.readFileSync(sourceMapPath, "utf8"));
+      assert.equal(sourceMap.version, 3);
+      assert.ok(Array.isArray(sourceMap.sources));
+      if (sourceMap.sources.length > 0) {
+        assert.ok(sourceMap.sourcesContent.some((source) => source && source.length > 0));
+      }
+      if (/^(app|analyzer-worker)-/.test(path.basename(javascriptAssetPath))) {
+        assert.ok(sourceMap.sources.length > 0);
+        sourceBackedEntryMapCount += 1;
+      }
+    }
+    assert.equal(sourceBackedEntryMapCount, 2);
   }
 });
 
@@ -324,3 +346,16 @@ test("i18n catalog contains matching Korean and English keys for visible UI stri
   assert.equal(setLanguage("en"), "en");
   assert.equal(t("count.rows", { count: 12 }), "12 rows");
 });
+
+function collectFiles(directoryPath, predicate) {
+  const files = [];
+  for (const entry of fs.readdirSync(directoryPath, { withFileTypes: true })) {
+    const entryPath = path.join(directoryPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...collectFiles(entryPath, predicate));
+    } else if (predicate(entryPath)) {
+      files.push(entryPath);
+    }
+  }
+  return files;
+}

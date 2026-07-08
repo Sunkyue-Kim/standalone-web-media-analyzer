@@ -34,12 +34,12 @@ npm run build
 Single-file outputs:
 
 - `mp4-analyzer.html`: readable single-file HTML for inspection
-- `index.html`: minified single-file HTML and GitHub Pages entry point
+- `index.html`: minified single-file HTML and GitHub Pages entry point, with inline JavaScript source maps
 
 The build also emits a chunked lazy-load variant:
 
 - `chunked/index.html`: minified HTML shell that loads ESM chunks from `chunked/assets/`
-- `chunked/assets/`: minified app, worker, shared chunks, and CSS
+- `chunked/assets/`: minified app, worker, shared chunks, JavaScript source maps, and CSS
 
 Use `npm run build:single` for only the single-file outputs, or `npm run build:chunked` for only the chunked lazy-load output. The default `npm run build` creates both.
 
@@ -81,7 +81,7 @@ Validation samples live under `validation/generated/` and are also exposed by th
 
 Current coverage snapshot from `npm run test:coverage`:
 
-- Tests: 27 passed, 0 failed
-- All files: 92.45% line coverage, 68.85% branch coverage, 90.15% function coverage
-- Strong coverage areas: binary readers, bitstream helpers, formatting, codec registry, i18n, data grid/recycler helpers, ISO BMFF sample modeling, ISO BMFF rare box parsing, and bundled sample container integration
-- Lower branch coverage remains mainly in browser-worker runtime branches and malformed/edge container branches such as oversized/invalid MP4 boxes, MP3 ID3v1 edge metadata, and WebM lacing variants
+- Tests: 29 passed, 0 failed
+- All files: 92.22% line coverage, 66.97% branch coverage, 89.60% function coverage
+- Strong coverage areas: binary readers, HTTP range readers, bitstream helpers, formatting, codec registry, i18n, data grid/recycler helpers, ISO BMFF sample modeling, ISO BMFF rare box parsing, source-map build wiring, and bundled sample container integration
+- Lower branch coverage remains mainly in browser-worker runtime branches and malformed/edge container branches such as oversized/invalid MP4 boxes, remote download fallback branches, MP3 ID3v1 edge metadata, and WebM lacing variants
