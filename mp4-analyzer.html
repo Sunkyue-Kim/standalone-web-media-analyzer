@@ -2247,7 +2247,7 @@ button:disabled {
           pts: timing.dts + cts,
           duration: timing.duration,
           isSync: syncSet ? syncSet.has(index + 1) : true,
-          frameType: getDefaultSampleFrameType2(track),
+          frameType: getDefaultSampleFrameType(track),
           nalTypes: getDefaultSampleTags(track),
           chunkIndex: offsets[index] ? offsets[index].chunkIndex : "",
           fragmentIndex: "",
@@ -2358,7 +2358,7 @@ button:disabled {
               pts: decodeTime + ctsOffset,
               duration,
               isSync: sampleFlagsToSync(flags),
-              frameType: getDefaultSampleFrameType2(track),
+              frameType: getDefaultSampleFrameType(track),
               nalTypes: getDefaultSampleTags(track),
               chunkIndex: "",
               fragmentIndex,
@@ -2383,7 +2383,7 @@ button:disabled {
     if (flags === void 0 || flags === null) return false;
     return (flags & 65536) === 0;
   }
-  function getDefaultSampleFrameType2(track) {
+  function getDefaultSampleFrameType(track) {
     if (!track) return "";
     if (track.codec === "mp4a") return "AAC";
     if (track.handlerType === "soun") return "audio";
@@ -3575,7 +3575,8 @@ button:disabled {
     parseHevcC,
     runParserSelfTests,
     shouldAutoScan,
-    formatBytes
+    formatBytes,
+    getDefaultSampleFrameType
   };
 
   // local-source:C:\Users\user\Documents\Codex\2026-07-08\js-html-mp4-html-mp4-i\src\js\samples\sample-manifest.js
@@ -3991,6 +3992,8 @@ button:disabled {
         await Core2.scanFrameTypes(state.analysis, { onProgress: setProgress });
         setProgress("Frame type scan complete", 100);
         renderFrames();
+        renderTracks();
+        renderMetrics();
         renderWarnings();
       } catch (error) {
         setProgress("Scan stopped: " + error.message, 0);

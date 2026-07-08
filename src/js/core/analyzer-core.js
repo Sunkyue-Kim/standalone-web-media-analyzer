@@ -1,5 +1,5 @@
 import { BOX_TYPE_INFO } from "./containers/isobmff/box-types.js";
-import { findDescendants } from "./containers/isobmff/sample-model.js";
+import { findDescendants, getDefaultSampleFrameType } from "./containers/isobmff/sample-model.js";
 import { analyzeFileWithRegisteredContainer } from "./containers/registry.js";
 import { parseAudioSpecificConfig, parseEsds } from "./codecs/audio/aac.js";
 import { parseAvcSample } from "./codecs/video/avc.js";
@@ -38,7 +38,8 @@ export const Core = {
   parseHevcC,
   runParserSelfTests,
   shouldAutoScan,
-  formatBytes
+  formatBytes,
+  getDefaultSampleFrameType
 };
 
 export {
@@ -55,5 +56,6 @@ export {
   formatMetricNumber,
   formatTime,
   safeJsonReplacer,
-  findDescendants
+  findDescendants,
+  getDefaultSampleFrameType
 };

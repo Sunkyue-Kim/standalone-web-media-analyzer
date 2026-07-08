@@ -12,7 +12,8 @@ import {
   formatMetricNumber,
   formatTime,
   safeJsonReplacer,
-  findDescendants
+  findDescendants,
+  getDefaultSampleFrameType
 } from "../core/analyzer-core.js";
 import {
   I18N,
@@ -431,6 +432,8 @@ async function scanCurrentAnalysis() {
     await Core.scanFrameTypes(state.analysis, { onProgress: setProgress });
     setProgress("Frame type scan complete", 100);
     renderFrames();
+    renderTracks();
+    renderMetrics();
     renderWarnings();
   } catch (error) {
     setProgress("Scan stopped: " + error.message, 0);

@@ -5,7 +5,8 @@
   "type": "commonjs",
   "scripts": {
     "extract:source": "node tools/extract-source.cjs",
-    "build": "node tools/build.cjs"
+    "build": "node tools/build.cjs",
+    "verify:samples": "node tools/verify-samples.cjs"
   },
   "devDependencies": {
     "esbuild": "latest",

@@ -274,5 +274,7 @@ export {
   flattenBoxes,
   buildTrackModels,
   buildNormalSamples,
-  buildFragmentSamples
+  buildFragmentSamples,
+  getDefaultSampleFrameType,
+  getDefaultSampleTags
 };
