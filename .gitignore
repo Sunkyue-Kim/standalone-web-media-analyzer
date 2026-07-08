@@ -4,6 +4,9 @@ node_modules/
 validation/*
 !validation/generated/
 !validation/generated/*.mp4
+!validation/generated/*.mp3
+!validation/generated/*.opus
+!validation/generated/*.webm
 
 .DS_Store
 Thumbs.db

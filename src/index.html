@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MP4/fMP4 Media Analyzer</title>
+  <title>Media Container Analyzer</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <div class="app">
     <header class="topbar">
       <div class="brand">
-        <h1 data-i18n="app.title">MP4/fMP4 Media Analyzer</h1>
-        <p data-i18n="app.subtitle">Single-file parser for boxes, samples, fragments, and video frame types.</p>
+        <h1 data-i18n="app.title">Media Container Analyzer</h1>
+        <p data-i18n="app.subtitle">Single-file parser for MP4, WebM, MP3, Opus, samples, and frame metadata.</p>
       </div>
       <div class="statusbar">
         <div class="progress-line">
@@ -21,7 +21,7 @@
         <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
       </div>
       <div class="toolbar">
-        <input id="fileInput" type="file" accept=".mp4,.m4v,.mov,video/mp4,video/quicktime" hidden>
+        <input id="fileInput" type="file" accept=".mp4,.m4v,.mov,.webm,.mp3,.opus,video/mp4,video/quicktime,video/webm,audio/webm,audio/mpeg,audio/ogg,audio/opus" hidden>
         <label class="language-field">
           <span data-i18n="language.label">Language</span>
           <select id="languageSelect" aria-label="Language" data-i18n-aria-label="language.label">
@@ -97,6 +97,8 @@
                   <option value="mixed" data-i18n="value.mixed">mixed</option>
                   <option value="unknown" data-i18n="value.unknown">unknown</option>
                   <option value="AAC">AAC</option>
+                  <option value="MP3">MP3</option>
+                  <option value="Opus">Opus</option>
                   <option value="audio" data-i18n="value.audio">audio</option>
                 </select>
               </label>
@@ -178,7 +180,7 @@
   <div id="dropOverlay" class="drop-overlay" aria-hidden="true">
     <div class="drop-hint">
       <strong data-i18n="drop.title">Drop media file to analyze</strong>
-      <span data-i18n="drop.subtitle">Release anywhere in this window for MP4, M4V, or MOV parsing.</span>
+      <span data-i18n="drop.subtitle">Release anywhere in this window for MP4, WebM, MP3, or Opus parsing.</span>
     </div>
   </div>
 

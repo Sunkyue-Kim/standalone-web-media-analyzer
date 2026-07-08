@@ -145,7 +145,26 @@ function classifyHevcSliceType(sliceType) {
   return "unknown";
 }
 
+const hevcVideoCodec = {
+  id: "hevc",
+  label: "HEVC / H.265",
+  kind: "video",
+  sampleEntryTypes: ["hvc1", "hev1"],
+  configurationBoxTypes: ["hvcC"],
+  parseConfiguration: parseHevcC,
+  getSampleContext(track) {
+    return track && track.codecConfig && track.codecConfig.nalLengthSize
+      ? { nalLengthSize: track.codecConfig.nalLengthSize }
+      : null;
+  },
+  parseSample(bytes, context) {
+    return parseHevcSample(bytes, context.nalLengthSize);
+  },
+  getNalTypeName: hevcNalTypeName
+};
+
 export {
+  hevcVideoCodec,
   parseHevcC,
   parseHevcSample,
   hevcNalTypeName

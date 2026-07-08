@@ -13,6 +13,58 @@ export const PARSED_FIELD_BOXES = new Set([
 ]);
 
 export const BOX_TYPE_INFO = {
+  EBML: {
+    name: "EBML Header",
+    description: "Extensible Binary Meta Language header that identifies a Matroska/WebM-style file."
+  },
+  Segment: {
+    name: "Matroska Segment",
+    description: "Top-level WebM/Matroska segment containing metadata, tracks, clusters, and cues."
+  },
+  Info: {
+    name: "Segment Info",
+    description: "WebM/Matroska timing metadata such as timecode scale and duration."
+  },
+  Tracks: {
+    name: "Tracks",
+    description: "Container for WebM/Matroska track descriptions."
+  },
+  TrackEntry: {
+    name: "Track Entry",
+    description: "Describes one WebM/Matroska track, including type, codec, dimensions, and audio settings."
+  },
+  Cluster: {
+    name: "Cluster",
+    description: "WebM/Matroska media data cluster containing timestamped blocks."
+  },
+  SimpleBlock: {
+    name: "Simple Block",
+    description: "Timestamped WebM/Matroska block with track number, flags, and encoded frame payload."
+  },
+  BlockGroup: {
+    name: "Block Group",
+    description: "WebM/Matroska block container that can carry block-level side metadata such as discard padding."
+  },
+  Block: {
+    name: "Block",
+    description: "Encoded WebM/Matroska frame payload inside a BlockGroup."
+  },
+  OggPage: {
+    name: "Ogg Page",
+    description: "Ogg container page with lacing values that assemble Opus packets."
+  },
+  ID3v2: {
+    name: "ID3v2 Tag",
+    description: "MP3 metadata tag usually stored before MPEG audio frames."
+  },
+  ID3v1: {
+    name: "ID3v1 Tag",
+    description: "Legacy MP3 metadata tag stored in the final 128 bytes of a file."
+  },
+  MPEGAudioStream: {
+    name: "MPEG Audio Stream",
+    description: "Sequence of MPEG audio frames parsed from an MP3 elementary stream."
+  },
   ftyp: {
     name: "File Type Box",
     description: "Declares the MP4/QuickTime brand, minor version, and compatible brands."

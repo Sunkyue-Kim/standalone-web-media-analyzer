@@ -1,4 +1,4 @@
-import { VIDEO_SAMPLE_ENTRIES, AUDIO_SAMPLE_ENTRIES } from "../../codecs/registry.js";
+import { VIDEO_SAMPLE_ENTRIES, AUDIO_SAMPLE_ENTRIES, getCodecBySampleEntryType } from "../../codecs/registry.js";
 
 function findDescendants(node, type, results) {
   if (node.type === type) results.push(node);
@@ -45,10 +45,13 @@ function buildTrackModels(topBoxes, warnings) {
     const trackId = tkhd ? tkhd.fields.trackId : tracks.length + 1;
     const sampleEntry = stsd && stsd.fields.entries.length ? stsd.fields.entries[0] : null;
     const codec = sampleEntry ? sampleEntry.format : "unknown";
+    const codecDescriptor = getCodecBySampleEntryType(codec);
     const track = {
       trackId,
       handlerType: hdlr ? hdlr.fields.handlerType : "unknown",
       codec,
+      codecDescriptor: codecDescriptor ? codecDescriptor.id : "",
+      codecConfig: sampleEntry && sampleEntry.codecConfig ? sampleEntry.codecConfig : null,
       timescale: mdhd ? mdhd.fields.timescale : 0,
       duration: mdhd ? mdhd.fields.duration : "0",
       width: sampleEntry && sampleEntry.width ? sampleEntry.width : (tkhd ? tkhd.fields.width : 0),
@@ -56,23 +59,14 @@ function buildTrackModels(topBoxes, warnings) {
       channelCount: sampleEntry && sampleEntry.channelCount ? sampleEntry.channelCount : 0,
       sampleRate: sampleEntry && sampleEntry.sampleRate ? sampleEntry.sampleRate : 0,
       sampleCount: 0,
-      avcConfig: sampleEntry && sampleEntry.avcConfig ? sampleEntry.avcConfig : null,
-      hevcConfig: sampleEntry && sampleEntry.hevcConfig ? sampleEntry.hevcConfig : null,
-      audioConfig: sampleEntry && sampleEntry.audioConfig ? sampleEntry.audioConfig : null,
       esds: sampleEntry && sampleEntry.esds ? sampleEntry.esds : null,
       sampleEntry,
       trex: trexByTrack.get(trackId) || null,
       stbl: findFirst(trak, "stbl"),
       warnings: []
     };
-    if ((codec === "avc1" || codec === "avc3") && !track.avcConfig) {
-      track.warnings.push("AVC sample entry has no avcC box.");
-    }
-    if ((codec === "hvc1" || codec === "hev1") && !track.hevcConfig) {
-      track.warnings.push("HEVC sample entry has no hvcC box.");
-    }
-    if (codec === "mp4a" && !track.audioConfig) {
-      track.warnings.push("AAC sample entry has no esds AudioSpecificConfig.");
+    if (codecDescriptor && codecDescriptor.configurationBoxTypes.length && !track.codecConfig) {
+      track.warnings.push(codecDescriptor.label + " sample entry has no " + codecDescriptor.configurationBoxTypes.join("/") + " configuration box.");
     }
     tracks.push(track);
   }
@@ -256,6 +250,8 @@ function sampleFlagsToSync(flags) {
 function getDefaultSampleFrameType(track) {
   if (!track) return "";
   if (track.codec === "mp4a") return "AAC";
+  if (track.codec === "mp3" || track.codec === ".mp3") return "MP3";
+  if (track.codec === "opus" || track.codec === "A_OPUS") return "Opus";
   if (track.handlerType === "soun") return "audio";
   return "";
 }
@@ -263,6 +259,8 @@ function getDefaultSampleFrameType(track) {
 function getDefaultSampleTags(track) {
   if (!track) return [];
   if (track.codec === "mp4a") return ["AAC"];
+  if (track.codec === "mp3" || track.codec === ".mp3") return ["MP3"];
+  if (track.codec === "opus" || track.codec === "A_OPUS") return ["Opus"];
   if (track.handlerType === "soun") return [track.codec];
   return [];
 }

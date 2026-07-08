@@ -164,7 +164,20 @@ function describeChannelConfiguration(channelConfiguration) {
   return names[channelConfiguration] || channelConfiguration + " channels";
 }
 
+const aacAudioCodec = {
+  id: "aac",
+  label: "AAC",
+  kind: "audio",
+  sampleEntryTypes: ["mp4a"],
+  configurationBoxTypes: ["esds"],
+  parseConfiguration: parseEsds,
+  extractTrackConfig(fields) {
+    return fields.audioConfig || null;
+  }
+};
+
 export {
+  aacAudioCodec,
   parseEsds,
   parseAudioSpecificConfig
 };

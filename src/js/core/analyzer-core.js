@@ -1,11 +1,13 @@
 import { BOX_TYPE_INFO } from "./containers/isobmff/box-types.js";
 import { findDescendants, getDefaultSampleFrameType } from "./containers/isobmff/sample-model.js";
 import { analyzeFileWithRegisteredContainer } from "./containers/registry.js";
-import { parseAudioSpecificConfig, parseEsds } from "./codecs/audio/aac.js";
-import { parseAvcSample } from "./codecs/video/avc.js";
-import { parseHevcC, parseHevcSample } from "./codecs/video/hevc.js";
-import { getFrameTypeScanner } from "./codecs/registry.js";
-import { scanAvcFrameTypes, scanFrameTypes, shouldAutoScan } from "./codecs/frame-scanner.js";
+import {
+  CODEC_DESCRIPTORS,
+  getCodecByConfigurationBoxType,
+  getCodecBySampleEntryType,
+  getFrameTypeScanner
+} from "./codecs/registry.js";
+import { scanFrameTypes, shouldAutoScan } from "./codecs/frame-scanner.js";
 import { runParserSelfTests } from "./self-tests.js";
 import {
   ROW_HEIGHT,
@@ -31,12 +33,9 @@ async function analyzeFile(file, options) {
 export const Core = {
   analyzeFile,
   scanFrameTypes,
-  scanAvcFrameTypes,
-  parseAvcSample,
-  parseHevcSample,
-  parseAudioSpecificConfig,
-  parseEsds,
-  parseHevcC,
+  codecs: CODEC_DESCRIPTORS,
+  getCodecByConfigurationBoxType,
+  getCodecBySampleEntryType,
   runParserSelfTests,
   shouldAutoScan,
   formatBytes,

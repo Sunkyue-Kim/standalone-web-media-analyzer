@@ -1,8 +1,9 @@
 import { ByteCursor, fourCcFromBytes, hexByte, readFullBoxHeader } from "../../common/binary.js";
-import { VIDEO_SAMPLE_ENTRIES, AUDIO_SAMPLE_ENTRIES } from "../../codecs/registry.js";
-import { parseAvcC } from "../../codecs/video/avc.js";
-import { parseHevcC } from "../../codecs/video/hevc.js";
-import { parseEsds } from "../../codecs/audio/aac.js";
+import {
+  VIDEO_SAMPLE_ENTRIES,
+  AUDIO_SAMPLE_ENTRIES,
+  getCodecByConfigurationBoxType
+} from "../../codecs/registry.js";
 import { CONTAINER_BOXES, FULLBOX_CONTAINER_OFFSETS, PARSED_FIELD_BOXES } from "./box-types.js";
 
 async function readBoxPayload(reader, node, maxBytes) {
@@ -212,16 +213,12 @@ function parseSampleEntryChildren(cursor, start, end, entry) {
     const childType = cursor.string(offset + 4, 4);
     if (childSize < 8 || offset + childSize > end) break;
     const child = { type: childType, size: childSize };
-    if (childType === "avcC") {
-      child.fields = parseAvcC(cursor.bytesAt(offset + 8, childSize - 8));
-      entry.avcConfig = child.fields;
-    } else if (childType === "hvcC") {
-      child.fields = parseHevcC(cursor.bytesAt(offset + 8, childSize - 8));
-      entry.hevcConfig = child.fields;
-    } else if (childType === "esds") {
-      child.fields = parseEsds(cursor.bytesAt(offset + 8, childSize - 8));
-      entry.audioConfig = child.fields.audioConfig || null;
-      entry.esds = child.fields;
+    const codecDescriptor = getCodecByConfigurationBoxType(childType);
+    if (codecDescriptor && typeof codecDescriptor.parseConfiguration === "function") {
+      child.fields = codecDescriptor.parseConfiguration(cursor.bytesAt(offset + 8, childSize - 8));
+      entry.codecDescriptor = codecDescriptor.id;
+      entry.codecConfig = codecDescriptor.extractTrackConfig ? codecDescriptor.extractTrackConfig(child.fields) : child.fields;
+      if (childType === "esds") entry.esds = child.fields;
     } else if (childType === "pasp" && childSize >= 16) {
       child.fields = { hSpacing: cursor.uint32(offset + 8), vSpacing: cursor.uint32(offset + 12) };
     } else if (childType === "colr") {

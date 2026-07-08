@@ -5,8 +5,11 @@ import { buildFragmentSamples, buildNormalSamples, buildTrackModels, flattenBoxe
 export const isoBmffContainer = {
   id: "isobmff",
   label: "ISO BMFF / MP4",
-  async canAnalyze() {
-    return true;
+  async canAnalyze(file) {
+    const bytes = new Uint8Array(await file.slice(0, Math.min(file.size, 16)).arrayBuffer());
+    if (bytes.byteLength < 8) return false;
+    const type = String.fromCharCode(bytes[4], bytes[5], bytes[6], bytes[7]);
+    return new Set(["ftyp", "moov", "mdat", "free", "skip", "wide", "uuid"]).has(type);
   },
   analyzeFile: analyzeIsoBmffFile
 };

@@ -1,4 +1,7 @@
 import { parseAudioSpecificConfig, parseEsds } from "./codecs/audio/aac.js";
+import { parseMp3FrameHeader } from "./codecs/audio/mp3.js";
+import { parseOpusHead, parseOpusPacket } from "./codecs/audio/opus.js";
+import { getCodecByConfigurationBoxType, getCodecBySampleEntryType } from "./codecs/registry.js";
 import { parseAvcSample } from "./codecs/video/avc.js";
 import { parseHevcC, parseHevcSample } from "./codecs/video/hevc.js";
 
@@ -32,6 +35,20 @@ function runParserSelfTests() {
 
   const hevcSample = new Uint8Array([0x00, 0x00, 0x00, 0x03, 0x26, 0x01, 0xac]);
   assertSelfTest(parseHevcSample(hevcSample, 4).frameType === "I", "HEVC synthetic I frame", results);
+
+  const mp3Header = parseMp3FrameHeader(new Uint8Array([0xff, 0xfb, 0x90, 0x64]), 0);
+  assertSelfTest(mp3Header && mp3Header.samplingRate === 44100, "MP3 frame header sample rate", results);
+  assertSelfTest(mp3Header && mp3Header.frameLength === 417, "MP3 frame header length", results);
+
+  const opusHead = parseOpusHead(new Uint8Array([
+    0x4f, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64,
+    0x01, 0x02, 0x38, 0x01, 0x80, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00
+  ]));
+  assertSelfTest(opusHead && opusHead.channelCount === 2, "OpusHead stereo", results);
+  assertSelfTest(parseOpusPacket(new Uint8Array([0x78])).durationSamples === 960, "Opus packet duration", results);
+
+  assertSelfTest(getCodecBySampleEntryType("avc1").id === "avc", "codec registry sample entry lookup", results);
+  assertSelfTest(getCodecByConfigurationBoxType("hvcC").id === "hevc", "codec registry config box lookup", results);
 
   return { passed: true, results };
 }

@@ -28,7 +28,7 @@ async function build() {
     js: minifiedJs
   });
 
-  const minifiedHtml = await minifyHtml(minifiedHtmlBeforeHtmlPass, {
+  const minifiedHtml = (await minifyHtml(minifiedHtmlBeforeHtmlPass, {
     collapseBooleanAttributes: true,
     collapseWhitespace: true,
     conservativeCollapse: true,
@@ -37,7 +37,7 @@ async function build() {
     removeAttributeQuotes: false,
     removeComments: true,
     removeOptionalTags: false
-  });
+  })).trim() + "\n";
 
   await fs.writeFile(outputHtmlPath, normalHtml, "utf8");
   await fs.writeFile(outputMinifiedHtmlPath, minifiedHtml, "utf8");

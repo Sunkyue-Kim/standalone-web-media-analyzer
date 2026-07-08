@@ -1,6 +1,9 @@
 import { isoBmffContainer } from "./isobmff/analyzer.js";
+import { mp3Container } from "./mp3/analyzer.js";
+import { oggOpusContainer } from "./ogg/analyzer.js";
+import { webmContainer } from "./webm/analyzer.js";
 
-export const CONTAINER_ANALYZERS = [isoBmffContainer];
+export const CONTAINER_ANALYZERS = [webmContainer, oggOpusContainer, mp3Container, isoBmffContainer];
 
 export async function analyzeFileWithRegisteredContainer(file, options) {
   for (const analyzer of CONTAINER_ANALYZERS) {

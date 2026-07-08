@@ -104,7 +104,26 @@ function parseAvcSample(bytes, nalLengthSize) {
   return { frameType, nalTypes };
 }
 
+const avcVideoCodec = {
+  id: "avc",
+  label: "AVC / H.264",
+  kind: "video",
+  sampleEntryTypes: ["avc1", "avc2", "avc3", "avc4"],
+  configurationBoxTypes: ["avcC"],
+  parseConfiguration: parseAvcC,
+  getSampleContext(track) {
+    return track && track.codecConfig && track.codecConfig.nalLengthSize
+      ? { nalLengthSize: track.codecConfig.nalLengthSize }
+      : null;
+  },
+  parseSample(bytes, context) {
+    return parseAvcSample(bytes, context.nalLengthSize);
+  },
+  getNalTypeName: nalTypeName
+};
+
 export {
+  avcVideoCodec,
   parseAvcC,
   parseAvcSample,
   nalTypeName

@@ -29,10 +29,6 @@ async function scanFrameTypes(analysis, options) {
   }
 }
 
-async function scanAvcFrameTypes(analysis, options) {
-  return scanFrameTypes(analysis, options);
-}
-
 function shouldAutoScan(analysis) {
   const videoRows = analysis.sampleRows.filter((row) => {
     const track = analysis.tracks.find((candidate) => candidate.trackId === row.trackId);
@@ -44,6 +40,5 @@ function shouldAutoScan(analysis) {
 
 export {
   scanFrameTypes,
-  scanAvcFrameTypes,
   shouldAutoScan
 };

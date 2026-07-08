@@ -121,9 +121,8 @@ window.MP4AnalyzerDevTools = {
         handlerType: track.handlerType,
         codec: track.codec,
         samples: track.sampleCount,
-        avc: Boolean(track.avcConfig),
-        hevc: Boolean(track.hevcConfig),
-        aac: Boolean(track.audioConfig)
+        codecDescriptor: track.codecDescriptor,
+        codecConfig: Boolean(track.codecConfig)
       })),
       sampleRows: state.analysis.sampleRows.length,
       warnings: state.analysis.warnings
@@ -380,7 +379,9 @@ function isLikelyMediaFile(file) {
   if (!file) return false;
   const name = String(file.name || "").toLowerCase();
   return name.endsWith(".mp4") || name.endsWith(".m4v") || name.endsWith(".mov") ||
-    file.type === "video/mp4" || file.type === "video/quicktime";
+    name.endsWith(".webm") || name.endsWith(".mp3") || name.endsWith(".opus") ||
+    file.type === "video/mp4" || file.type === "video/quicktime" || file.type === "video/webm" ||
+    file.type === "audio/webm" || file.type === "audio/mpeg" || file.type === "audio/ogg" || file.type === "audio/opus";
 }
 
 function handleWindowDragEnter(event) {
@@ -596,20 +597,26 @@ function renderAll() {
 function renderSummary() {
   const analysis = state.analysis;
   const videoTracks = analysis.tracks.filter((track) => track.handlerType === "vide").length;
+  const audioTracks = analysis.tracks.filter((track) => track.handlerType === "soun").length;
   const fragments = analysis.topBoxes.filter((box) => box.type === "moof").length;
   const avcTracks = analysis.tracks.filter((track) => track.codec === "avc1" || track.codec === "avc3").length;
   const hevcTracks = analysis.tracks.filter((track) => track.codec === "hvc1" || track.codec === "hev1").length;
   const aacTracks = analysis.tracks.filter((track) => track.codec === "mp4a").length;
+  const mp3Tracks = analysis.tracks.filter((track) => track.codec === "mp3").length;
+  const opusTracks = analysis.tracks.filter((track) => track.codec === "opus" || track.codec === "A_OPUS").length;
   elements.summaryPanel.innerHTML = [
     '<div class="summary-grid">',
     summaryCard(t("summary.fileSize"), formatBytes(analysis.file.size)),
     summaryCard(t("summary.tracks"), String(analysis.tracks.length)),
     summaryCard(t("summary.videoTracks"), String(videoTracks)),
+    summaryCard(t("summary.audioTracks"), String(audioTracks)),
     summaryCard(t("summary.fragments"), String(fragments)),
     summaryCard(t("summary.samples"), String(analysis.sampleRows.length)),
     summaryCard(t("summary.avcTracks"), String(avcTracks)),
     summaryCard(t("summary.hevcTracks"), String(hevcTracks)),
     summaryCard(t("summary.aacTracks"), String(aacTracks)),
+    summaryCard(t("summary.mp3Tracks"), String(mp3Tracks)),
+    summaryCard(t("summary.opusTracks"), String(opusTracks)),
     summaryCard(t("summary.warnings"), String(analysis.warnings.length)),
     '</div>',
     '<p class="split-note">' + escapeHtml(t("summary.note")) + '</p>',
@@ -713,21 +720,27 @@ function formatTrackLabel(track) {
 function formatTrackMedia(track) {
   if (track.handlerType === "vide") return track.width + "x" + track.height;
   if (track.handlerType === "soun") {
-    const sampleRate = track.audioConfig && track.audioConfig.samplingFrequency ? track.audioConfig.samplingFrequency : track.sampleRate;
-    const channels = track.audioConfig && track.audioConfig.channelDescription ? track.audioConfig.channelDescription : (track.channelCount ? track.channelCount + " channels" : "audio");
+    const sampleRate = track.codecConfig && track.codecConfig.samplingFrequency ? track.codecConfig.samplingFrequency : track.sampleRate;
+    const channels = track.codecConfig && track.codecConfig.channelDescription ? track.codecConfig.channelDescription : (track.channelCount ? track.channelCount + " channels" : "audio");
     return channels + (sampleRate ? " @ " + sampleRate + " Hz" : "");
   }
   return t("value.notAvailable");
 }
 
 function formatTrackCodecConfig(track) {
-  if (track.avcConfig) return track.avcConfig.codecString + ", NAL length " + track.avcConfig.nalLengthSize;
-  if (track.hevcConfig) return track.hevcConfig.codecString + ", NAL length " + track.hevcConfig.nalLengthSize + ", " + track.hevcConfig.bitDepthLuma + "-bit";
-  if (track.audioConfig) {
-    const codecString = track.audioConfig.codecString || "mp4a";
-    return codecString + ", " + track.audioConfig.audioObjectTypeName + ", " + track.audioConfig.channelDescription;
+  const config = track.codecConfig;
+  if (!config) return t("value.notAvailable");
+  if (config.nalLengthSize) {
+    const bitDepth = config.bitDepthLuma ? ", " + config.bitDepthLuma + "-bit" : "";
+    return (config.codecString || track.codec) + ", NAL length " + config.nalLengthSize + bitDepth;
   }
-  return t("value.notAvailable");
+  if (track.handlerType === "soun") {
+    const codecString = config.codecString || track.codec;
+    const objectType = config.audioObjectTypeName || track.codec;
+    const channels = config.channelDescription || (track.channelCount ? track.channelCount + " channels" : "audio");
+    return codecString + ", " + objectType + ", " + channels;
+  }
+  return config.codecString || track.codec;
 }
 
 function populateMetricsTrackFilter(tracks) {
@@ -1116,7 +1129,7 @@ function getFrameTypeClass(type) {
   if (type === "I" || type === "IDR") return "i";
   if (type === "P") return "p";
   if (type === "B") return "b";
-  if (type === "AAC" || type === "audio") return "aac";
+  if (type === "AAC" || type === "MP3" || type === "Opus" || type === "audio") return "aac";
   if (type === "unknown") return "warn";
   if (String(type).startsWith("mixed")) return "err";
   return "";
@@ -1205,9 +1218,8 @@ function exportJson() {
       channelCount: track.channelCount,
       sampleRate: track.sampleRate,
       sampleCount: track.sampleCount,
-      avcConfig: track.avcConfig,
-      hevcConfig: track.hevcConfig,
-      audioConfig: track.audioConfig
+      codecDescriptor: track.codecDescriptor,
+      codecConfig: track.codecConfig
     })),
     sampleRows: state.analysis.sampleRows,
     warnings: state.analysis.warnings
