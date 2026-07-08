@@ -1,5 +1,7 @@
 const CACHE_CHUNK_BYTES = 4 * 1024 * 1024;
+const SMALL_RANGE_CHUNK_BYTES = 4 * 1024;
 const MAX_CACHE_BYTES = 64 * 1024 * 1024;
+const MAX_SMALL_RANGE_CACHE_BYTES = 4 * 1024 * 1024;
 const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
 
 function toBig(value) {
@@ -96,7 +98,9 @@ class CachedRangeReader {
   constructor(file) {
     this.file = file;
     this.cache = new Map();
+    this.smallRangeCache = new Map();
     this.cacheBytes = 0;
+    this.smallRangeCacheBytes = 0;
     this.cancelled = false;
   }
 
@@ -135,7 +139,31 @@ class CachedRangeReader {
     if (length <= 0) return new Uint8Array(0);
     const resourceSize = Number(this.file && this.file.size || 0);
     if (offset >= resourceSize) return new Uint8Array(0);
-    return this.readExactRangeBytes(offset, Math.min(length, resourceSize - offset));
+    const clippedLength = Math.min(length, resourceSize - offset);
+    if (clippedLength <= SMALL_RANGE_CHUNK_BYTES) {
+      return this.readSmallCachedRange(offset, clippedLength);
+    }
+    return this.readExactRangeBytes(offset, clippedLength);
+  }
+
+  async readSmallCachedRange(offset, length) {
+    const result = new Uint8Array(length);
+    let written = 0;
+    let cursor = offset;
+    const end = offset + length;
+    while (cursor < end) {
+      if (this.cancelled) throw new Error("Analysis cancelled.");
+      const chunkIndex = Math.floor(cursor / SMALL_RANGE_CHUNK_BYTES);
+      const chunkStart = chunkIndex * SMALL_RANGE_CHUNK_BYTES;
+      const chunk = await this.getCachedSmallRangeChunk(chunkIndex);
+      const localStart = cursor - chunkStart;
+      if (localStart >= chunk.byteLength) throw new Error("Small range reader returned too few bytes at " + cursor);
+      const copyLength = Math.min(chunk.byteLength - localStart, end - cursor);
+      result.set(chunk.subarray(localStart, localStart + copyLength), written);
+      written += copyLength;
+      cursor += copyLength;
+    }
+    return result;
   }
 
   async getCachedChunk(chunkIndex) {
@@ -149,6 +177,23 @@ class CachedRangeReader {
     this.cache.set(chunkIndex, { bytes, size: bytes.byteLength });
     this.cacheBytes += bytes.byteLength;
     this.evict();
+    return bytes;
+  }
+
+  async getCachedSmallRangeChunk(chunkIndex) {
+    const cached = this.smallRangeCache.get(chunkIndex);
+    if (cached) {
+      this.smallRangeCache.delete(chunkIndex);
+      this.smallRangeCache.set(chunkIndex, cached);
+      return cached.bytes;
+    }
+    const chunkStart = chunkIndex * SMALL_RANGE_CHUNK_BYTES;
+    const resourceSize = Number(this.file && this.file.size || 0);
+    const chunkLength = Math.min(SMALL_RANGE_CHUNK_BYTES, Math.max(0, resourceSize - chunkStart));
+    const bytes = chunkLength > 0 ? await this.readExactRangeBytes(chunkStart, chunkLength) : new Uint8Array(0);
+    this.smallRangeCache.set(chunkIndex, { bytes, size: bytes.byteLength });
+    this.smallRangeCacheBytes += bytes.byteLength;
+    this.evictSmallRangeCache();
     return bytes;
   }
 
@@ -166,6 +211,15 @@ class CachedRangeReader {
       const item = this.cache.get(firstKey);
       this.cache.delete(firstKey);
       this.cacheBytes -= item.size;
+    }
+  }
+
+  evictSmallRangeCache() {
+    while (this.smallRangeCacheBytes > MAX_SMALL_RANGE_CACHE_BYTES && this.smallRangeCache.size > 1) {
+      const firstKey = this.smallRangeCache.keys().next().value;
+      const item = this.smallRangeCache.get(firstKey);
+      this.smallRangeCache.delete(firstKey);
+      this.smallRangeCacheBytes -= item.size;
     }
   }
 }
@@ -276,6 +330,7 @@ function getResourceInfo(file) {
 
 export {
   MAX_SAFE_BIGINT,
+  SMALL_RANGE_CHUNK_BYTES,
   toSafeNumber,
   hexByte,
   fourCcFromBytes,

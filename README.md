@@ -56,7 +56,7 @@ Codec and frame-type support is also scoped:
 
 Large-file behavior is optimized for responsiveness, not full forensic recovery:
 
-- Header and metadata probes use small exact range reads.
+- Header and metadata probes use a 4 KB small-range cache to avoid both tiny per-box requests and early 4 MB downloads.
 - Larger sample/payload reads use a 4 MB range cache with a 64 MB LRU cap.
 - Frame-type scanning still needs to read video sample payload bytes, so very large files or very high sample counts can take time even though the UI renders rows with a recycler view.
 

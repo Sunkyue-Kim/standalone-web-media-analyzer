@@ -124,6 +124,7 @@ test("remote ISO BMFF analysis starts with small exact range probes before large
     }
   });
   const containers = await loader.import("src/js/core/containers/registry.js");
+  const { SMALL_RANGE_CHUNK_BYTES } = await loader.import("src/js/core/common/binary.js");
   const analysis = await containers.analyzeFileWithRegisteredContainer({
     kind: "remote-url",
     url: "https://media.test/large-header.mp4",
@@ -135,9 +136,9 @@ test("remote ISO BMFF analysis starts with small exact range probes before large
 
   assert.equal(analysis.container.id, "isobmff");
   assert.deepEqual(JSON.parse(JSON.stringify(analysis.topBoxes.map((box) => box.type))), ["ftyp", "free"]);
-  assert.ok(rangeRequests.length >= 4);
-  assert.ok(rangeRequests.every((request) => request.length <= 64 * 1024), JSON.stringify(rangeRequests));
-  assert.ok(rangeRequests.some((request) => request.start === 0 && request.end < 4096), JSON.stringify(rangeRequests));
+  assert.ok(rangeRequests.length <= 3, JSON.stringify(rangeRequests));
+  assert.ok(rangeRequests.every((request) => request.length === SMALL_RANGE_CHUNK_BYTES), JSON.stringify(rangeRequests));
+  assert.ok(rangeRequests.every((request) => request.start === 0 && request.end === SMALL_RANGE_CHUNK_BYTES - 1), JSON.stringify(rangeRequests));
 });
 
 function writeUint32(bytes, offset, value) {
