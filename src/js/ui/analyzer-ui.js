@@ -34,6 +34,7 @@ import {
 
 export function startUserInterface(Core) {
   if (typeof document === "undefined" || !document.getElementById) return;
+const FRAME_TABLE_HEADER_HEIGHT = 34;
 const state = {
   analysis: null,
   language: getLanguage(),
@@ -92,6 +93,7 @@ const elements = {
   frameCountText: document.getElementById("frameCountText"),
   frameGraphView: document.getElementById("frameGraphView"),
   frameTableView: document.getElementById("frameTableView"),
+  frameWrap: document.getElementById("frameWrap"),
   frameScroller: document.getElementById("frameScroller"),
   frameSpacer: document.getElementById("frameSpacer"),
   graphAxisScale: document.getElementById("graphAxisScale"),
@@ -170,7 +172,7 @@ elements.scanButton.addEventListener("click", async () => {
 
 elements.exportJsonButton.addEventListener("click", exportJson);
 elements.exportCsvButton.addEventListener("click", exportCsv);
-elements.frameScroller.addEventListener("scroll", scheduleFrameRender);
+elements.frameWrap.addEventListener("scroll", scheduleFrameRender);
 elements.graphScroller.addEventListener("scroll", scheduleFrameRender);
 elements.frameSpacer.addEventListener("click", handleFrameRowPointerActivation);
 elements.graphSpacer.addEventListener("click", handleFrameRowPointerActivation);
@@ -481,6 +483,8 @@ function resetView(file, options = {}) {
   elements.fragmentsPanel.innerHTML = emptyHtml("empty.noFragments");
   elements.warningsPanel.innerHTML = emptyHtml("empty.noWarnings");
   elements.metricsBody.innerHTML = emptyHtml("empty.parsingMetrics");
+  elements.frameWrap.scrollTop = 0;
+  elements.frameWrap.scrollLeft = 0;
   elements.frameSpacer.innerHTML = "";
   elements.frameSpacer.style.height = "0px";
   elements.graphSpacer.innerHTML = "";
@@ -1066,8 +1070,8 @@ function scheduleFrameRender() {
 
 function renderVisibleFrameRows() {
   const rows = state.filteredRows;
-  const scrollTop = elements.frameScroller.scrollTop;
-  const height = elements.frameScroller.clientHeight || 400;
+  const scrollTop = Math.max(0, elements.frameWrap.scrollTop - FRAME_TABLE_HEADER_HEIGHT);
+  const height = Math.max(1, (elements.frameWrap.clientHeight || 400) - FRAME_TABLE_HEADER_HEIGHT);
   const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 8);
   const last = Math.min(rows.length, Math.ceil((scrollTop + height) / ROW_HEIGHT) + 8);
   const html = [];

@@ -753,15 +753,15 @@ button:disabled {
   display: block;
 }
 .frame-wrap {
+  position: relative;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   height: 100%;
   min-height: 0;
-  display: grid;
-  grid-template-rows: 34px 1fr;
-  overflow-x: auto;
-  overflow-y: hidden;
+  display: block;
+  overflow: auto;
+  scrollbar-gutter: stable;
   contain: inline-size;
 }
 .frame-header,
@@ -771,6 +771,9 @@ button:disabled {
   align-items: center;
 }
 .frame-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   width: var(--frame-table-width);
   min-width: var(--frame-table-width);
   background: #f8fafc;
@@ -789,8 +792,7 @@ button:disabled {
 }
 .frame-scroller {
   position: relative;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: visible;
   min-height: 0;
   width: var(--frame-table-width);
   min-width: var(--frame-table-width);
@@ -1410,7 +1412,7 @@ button:disabled {
               </div>
             </div>
             <div id="frameTableView" class="frame-view active">
-              <div class="frame-wrap">
+              <div id="frameWrap" class="frame-wrap">
                 <div class="frame-header">
                   <div data-i18n="column.index">Index</div><div data-i18n="column.track">Track</div><div data-i18n="column.type">Type</div><div data-i18n="column.offset">Offset</div><div data-i18n="column.size">Size</div><div>DTS</div><div>PTS</div><div data-i18n="column.duration">Duration</div><div data-i18n="column.sync">Sync</div><div>NAL</div><div data-i18n="column.chunkFragment">Chunk/Frag</div>
                 </div>
@@ -5316,6 +5318,7 @@ button:disabled {
   // local-source:C:\Users\user\Documents\Codex\2026-07-08\js-html-mp4-html-mp4-i\src\js\ui\analyzer-ui.js
   function startUserInterface(Core2) {
     if (typeof document === "undefined" || !document.getElementById) return;
+    const FRAME_TABLE_HEADER_HEIGHT = 34;
     const state = {
       analysis: null,
       language: getLanguage(),
@@ -5373,6 +5376,7 @@ button:disabled {
       frameCountText: document.getElementById("frameCountText"),
       frameGraphView: document.getElementById("frameGraphView"),
       frameTableView: document.getElementById("frameTableView"),
+      frameWrap: document.getElementById("frameWrap"),
       frameScroller: document.getElementById("frameScroller"),
       frameSpacer: document.getElementById("frameSpacer"),
       graphAxisScale: document.getElementById("graphAxisScale"),
@@ -5444,7 +5448,7 @@ button:disabled {
     });
     elements.exportJsonButton.addEventListener("click", exportJson);
     elements.exportCsvButton.addEventListener("click", exportCsv);
-    elements.frameScroller.addEventListener("scroll", scheduleFrameRender);
+    elements.frameWrap.addEventListener("scroll", scheduleFrameRender);
     elements.graphScroller.addEventListener("scroll", scheduleFrameRender);
     elements.frameSpacer.addEventListener("click", handleFrameRowPointerActivation);
     elements.graphSpacer.addEventListener("click", handleFrameRowPointerActivation);
@@ -5723,6 +5727,8 @@ button:disabled {
       elements.fragmentsPanel.innerHTML = emptyHtml("empty.noFragments");
       elements.warningsPanel.innerHTML = emptyHtml("empty.noWarnings");
       elements.metricsBody.innerHTML = emptyHtml("empty.parsingMetrics");
+      elements.frameWrap.scrollTop = 0;
+      elements.frameWrap.scrollLeft = 0;
       elements.frameSpacer.innerHTML = "";
       elements.frameSpacer.style.height = "0px";
       elements.graphSpacer.innerHTML = "";
@@ -6230,8 +6236,8 @@ button:disabled {
     }
     function renderVisibleFrameRows() {
       const rows = state.filteredRows;
-      const scrollTop = elements.frameScroller.scrollTop;
-      const height = elements.frameScroller.clientHeight || 400;
+      const scrollTop = Math.max(0, elements.frameWrap.scrollTop - FRAME_TABLE_HEADER_HEIGHT);
+      const height = Math.max(1, (elements.frameWrap.clientHeight || 400) - FRAME_TABLE_HEADER_HEIGHT);
       const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 8);
       const last = Math.min(rows.length, Math.ceil((scrollTop + height) / ROW_HEIGHT) + 8);
       const html = [];

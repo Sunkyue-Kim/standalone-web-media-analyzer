@@ -824,15 +824,15 @@
     }
 
     .frame-wrap {
+      position: relative;
       width: 100%;
       max-width: 100%;
       min-width: 0;
       height: 100%;
       min-height: 0;
-      display: grid;
-      grid-template-rows: 34px 1fr;
-      overflow-x: auto;
-      overflow-y: hidden;
+      display: block;
+      overflow: auto;
+      scrollbar-gutter: stable;
       contain: inline-size;
     }
 
@@ -843,6 +843,9 @@
     }
 
     .frame-header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
       width: var(--frame-table-width);
       min-width: var(--frame-table-width);
       background: #f8fafc;
@@ -862,8 +865,7 @@
 
     .frame-scroller {
       position: relative;
-      overflow-x: hidden;
-      overflow-y: auto;
+      overflow: visible;
       min-height: 0;
       width: var(--frame-table-width);
       min-width: var(--frame-table-width);

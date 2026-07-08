@@ -131,8 +131,13 @@ function verifyResponsiveLayoutCss() {
   );
   assertCssRule(
     sourceCss,
-    /\.frame-wrap\s*\{[\s\S]*?width:\s*100%;[\s\S]*?max-width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?overflow-x:\s*auto;[\s\S]*?contain:\s*inline-size;/,
-    "Frame table wrapper must own horizontal scrolling."
+    /\.frame-wrap\s*\{[\s\S]*?width:\s*100%;[\s\S]*?max-width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*auto;[\s\S]*?contain:\s*inline-size;/,
+    "Frame table wrapper must own both horizontal and vertical scrolling."
+  );
+  assertCssRule(
+    sourceCss,
+    /\.frame-header\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?top:\s*0;/,
+    "Frame table header must stay visible inside the shared scroll container."
   );
   assertCssRule(
     sourceCss,
@@ -141,8 +146,8 @@ function verifyResponsiveLayoutCss() {
   );
   assertCssRule(
     sourceCss,
-    /\.frame-scroller\s*\{[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overflow-y:\s*auto;[\s\S]*?width:\s*var\(--frame-table-width\);/,
-    "Frame virtual scroller must keep vertical scroll while the wrapper handles horizontal scroll."
+    /\.frame-scroller\s*\{[\s\S]*?overflow:\s*visible;[\s\S]*?width:\s*var\(--frame-table-width\);/,
+    "Frame virtual scroller must not own scrollbars."
   );
   assertCssRule(
     sourceCss,
@@ -172,6 +177,9 @@ async function main() {
   }
   if (!/row\.sampleIndex[\s\S]*row\.trackId[\s\S]*formatFrameTypeLabel\(type\)[\s\S]*row\.offset/.test(sourceUi)) {
     throw new Error("Frame table row renderer must place Type immediately after Index and Track.");
+  }
+  if (!/frameWrap\.addEventListener\("scroll"/.test(sourceUi) || /frameScroller\.addEventListener\("scroll"/.test(sourceUi)) {
+    throw new Error("Frame table virtual scroll must listen on frameWrap, not frameScroller.");
   }
   if (!/metric-y-axis-label/.test(sourceUi) || !/metric-x-axis/.test(sourceUi)) {
     throw new Error("Metric chart axis labels must be rendered outside the stretched SVG.");
