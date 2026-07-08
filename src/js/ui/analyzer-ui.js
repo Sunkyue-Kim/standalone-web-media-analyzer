@@ -24,6 +24,14 @@ import {
   t
 } from "../i18n/catalogs.js";
 import { SAMPLE_FILES } from "../samples/sample-manifest.js";
+import {
+  canUseSampleCatalogLocation,
+  csvCell,
+  escapeHtml,
+  getFrameRowKey,
+  getFrameTypeClass,
+  isLikelyMediaFile
+} from "./ui-helpers.js";
 
 export function startUserInterface(Core) {
   if (typeof document === "undefined" || !document.getElementById) return;
@@ -270,7 +278,7 @@ function populateSampleSelect() {
 
 function canUseSampleCatalog() {
   if (typeof window === "undefined" || !window.location) return false;
-  return window.location.protocol === "http:" || window.location.protocol === "https:";
+  return canUseSampleCatalogLocation(window.location);
 }
 
 function getSampleLabel(sample) {
@@ -359,10 +367,6 @@ function seekPreviewToFrameRow(row) {
   }
 }
 
-function getFrameRowKey(row) {
-  return String(row.trackId) + ":" + String(row.sampleIndex);
-}
-
 function hasDraggedFiles(dataTransfer) {
   if (!dataTransfer) return false;
   const types = Array.from(dataTransfer.types || []);
@@ -373,15 +377,6 @@ function hasDraggedFiles(dataTransfer) {
 function getDroppedMediaFile(fileList) {
   const files = Array.from(fileList || []);
   return files.find(isLikelyMediaFile) || files[0] || null;
-}
-
-function isLikelyMediaFile(file) {
-  if (!file) return false;
-  const name = String(file.name || "").toLowerCase();
-  return name.endsWith(".mp4") || name.endsWith(".m4v") || name.endsWith(".mov") ||
-    name.endsWith(".webm") || name.endsWith(".mp3") || name.endsWith(".opus") ||
-    file.type === "video/mp4" || file.type === "video/quicktime" || file.type === "video/webm" ||
-    file.type === "audio/webm" || file.type === "audio/mpeg" || file.type === "audio/ogg" || file.type === "audio/opus";
 }
 
 function handleWindowDragEnter(event) {
@@ -1125,16 +1120,6 @@ function renderGraphRow(row, visualIndex) {
     '</div>';
 }
 
-function getFrameTypeClass(type) {
-  if (type === "I" || type === "IDR") return "i";
-  if (type === "P") return "p";
-  if (type === "B") return "b";
-  if (type === "AAC" || type === "MP3" || type === "Opus" || type === "audio") return "aac";
-  if (type === "unknown") return "warn";
-  if (String(type).startsWith("mixed")) return "err";
-  return "";
-}
-
 function formatFrameTypeLabel(type) {
   if (type === "unknown") return t("value.unknown");
   if (type === "audio") return t("value.audio");
@@ -1237,12 +1222,6 @@ function exportCsv() {
   downloadText("mp4-samples.csv", lines.join("\n"), "text/csv");
 }
 
-function csvCell(value) {
-  const text = value === undefined || value === null ? "" : String(value);
-  if (/[",\n]/.test(text)) return '"' + text.replace(/"/g, '""') + '"';
-  return text;
-}
-
 function downloadText(filename, text, type) {
   const blob = new Blob([text], { type });
   const url = URL.createObjectURL(blob);
@@ -1255,13 +1234,4 @@ function downloadText(filename, text, type) {
   URL.revokeObjectURL(url);
 }
 
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;"
-  })[char]);
-}
 }

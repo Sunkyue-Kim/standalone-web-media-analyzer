@@ -54,13 +54,26 @@ Build outputs are still single HTML files:
 - `src/js/i18n/catalogs.js`: English/Korean UI strings and box descriptions
 - `src/js/samples/sample-manifest.js`: static sample file manifest for HTTP/HTTPS builds
 - `src/js/ui/analyzer-ui.js`: DOM state, rendering, filters, exports, media preview, and sample loading
+- `src/js/ui/ui-helpers.js`: testable UI helper logic shared by rendering and tests
+- `tests/`: Node `node:test` suites for common utilities, codecs, ISO BMFF sample models, container integration, i18n, and UI helpers/static structure
 
-## Validation
+## Test And Validation
 
 ```powershell
 npm run build
+npm test
+npm run test:coverage
 npm run verify:samples
 npm run verify:ui
 ```
 
+`npm run verify` runs the full local verification chain: build, unit/integration tests, sample verification, and UI smoke verification.
+
 Validation samples live under `validation/generated/` and are also exposed by the GitHub Pages build when available.
+
+Current coverage snapshot from `npm run test:coverage`:
+
+- Tests: 16 passed, 0 failed
+- All files: 93.01% line coverage, 64.29% branch coverage, 92.73% function coverage
+- Strong coverage areas: binary readers, bitstream helpers, formatting, codec registry, i18n, UI helper logic, ISO BMFF sample modeling, and bundled sample container integration
+- Lower branch coverage remains mainly in malformed/edge container branches such as uncommon HEVC arrays, oversized/invalid MP4 boxes, MP3 ID3v1 edge metadata, and WebM lacing variants
