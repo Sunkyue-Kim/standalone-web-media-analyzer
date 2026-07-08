@@ -701,6 +701,18 @@ button:disabled {
   font-size: 13px;
   min-width: 0;
 }
+.checkbox-stack {
+  display: grid;
+  gap: 6px;
+  flex: 0 1 170px;
+  min-width: 0;
+  align-self: end;
+}
+.checkbox-stack .checkbox-field {
+  flex: none;
+  min-height: 14px;
+  line-height: 1.2;
+}
 .view-switch {
   display: inline-flex;
   align-items: center;
@@ -1187,6 +1199,7 @@ button:disabled {
   .field,
   .view-field,
   .checkbox-field,
+  .checkbox-stack,
   #clearFiltersButton,
   .frame-count-text {
     width: 100%;
@@ -1230,6 +1243,12 @@ button:disabled {
   .checkbox-field {
     min-height: 32px;
     font-size: 12px;
+  }
+  .checkbox-stack {
+    gap: 5px;
+  }
+  .checkbox-stack .checkbox-field {
+    min-height: 14px;
   }
   .view-switch {
     min-height: 32px;
@@ -1386,10 +1405,16 @@ button:disabled {
               <label class="field"><span data-i18n="field.maxSize">Max size</span>
                 <input id="maxSizeFilter" type="number" min="0" step="1" placeholder="bytes" data-i18n-placeholder="unit.bytes">
               </label>
-              <label class="checkbox-field">
-                <input id="warningOnlyFilter" type="checkbox">
-                <span data-i18n="field.warningOnly">Warning only</span>
-              </label>
+              <div class="checkbox-stack">
+                <label class="checkbox-field">
+                  <input id="warningOnlyFilter" type="checkbox">
+                  <span data-i18n="field.warningOnly">Warning only</span>
+                </label>
+                <label class="checkbox-field">
+                  <input id="autoPlaybackSynchronizationToggle" type="checkbox">
+                  <span data-i18n="field.autoPlaybackSynchronization">Sync to playback</span>
+                </label>
+              </div>
               <div class="field view-field"><span data-i18n="field.view">View</span>
                 <div class="view-switch" role="group" aria-label="Frame view mode" data-i18n-aria-label="aria.frameViewMode">
                   <button id="frameGraphButton" type="button" data-i18n="view.graph">Graph</button>
@@ -4754,6 +4779,7 @@ button:disabled {
       "field.minSize": "Min size",
       "field.maxSize": "Max size",
       "field.warningOnly": "Warning only",
+      "field.autoPlaybackSynchronization": "Sync to playback",
       "field.view": "View",
       "field.sample": "Sample",
       "field.movingAverageSamples": "Moving average samples",
@@ -4893,6 +4919,7 @@ button:disabled {
       "field.minSize": "\uCD5C\uC18C \uD06C\uAE30",
       "field.maxSize": "\uCD5C\uB300 \uD06C\uAE30",
       "field.warningOnly": "\uACBD\uACE0\uB9CC",
+      "field.autoPlaybackSynchronization": "\uC7AC\uC0DD \uC704\uCE58 \uB3D9\uAE30\uD654",
       "field.view": "\uBCF4\uAE30",
       "field.sample": "\uC0D8\uD50C",
       "field.movingAverageSamples": "\uC774\uB3D9\uD3C9\uADE0 \uC0D8\uD50C \uC218",
@@ -5335,6 +5362,7 @@ button:disabled {
       progressSourceLabel: "Open or drop a media file to begin.",
       progressRawLabel: t("status.initial"),
       progressPercentValue: 0,
+      lastPlaybackSynchronizationFrameKey: "",
       renderFrameRequest: 0
     };
     const elements = {
@@ -5370,6 +5398,7 @@ button:disabled {
       minSizeFilter: document.getElementById("minSizeFilter"),
       maxSizeFilter: document.getElementById("maxSizeFilter"),
       warningOnlyFilter: document.getElementById("warningOnlyFilter"),
+      autoPlaybackSynchronizationToggle: document.getElementById("autoPlaybackSynchronizationToggle"),
       clearFiltersButton: document.getElementById("clearFiltersButton"),
       frameGraphButton: document.getElementById("frameGraphButton"),
       frameTableButton: document.getElementById("frameTableButton"),
@@ -5391,6 +5420,25 @@ button:disabled {
     window.MP4AnalyzerDevTools = {
       getAnalysis: () => state.analysis,
       getFilteredRows: () => state.filteredRows,
+      getSelectedFrameKey: () => state.selectedFrameKey,
+      setAutoPlaybackSynchronization: (enabled) => {
+        elements.autoPlaybackSynchronizationToggle.checked = Boolean(enabled);
+        state.lastPlaybackSynchronizationFrameKey = "";
+        const row = synchronizeFrameSelectionToPlayback({ force: true });
+        return row ? getFrameRowKey(row) : "";
+      },
+      synchronizeFrameSelectionToPlayback: (playbackSeconds) => {
+        if (Number.isFinite(Number(playbackSeconds))) elements.filePreview.currentTime = Number(playbackSeconds);
+        elements.autoPlaybackSynchronizationToggle.checked = true;
+        state.lastPlaybackSynchronizationFrameKey = "";
+        const row = synchronizeFrameSelectionToPlayback({ force: true });
+        return row ? {
+          frameKey: getFrameRowKey(row),
+          row,
+          frameScrollTop: elements.frameWrap.scrollTop,
+          graphScrollTop: elements.graphScroller.scrollTop
+        } : null;
+      },
       getMetricsSummary: () => {
         const track = getSelectedMetricsTrack();
         if (!track) return null;
@@ -5458,6 +5506,13 @@ button:disabled {
     elements.metricsBody.addEventListener("keydown", handleFrameRowKeyboardActivation);
     elements.frameGraphButton.addEventListener("click", () => setFrameViewMode("graph"));
     elements.frameTableButton.addEventListener("click", () => setFrameViewMode("table"));
+    elements.autoPlaybackSynchronizationToggle.addEventListener("change", () => {
+      state.lastPlaybackSynchronizationFrameKey = "";
+      if (elements.autoPlaybackSynchronizationToggle.checked) synchronizeFrameSelectionToPlayback({ force: true });
+    });
+    elements.filePreview.addEventListener("timeupdate", () => synchronizeFrameSelectionToPlayback());
+    elements.filePreview.addEventListener("seeked", () => synchronizeFrameSelectionToPlayback({ force: true }));
+    elements.filePreview.addEventListener("loadedmetadata", () => synchronizeFrameSelectionToPlayback({ force: true }));
     for (const input of [elements.trackFilter, elements.typeFilter, elements.syncFilter, elements.minSizeFilter, elements.maxSizeFilter, elements.warningOnlyFilter]) {
       input.addEventListener("input", renderFrames);
       input.addEventListener("change", renderFrames);
@@ -5624,6 +5679,76 @@ button:disabled {
         applySeek();
       }
     }
+    function synchronizeFrameSelectionToPlayback(options = {}) {
+      if (!state.analysis || !elements.autoPlaybackSynchronizationToggle.checked) return null;
+      const playbackSeconds = Number(elements.filePreview.currentTime);
+      if (!Number.isFinite(playbackSeconds)) return null;
+      const row = findFrameRowForPlaybackTime(playbackSeconds);
+      if (!row) return null;
+      const frameRowKey = getFrameRowKey(row);
+      const shouldUpdate = options.force || frameRowKey !== state.selectedFrameKey || frameRowKey !== state.lastPlaybackSynchronizationFrameKey;
+      if (!shouldUpdate) return row;
+      state.selectedFrameKey = frameRowKey;
+      state.lastPlaybackSynchronizationFrameKey = frameRowKey;
+      scrollSynchronizedFrameRowIntoView(row);
+      scheduleFrameRender();
+      return row;
+    }
+    function findFrameRowForPlaybackTime(playbackSeconds) {
+      const rows = getPlaybackSynchronizationRows();
+      if (!rows.length) return null;
+      let bestRow = null;
+      let bestDistance = Infinity;
+      for (const row of rows) {
+        const rowTimeSeconds = getRowTimeSeconds(row);
+        if (!Number.isFinite(rowTimeSeconds)) continue;
+        const rowDurationSeconds = getRowDurationSeconds(row);
+        const rowEndSeconds = rowTimeSeconds + Math.max(rowDurationSeconds, 1e-6);
+        const distance = playbackSeconds >= rowTimeSeconds && playbackSeconds < rowEndSeconds ? 0 : Math.abs(playbackSeconds - rowTimeSeconds);
+        if (distance < bestDistance) {
+          bestRow = row;
+          bestDistance = distance;
+        }
+      }
+      return bestRow;
+    }
+    function getPlaybackSynchronizationRows() {
+      const rows = state.filteredRows || [];
+      if (!rows.length) return rows;
+      if (elements.trackFilter.value) return rows;
+      const videoRows = rows.filter((row) => {
+        const track = getRowTrack(row);
+        return track && track.handlerType === "vide";
+      });
+      return videoRows.length ? videoRows : rows;
+    }
+    function scrollSynchronizedFrameRowIntoView(row) {
+      scrollTableFrameRowIntoCenter(row);
+      if (state.frameViewMode === "graph") scrollGraphFrameRowIntoCenter(row);
+    }
+    function scrollTableFrameRowIntoCenter(row) {
+      const rowIndex = findRowIndexByKey(state.filteredRows, getFrameRowKey(row));
+      if (rowIndex < 0) return;
+      const clientHeight = Number(elements.frameWrap.clientHeight) || 400;
+      const contentHeight = FRAME_TABLE_HEADER_HEIGHT + state.filteredRows.length * ROW_HEIGHT;
+      const scrollHeight = Number(elements.frameWrap.scrollHeight);
+      const maxScrollTop = Math.max(0, (Number.isFinite(scrollHeight) && scrollHeight > 0 ? scrollHeight : contentHeight) - clientHeight);
+      const rowCenter = FRAME_TABLE_HEADER_HEIGHT + rowIndex * ROW_HEIGHT + ROW_HEIGHT / 2;
+      elements.frameWrap.scrollTop = clamp(rowCenter - clientHeight / 2, 0, maxScrollTop);
+    }
+    function scrollGraphFrameRowIntoCenter(row) {
+      const rowIndex = findRowIndexByKey(state.graphRows, getFrameRowKey(row));
+      if (rowIndex < 0) return;
+      const clientHeight = Number(elements.graphScroller.clientHeight) || 400;
+      const contentHeight = state.graphRows.length * GRAPH_ROW_HEIGHT;
+      const scrollHeight = Number(elements.graphScroller.scrollHeight);
+      const maxScrollTop = Math.max(0, (Number.isFinite(scrollHeight) && scrollHeight > 0 ? scrollHeight : contentHeight) - clientHeight);
+      const rowCenter = rowIndex * GRAPH_ROW_HEIGHT + GRAPH_ROW_HEIGHT / 2;
+      elements.graphScroller.scrollTop = clamp(rowCenter - clientHeight / 2, 0, maxScrollTop);
+    }
+    function findRowIndexByKey(rows, frameRowKey) {
+      return rows.findIndex((row) => getFrameRowKey(row) === frameRowKey);
+    }
     function hasDraggedFiles(dataTransfer) {
       if (!dataTransfer) return false;
       const types = Array.from(dataTransfer.types || []);
@@ -5717,6 +5842,7 @@ button:disabled {
       state.analysis = null;
       state.selectedBox = null;
       state.selectedFrameKey = "";
+      state.lastPlaybackSynchronizationFrameKey = "";
       state.transientWarnings = [];
       if (!options.keepSampleSelection && elements.sampleSelect) elements.sampleSelect.value = "";
       setFilePreview(file);
@@ -6178,7 +6304,11 @@ button:disabled {
       elements.frameSpacer.style.height = Math.max(1, rows.length * ROW_HEIGHT) + "px";
       elements.graphSpacer.style.height = Math.max(1, state.graphRows.length * GRAPH_ROW_HEIGHT) + "px";
       renderGraphAxis();
-      scheduleFrameRender();
+      const synchronizedRow = synchronizeFrameSelectionToPlayback({ force: true });
+      if (!synchronizedRow) {
+        if (state.selectedFrameKey && !rows.some((row) => getFrameRowKey(row) === state.selectedFrameKey)) state.selectedFrameKey = "";
+        scheduleFrameRender();
+      }
     }
     function compareRowsByPresentationTime(left, right) {
       const leftTime = getRowTimeSeconds(left);
@@ -6195,6 +6325,12 @@ button:disabled {
       const track = getRowTrack(row);
       if (!track || !track.timescale) return Number(row.pts || row.dts || row.sampleIndex || 0);
       return Number(row.pts || row.dts || 0) / Number(track.timescale);
+    }
+    function getRowDurationSeconds(row) {
+      const track = getRowTrack(row);
+      const rowDuration = Number(row.duration);
+      if (!track || !track.timescale || !Number.isFinite(rowDuration) || rowDuration <= 0) return 0;
+      return rowDuration / Number(track.timescale);
     }
     function renderGraphAxis() {
       const maxSize = state.graphMaxSize || 1;

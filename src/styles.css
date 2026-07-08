@@ -765,6 +765,20 @@
       min-width: 0;
     }
 
+    .checkbox-stack {
+      display: grid;
+      gap: 6px;
+      flex: 0 1 170px;
+      min-width: 0;
+      align-self: end;
+    }
+
+    .checkbox-stack .checkbox-field {
+      flex: none;
+      min-height: 14px;
+      line-height: 1.2;
+    }
+
     .view-switch {
       display: inline-flex;
       align-items: center;
@@ -1200,6 +1214,7 @@
       .field,
       .view-field,
       .checkbox-field,
+      .checkbox-stack,
       #clearFiltersButton,
       .frame-count-text {
         width: 100%;
@@ -1228,6 +1243,12 @@
       .checkbox-field {
         min-height: 32px;
         font-size: 12px;
+      }
+      .checkbox-stack {
+        gap: 5px;
+      }
+      .checkbox-stack .checkbox-field {
+        min-height: 14px;
       }
       .view-switch { min-height: 32px; }
       .view-switch button { padding: 6px 7px; }

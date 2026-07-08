@@ -23,6 +23,8 @@ class FakeElement {
     this.textContent = "";
     this.src = "";
     this.scrollTop = 0;
+    this.scrollLeft = 0;
+    this.scrollHeight = 0;
     this.clientHeight = 640;
     this.classList = {
       add() {},
@@ -121,6 +123,11 @@ function verifyResponsiveLayoutCss() {
   );
   assertCssRule(
     sourceCss,
+    /\.checkbox-stack\s*\{[\s\S]*?display:\s*grid;[\s\S]*?flex:\s*0 1 170px;/,
+    "Frame warning and playback synchronization checkboxes must share a compact stacked filter slot."
+  );
+  assertCssRule(
+    sourceCss,
     /\.filters\s*\{[\s\S]*?width:\s*100%;[\s\S]*?max-width:\s*100%;/,
     "Frame filters must stay constrained to the panel width."
   );
@@ -175,6 +182,9 @@ async function main() {
   if (!/column\.index[\s\S]*column\.track[\s\S]*column\.type[\s\S]*column\.offset/.test(sourceHtml)) {
     throw new Error("Frame table header must place Type immediately after Index and Track.");
   }
+  if (!/warningOnlyFilter[\s\S]*autoPlaybackSynchronizationToggle/.test(sourceHtml)) {
+    throw new Error("Playback synchronization checkbox must be stacked with the warning-only checkbox.");
+  }
   if (!/row\.sampleIndex[\s\S]*row\.trackId[\s\S]*formatFrameTypeLabel\(type\)[\s\S]*row\.offset/.test(sourceUi)) {
     throw new Error("Frame table row renderer must place Type immediately after Index and Track.");
   }
@@ -217,6 +227,9 @@ async function main() {
   if (!window.MP4AnalyzerDevTools || typeof window.MP4AnalyzerDevTools.analyzeFile !== "function") {
     throw new Error("MP4AnalyzerDevTools.analyzeFile is not exposed.");
   }
+  if (typeof window.MP4AnalyzerDevTools.synchronizeFrameSelectionToPlayback !== "function") {
+    throw new Error("MP4AnalyzerDevTools.synchronizeFrameSelectionToPlayback is not exposed.");
+  }
 
   const sampleBytes = fs.readFileSync(samplePath);
   const sampleFile = new File([sampleBytes], "avc_fragmented.mp4", { type: "video/mp4" });
@@ -242,6 +255,22 @@ async function main() {
     if (!frameTypes.has(expectedType)) throw new Error(`Missing frame type ${expectedType}.`);
   }
   if (frameTypes.has("unknown")) throw new Error("UI analysis still contains unknown frame types.");
+
+  const frameWrap = fakeDocument.getElementById("frameWrap");
+  frameWrap.clientHeight = 194;
+  frameWrap.scrollHeight = 34 + summary.sampleRows * 32;
+  const synchronizationResult = window.MP4AnalyzerDevTools.synchronizeFrameSelectionToPlayback(2);
+  if (!synchronizationResult || !synchronizationResult.frameKey) {
+    throw new Error("Playback synchronization did not select a frame row.");
+  }
+  const synchronizedRowIndex = window.MP4AnalyzerDevTools.getFilteredRows()
+    .findIndex((row) => String(row.trackId) + ":" + String(row.sampleIndex) === synchronizationResult.frameKey);
+  if (synchronizedRowIndex < 0) throw new Error("Playback synchronization selected a row outside the filtered table.");
+  const rowCenter = 34 + synchronizedRowIndex * 32 + 16;
+  const viewportCenter = frameWrap.scrollTop + frameWrap.clientHeight / 2;
+  if (Math.abs(rowCenter - viewportCenter) > 18) {
+    throw new Error(`Synchronized frame row should be centered when space allows. row=${rowCenter} viewport=${viewportCenter}`);
+  }
 
   const progressText = fakeDocument.getElementById("progressText").textContent;
   if (progressText.startsWith("Failed:")) throw new Error(progressText);

@@ -115,10 +115,16 @@
               <label class="field"><span data-i18n="field.maxSize">Max size</span>
                 <input id="maxSizeFilter" type="number" min="0" step="1" placeholder="bytes" data-i18n-placeholder="unit.bytes">
               </label>
-              <label class="checkbox-field">
-                <input id="warningOnlyFilter" type="checkbox">
-                <span data-i18n="field.warningOnly">Warning only</span>
-              </label>
+              <div class="checkbox-stack">
+                <label class="checkbox-field">
+                  <input id="warningOnlyFilter" type="checkbox">
+                  <span data-i18n="field.warningOnly">Warning only</span>
+                </label>
+                <label class="checkbox-field">
+                  <input id="autoPlaybackSynchronizationToggle" type="checkbox">
+                  <span data-i18n="field.autoPlaybackSynchronization">Sync to playback</span>
+                </label>
+              </div>
               <div class="field view-field"><span data-i18n="field.view">View</span>
                 <div class="view-switch" role="group" aria-label="Frame view mode" data-i18n-aria-label="aria.frameViewMode">
                   <button id="frameGraphButton" type="button" data-i18n="view.graph">Graph</button>

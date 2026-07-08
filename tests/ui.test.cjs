@@ -30,7 +30,8 @@ test("source HTML has required controls, tabs, and no external runtime assets af
     "scanButton", "cancelButton", "exportJsonButton", "exportCsvButton",
     "mediaPreviewBar", "summaryPanel", "boxesPanel", "tracksPanel",
     "framesPanel", "metricsPanel", "fragmentsPanel", "warningsPanel",
-    "frameGraphButton", "frameTableButton", "frameWrap", "frameScroller", "graphScroller"
+    "frameGraphButton", "frameTableButton", "autoPlaybackSynchronizationToggle",
+    "frameWrap", "frameScroller", "graphScroller"
   ]) {
     assert.match(sourceHtml, new RegExp("id=\"" + id + "\""));
   }

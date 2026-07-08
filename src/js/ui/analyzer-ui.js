@@ -51,6 +51,7 @@ const state = {
   progressSourceLabel: "Open or drop a media file to begin.",
   progressRawLabel: t("status.initial"),
   progressPercentValue: 0,
+  lastPlaybackSynchronizationFrameKey: "",
   renderFrameRequest: 0
 };
 
@@ -87,6 +88,7 @@ const elements = {
   minSizeFilter: document.getElementById("minSizeFilter"),
   maxSizeFilter: document.getElementById("maxSizeFilter"),
   warningOnlyFilter: document.getElementById("warningOnlyFilter"),
+  autoPlaybackSynchronizationToggle: document.getElementById("autoPlaybackSynchronizationToggle"),
   clearFiltersButton: document.getElementById("clearFiltersButton"),
   frameGraphButton: document.getElementById("frameGraphButton"),
   frameTableButton: document.getElementById("frameTableButton"),
@@ -109,6 +111,25 @@ const elements = {
 window.MP4AnalyzerDevTools = {
   getAnalysis: () => state.analysis,
   getFilteredRows: () => state.filteredRows,
+  getSelectedFrameKey: () => state.selectedFrameKey,
+  setAutoPlaybackSynchronization: (enabled) => {
+    elements.autoPlaybackSynchronizationToggle.checked = Boolean(enabled);
+    state.lastPlaybackSynchronizationFrameKey = "";
+    const row = synchronizeFrameSelectionToPlayback({ force: true });
+    return row ? getFrameRowKey(row) : "";
+  },
+  synchronizeFrameSelectionToPlayback: (playbackSeconds) => {
+    if (Number.isFinite(Number(playbackSeconds))) elements.filePreview.currentTime = Number(playbackSeconds);
+    elements.autoPlaybackSynchronizationToggle.checked = true;
+    state.lastPlaybackSynchronizationFrameKey = "";
+    const row = synchronizeFrameSelectionToPlayback({ force: true });
+    return row ? {
+      frameKey: getFrameRowKey(row),
+      row,
+      frameScrollTop: elements.frameWrap.scrollTop,
+      graphScrollTop: elements.graphScroller.scrollTop
+    } : null;
+  },
   getMetricsSummary: () => {
     const track = getSelectedMetricsTrack();
     if (!track) return null;
@@ -182,6 +203,13 @@ elements.graphSpacer.addEventListener("keydown", handleFrameRowKeyboardActivatio
 elements.metricsBody.addEventListener("keydown", handleFrameRowKeyboardActivation);
 elements.frameGraphButton.addEventListener("click", () => setFrameViewMode("graph"));
 elements.frameTableButton.addEventListener("click", () => setFrameViewMode("table"));
+elements.autoPlaybackSynchronizationToggle.addEventListener("change", () => {
+  state.lastPlaybackSynchronizationFrameKey = "";
+  if (elements.autoPlaybackSynchronizationToggle.checked) synchronizeFrameSelectionToPlayback({ force: true });
+});
+elements.filePreview.addEventListener("timeupdate", () => synchronizeFrameSelectionToPlayback());
+elements.filePreview.addEventListener("seeked", () => synchronizeFrameSelectionToPlayback({ force: true }));
+elements.filePreview.addEventListener("loadedmetadata", () => synchronizeFrameSelectionToPlayback({ force: true }));
 for (const input of [elements.trackFilter, elements.typeFilter, elements.syncFilter, elements.minSizeFilter, elements.maxSizeFilter, elements.warningOnlyFilter]) {
   input.addEventListener("input", renderFrames);
   input.addEventListener("change", renderFrames);
@@ -368,6 +396,85 @@ function seekPreviewToFrameRow(row) {
   }
 }
 
+function synchronizeFrameSelectionToPlayback(options = {}) {
+  if (!state.analysis || !elements.autoPlaybackSynchronizationToggle.checked) return null;
+  const playbackSeconds = Number(elements.filePreview.currentTime);
+  if (!Number.isFinite(playbackSeconds)) return null;
+  const row = findFrameRowForPlaybackTime(playbackSeconds);
+  if (!row) return null;
+  const frameRowKey = getFrameRowKey(row);
+  const shouldUpdate = options.force || frameRowKey !== state.selectedFrameKey || frameRowKey !== state.lastPlaybackSynchronizationFrameKey;
+  if (!shouldUpdate) return row;
+  state.selectedFrameKey = frameRowKey;
+  state.lastPlaybackSynchronizationFrameKey = frameRowKey;
+  scrollSynchronizedFrameRowIntoView(row);
+  scheduleFrameRender();
+  return row;
+}
+
+function findFrameRowForPlaybackTime(playbackSeconds) {
+  const rows = getPlaybackSynchronizationRows();
+  if (!rows.length) return null;
+  let bestRow = null;
+  let bestDistance = Infinity;
+  for (const row of rows) {
+    const rowTimeSeconds = getRowTimeSeconds(row);
+    if (!Number.isFinite(rowTimeSeconds)) continue;
+    const rowDurationSeconds = getRowDurationSeconds(row);
+    const rowEndSeconds = rowTimeSeconds + Math.max(rowDurationSeconds, 0.000001);
+    const distance = playbackSeconds >= rowTimeSeconds && playbackSeconds < rowEndSeconds
+      ? 0
+      : Math.abs(playbackSeconds - rowTimeSeconds);
+    if (distance < bestDistance) {
+      bestRow = row;
+      bestDistance = distance;
+    }
+  }
+  return bestRow;
+}
+
+function getPlaybackSynchronizationRows() {
+  const rows = state.filteredRows || [];
+  if (!rows.length) return rows;
+  if (elements.trackFilter.value) return rows;
+  const videoRows = rows.filter((row) => {
+    const track = getRowTrack(row);
+    return track && track.handlerType === "vide";
+  });
+  return videoRows.length ? videoRows : rows;
+}
+
+function scrollSynchronizedFrameRowIntoView(row) {
+  scrollTableFrameRowIntoCenter(row);
+  if (state.frameViewMode === "graph") scrollGraphFrameRowIntoCenter(row);
+}
+
+function scrollTableFrameRowIntoCenter(row) {
+  const rowIndex = findRowIndexByKey(state.filteredRows, getFrameRowKey(row));
+  if (rowIndex < 0) return;
+  const clientHeight = Number(elements.frameWrap.clientHeight) || 400;
+  const contentHeight = FRAME_TABLE_HEADER_HEIGHT + state.filteredRows.length * ROW_HEIGHT;
+  const scrollHeight = Number(elements.frameWrap.scrollHeight);
+  const maxScrollTop = Math.max(0, (Number.isFinite(scrollHeight) && scrollHeight > 0 ? scrollHeight : contentHeight) - clientHeight);
+  const rowCenter = FRAME_TABLE_HEADER_HEIGHT + rowIndex * ROW_HEIGHT + ROW_HEIGHT / 2;
+  elements.frameWrap.scrollTop = clamp(rowCenter - clientHeight / 2, 0, maxScrollTop);
+}
+
+function scrollGraphFrameRowIntoCenter(row) {
+  const rowIndex = findRowIndexByKey(state.graphRows, getFrameRowKey(row));
+  if (rowIndex < 0) return;
+  const clientHeight = Number(elements.graphScroller.clientHeight) || 400;
+  const contentHeight = state.graphRows.length * GRAPH_ROW_HEIGHT;
+  const scrollHeight = Number(elements.graphScroller.scrollHeight);
+  const maxScrollTop = Math.max(0, (Number.isFinite(scrollHeight) && scrollHeight > 0 ? scrollHeight : contentHeight) - clientHeight);
+  const rowCenter = rowIndex * GRAPH_ROW_HEIGHT + GRAPH_ROW_HEIGHT / 2;
+  elements.graphScroller.scrollTop = clamp(rowCenter - clientHeight / 2, 0, maxScrollTop);
+}
+
+function findRowIndexByKey(rows, frameRowKey) {
+  return rows.findIndex((row) => getFrameRowKey(row) === frameRowKey);
+}
+
 function hasDraggedFiles(dataTransfer) {
   if (!dataTransfer) return false;
   const types = Array.from(dataTransfer.types || []);
@@ -473,6 +580,7 @@ function resetView(file, options = {}) {
   state.analysis = null;
   state.selectedBox = null;
   state.selectedFrameKey = "";
+  state.lastPlaybackSynchronizationFrameKey = "";
   state.transientWarnings = [];
   if (!options.keepSampleSelection && elements.sampleSelect) elements.sampleSelect.value = "";
   setFilePreview(file);
@@ -1005,7 +1113,11 @@ function renderFrames() {
   elements.frameSpacer.style.height = Math.max(1, rows.length * ROW_HEIGHT) + "px";
   elements.graphSpacer.style.height = Math.max(1, state.graphRows.length * GRAPH_ROW_HEIGHT) + "px";
   renderGraphAxis();
-  scheduleFrameRender();
+  const synchronizedRow = synchronizeFrameSelectionToPlayback({ force: true });
+  if (!synchronizedRow) {
+    if (state.selectedFrameKey && !rows.some((row) => getFrameRowKey(row) === state.selectedFrameKey)) state.selectedFrameKey = "";
+    scheduleFrameRender();
+  }
 }
 
 function compareRowsByPresentationTime(left, right) {
@@ -1025,6 +1137,13 @@ function getRowTimeSeconds(row) {
   const track = getRowTrack(row);
   if (!track || !track.timescale) return Number(row.pts || row.dts || row.sampleIndex || 0);
   return Number(row.pts || row.dts || 0) / Number(track.timescale);
+}
+
+function getRowDurationSeconds(row) {
+  const track = getRowTrack(row);
+  const rowDuration = Number(row.duration);
+  if (!track || !track.timescale || !Number.isFinite(rowDuration) || rowDuration <= 0) return 0;
+  return rowDuration / Number(track.timescale);
 }
 
 function renderGraphAxis() {
