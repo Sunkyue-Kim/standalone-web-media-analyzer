@@ -5,8 +5,7 @@ const { minify: minifyHtml } = require("html-minifier-terser");
 
 const rootDirectory = path.resolve(__dirname, "..");
 const sourceDirectory = path.join(rootDirectory, "src");
-const outputHtmlPath = path.join(rootDirectory, "standalone-web-media-analyzer.html");
-const outputMinifiedHtmlPath = path.join(rootDirectory, "standalone-web-media-analyzer.min.html");
+const outputHtmlPath = path.join(rootDirectory, "mp4-analyzer.html");
 const outputPagesHtmlPath = path.join(rootDirectory, "index.html");
 
 async function build() {
@@ -40,15 +39,12 @@ async function build() {
   })).trim() + "\n";
 
   await fs.writeFile(outputHtmlPath, normalHtml, "utf8");
-  await fs.writeFile(outputMinifiedHtmlPath, minifiedHtml, "utf8");
   await fs.writeFile(outputPagesHtmlPath, minifiedHtml, "utf8");
 
   verifyHtml(outputHtmlPath, normalHtml);
-  verifyHtml(outputMinifiedHtmlPath, minifiedHtml);
   verifyHtml(outputPagesHtmlPath, minifiedHtml);
 
   console.log(`Built ${path.basename(outputHtmlPath)} (${normalHtml.length} bytes)`);
-  console.log(`Built ${path.basename(outputMinifiedHtmlPath)} (${minifiedHtml.length} bytes)`);
   console.log(`Built ${path.basename(outputPagesHtmlPath)} (${minifiedHtml.length} bytes)`);
 }
 

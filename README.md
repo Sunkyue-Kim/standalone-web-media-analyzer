@@ -33,9 +33,8 @@ npm run build
 
 Build outputs are still single HTML files:
 
-- `standalone-web-media-analyzer.html`: readable single-file HTML for inspection
-- `standalone-web-media-analyzer.min.html`: minified single-file HTML
-- `index.html`: minified GitHub Pages entry point
+- `mp4-analyzer.html`: readable single-file HTML for inspection
+- `index.html`: minified single-file HTML and GitHub Pages entry point
 
 ## Source Layout
 

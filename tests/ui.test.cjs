@@ -23,7 +23,7 @@ test("UI helpers keep sample catalog, media detection, escaping, CSV, and frame 
 test("source HTML has required controls, tabs, and no external runtime assets after build", () => {
   const rootDirectory = path.resolve(__dirname, "..");
   const sourceHtml = fs.readFileSync(path.join(rootDirectory, "src", "index.html"), "utf8");
-  const builtHtml = fs.readFileSync(path.join(rootDirectory, "standalone-web-media-analyzer.html"), "utf8");
+  const builtHtml = fs.readFileSync(path.join(rootDirectory, "mp4-analyzer.html"), "utf8");
 
   for (const id of [
     "fileInput", "languageSelect", "sampleField", "sampleSelect", "openButton",
