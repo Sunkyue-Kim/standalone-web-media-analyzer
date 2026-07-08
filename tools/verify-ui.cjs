@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const rootDirectory = path.resolve(__dirname, "..");
-const htmlPath = path.join(rootDirectory, "mp4-analyzer.html");
+const htmlPath = path.join(rootDirectory, "standalone-web-media-analyzer.html");
 const sourceHtmlPath = path.join(rootDirectory, "src", "index.html");
 const samplePath = path.join(rootDirectory, "validation", "generated", "avc_fragmented.mp4");
 
@@ -86,7 +86,7 @@ function loadAnalyzerIntoFakeDom(protocol) {
 
   const html = fs.readFileSync(htmlPath, "utf8");
   const scriptMatch = html.match(/<script>([\s\S]*)<\/script>/i);
-  if (!scriptMatch) throw new Error("mp4-analyzer.html has no inline script.");
+  if (!scriptMatch) throw new Error("standalone-web-media-analyzer.html has no inline script.");
   eval(scriptMatch[1]);
 
   return { fakeDocument, fakeWindow };

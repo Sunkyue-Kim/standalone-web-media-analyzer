@@ -1,7 +1,7 @@
 export const I18N = {
   en: {
-    "app.title": "Media Container Analyzer",
-    "app.subtitle": "Single-file parser for MP4, WebM, MP3, Opus, samples, and frame metadata.",
+    "app.title": "Standalone Web Media Analyzer",
+    "app.subtitle": "Single-file parser for MP4/fMP4/MOV, WebM, MP3, Ogg Opus, samples, and frame metadata.",
     "language.label": "Language",
     "status.initial": "Open or drop a media file to begin.",
     "status.cancelling": "Cancelling...",
@@ -45,7 +45,7 @@ export const I18N = {
     "empty.noSamples": "No samples.",
     "empty.noMoof": "No moof boxes found.",
     "drop.title": "Drop media file to analyze",
-    "drop.subtitle": "Release anywhere in this window for MP4, WebM, MP3, or Opus parsing.",
+    "drop.subtitle": "Release anywhere in this window for MP4/fMP4/MOV, WebM, MP3, or Ogg Opus parsing.",
     "boxes.treeTitle": "Box Tree",
     "boxes.detailTitle": "Box detail",
     "boxes.parsedFields": "Parsed fields",
@@ -139,8 +139,8 @@ export const I18N = {
     "box.field.warnings": "warnings"
   },
   ko: {
-    "app.title": "미디어 컨테이너 분석기",
-    "app.subtitle": "MP4, WebM, MP3, Opus, 샘플, 프레임 메타데이터를 분석하는 단일 파일 파서입니다.",
+    "app.title": "스탠드얼론 웹 미디어 분석기",
+    "app.subtitle": "MP4/fMP4/MOV, WebM, MP3, Ogg Opus, 샘플, 프레임 메타데이터를 분석하는 단일 파일 파서입니다.",
     "language.label": "언어",
     "status.initial": "미디어 파일을 열거나 끌어다 놓으세요.",
     "status.cancelling": "취소 중...",
@@ -184,7 +184,7 @@ export const I18N = {
     "empty.noSamples": "샘플이 없습니다.",
     "empty.noMoof": "moof 박스가 없습니다.",
     "drop.title": "분석할 미디어 파일 드롭",
-    "drop.subtitle": "이 창 어디에서든 MP4, WebM, MP3, Opus 파일을 놓으면 파싱합니다.",
+    "drop.subtitle": "이 창 어디에서든 MP4/fMP4/MOV, WebM, MP3, Ogg Opus 파일을 놓으면 파싱합니다.",
     "boxes.treeTitle": "박스 트리",
     "boxes.detailTitle": "박스 상세",
     "boxes.parsedFields": "파싱된 필드",

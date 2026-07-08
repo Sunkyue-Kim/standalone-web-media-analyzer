@@ -1,5 +1,5 @@
 {
-  "name": "mp4-analyzer-single-html",
+  "name": "standalone-web-media-analyzer",
   "version": "1.0.0",
   "private": true,
   "type": "commonjs",

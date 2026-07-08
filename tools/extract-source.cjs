@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const rootDirectory = path.resolve(__dirname, "..");
-const sourceHtmlPath = path.join(rootDirectory, "mp4-analyzer.html");
+const sourceHtmlPath = path.join(rootDirectory, "standalone-web-media-analyzer.html");
 const sourceDirectory = path.join(rootDirectory, "src", "extracted-from-html");
 
 const html = fs.readFileSync(sourceHtmlPath, "utf8");

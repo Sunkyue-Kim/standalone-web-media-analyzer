@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const rootDirectory = path.resolve(__dirname, "..");
-const htmlPath = path.join(rootDirectory, "mp4-analyzer.html");
+const htmlPath = path.join(rootDirectory, "standalone-web-media-analyzer.html");
 const samplesDirectory = path.join(rootDirectory, "validation", "generated");
 
 const expectedSamples = new Map([
@@ -67,7 +67,7 @@ async function main() {
 function loadCoreFromHtml() {
   const html = fs.readFileSync(htmlPath, "utf8");
   const scriptMatch = html.match(/<script>([\s\S]*)<\/script>/i);
-  if (!scriptMatch) throw new Error("mp4-analyzer.html has no inline script.");
+  if (!scriptMatch) throw new Error("standalone-web-media-analyzer.html has no inline script.");
   global.window = {};
   eval(scriptMatch[1]);
   if (!window.MP4AnalyzerCore) throw new Error("MP4AnalyzerCore was not exposed.");

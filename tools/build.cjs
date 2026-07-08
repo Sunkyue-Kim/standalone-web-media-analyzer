@@ -5,8 +5,8 @@ const { minify: minifyHtml } = require("html-minifier-terser");
 
 const rootDirectory = path.resolve(__dirname, "..");
 const sourceDirectory = path.join(rootDirectory, "src");
-const outputHtmlPath = path.join(rootDirectory, "mp4-analyzer.html");
-const outputMinifiedHtmlPath = path.join(rootDirectory, "mp4-analyzer.min.html");
+const outputHtmlPath = path.join(rootDirectory, "standalone-web-media-analyzer.html");
+const outputMinifiedHtmlPath = path.join(rootDirectory, "standalone-web-media-analyzer.min.html");
 const outputPagesHtmlPath = path.join(rootDirectory, "index.html");
 
 async function build() {
