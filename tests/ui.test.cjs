@@ -40,16 +40,105 @@ test("data grid renderer builds reusable scrollable grid markup", async () => {
   });
 
   assert.match(html, /class="data-grid-shell test-grid"/);
-  assert.match(html, /--data-grid-columns:120px minmax\(120px, 1fr\);--data-grid-width:320px;/);
+  assert.match(html, /--data-grid-columns:minmax\(120px, 1fr\) minmax\(120px, 1fr\);--data-grid-width:320px;/);
   assert.match(html, /class="data-grid-header"/);
   assert.match(html, /class="data-grid-row clickable" role="button" data-frame-key="1:2"/);
   assert.match(html, /&lt;unsafe&gt;/);
   assert.match(html, /title="abc"/);
 });
 
+test("data grid renderer expands overflow width from headers and cell content", async () => {
+  const loader = await createSourceModuleLoader();
+  const { renderDataGridTable } = await loader.import("src/js/ui/data-grid.js");
+  const html = renderDataGridTable({
+    className: "overflow-grid",
+    minimumWidth: "160px",
+    columns: [
+      { label: "FPS / samples/s", width: "60px" },
+      { label: "Codec config", width: "60px" }
+    ],
+    rows: [
+      {
+        cells: [
+          "60.00",
+          { value: "avc1.42c00a, NAL length 4", title: "avc1.42c00a, NAL length 4" }
+        ]
+      }
+    ]
+  });
+
+  const styleMatch = html.match(/--data-grid-columns:minmax\((\d+)px, 1fr\) minmax\((\d+)px, 1fr\);--data-grid-width:(\d+)px;/);
+  assert.ok(styleMatch, html);
+  const headerDrivenWidth = Number(styleMatch[1]);
+  const contentDrivenWidth = Number(styleMatch[2]);
+  const totalGridWidth = Number(styleMatch[3]);
+  assert.ok(headerDrivenWidth > 60);
+  assert.ok(contentDrivenWidth > 60);
+  assert.equal(totalGridWidth, headerDrivenWidth + contentDrivenWidth);
+});
+
+test("recycler view keeps rendered rows bounded to the visible window", async () => {
+  const loader = await createSourceModuleLoader();
+  const { calculateRecyclerWindow, createRecyclerView } = await loader.import("src/js/ui/recycler-view.js");
+  const range = calculateRecyclerWindow({
+    rowCount: 10000,
+    rowHeight: 32,
+    scrollTop: 3200,
+    viewportHeight: 320,
+    overscan: 2
+  });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(range)), {
+    first: 98,
+    last: 112,
+    count: 14,
+    totalHeight: 320000
+  });
+
+  const scrollElement = { scrollTop: 3200, clientHeight: 320, scrollHeight: 320000 };
+  const spacerElement = { style: {}, innerHTML: "" };
+  const recycler = createRecyclerView({
+    scrollElement,
+    spacerElement,
+    rowHeight: 32,
+    overscan: 2,
+    renderRow: (row, rowIndex) => '<div style="top:' + (rowIndex * 32) + 'px">' + row + '</div>'
+  });
+
+  recycler.setRows(Array.from({ length: 10000 }, (_, rowIndex) => "row-" + rowIndex));
+  const renderedRange = recycler.renderNow();
+  assert.equal(spacerElement.style.height, "320000px");
+  assert.deepEqual(JSON.parse(JSON.stringify(renderedRange)), JSON.parse(JSON.stringify(range)));
+  assert.match(spacerElement.innerHTML, /row-98/);
+  assert.match(spacerElement.innerHTML, /row-111/);
+  assert.doesNotMatch(spacerElement.innerHTML, /row-0</);
+  recycler.scrollRowIntoCenter(5000);
+  assert.ok(scrollElement.scrollTop > 150000);
+});
+
+test("summary codec track counts only include present codec groups", async () => {
+  const loader = await createSourceModuleLoader();
+  const { getVisibleSummaryCodecTrackCounts } = await loader.import("src/js/ui/summary-model.js");
+  const counts = getVisibleSummaryCodecTrackCounts([
+    { codec: "avc1", codecDescriptor: "avc" },
+    { codec: "mp4a", codecDescriptor: "aac" },
+    { codec: "A_OPUS", codecDescriptor: "opus" },
+    { codec: "V_VP9", codecDescriptor: "V_VP9" }
+  ]);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(counts)), [
+    { labelKey: "summary.avcTracks", count: 1 },
+    { labelKey: "summary.vp9Tracks", count: 1 },
+    { labelKey: "summary.aacTracks", count: 1 },
+    { labelKey: "summary.opusTracks", count: 1 }
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(getVisibleSummaryCodecTrackCounts([{ codec: "raw " }]))), []);
+});
+
 test("source HTML has required controls, tabs, and no external runtime assets after build", () => {
   const rootDirectory = path.resolve(__dirname, "..");
   const sourceHtml = fs.readFileSync(path.join(rootDirectory, "src", "index.html"), "utf8");
+  const sourceUi = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "analyzer-ui.js"), "utf8");
   const builtHtml = fs.readFileSync(path.join(rootDirectory, "mp4-analyzer.html"), "utf8");
 
   for (const id of [
@@ -68,6 +157,11 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   }
 
   assert.match(sourceHtml, /<title>Standalone Web Media Analyzer<\/title>/);
+  assert.match(sourceHtml, /id="autoPlaybackSynchronizationToggle" type="checkbox" checked/);
+  assert.match(sourceUi, /requestVideoFrameCallback/);
+  assert.match(sourceUi, /requestAnimationFrame\(runPlaybackSynchronizationStep\)/);
+  assert.match(sourceUi, /createRecyclerView/);
+  assert.match(sourceUi, /frameTableRecycler\.setRows\(rows\)/);
   assert.doesNotMatch(builtHtml, /<script\s+src=|<link\s+rel="stylesheet"/i);
   assert.match(builtHtml, /window\.MP4AnalyzerCore/);
   assert.match(builtHtml, /window\.MP4AnalyzerDevTools/);

@@ -733,7 +733,7 @@
     }
 
     .data-grid-table {
-      width: var(--data-grid-width);
+      width: max(100%, var(--data-grid-width));
       min-width: var(--data-grid-width);
       font-family: var(--mono);
       font-size: 12px;
@@ -744,7 +744,7 @@
       display: grid;
       grid-template-columns: var(--data-grid-columns);
       align-items: center;
-      width: var(--data-grid-width);
+      width: 100%;
       min-width: var(--data-grid-width);
     }
 

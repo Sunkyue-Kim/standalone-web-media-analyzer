@@ -24,6 +24,8 @@ import {
 } from "../i18n/catalogs.js";
 import { SAMPLE_FILES } from "../samples/sample-manifest.js";
 import { renderDataGridTable } from "./data-grid.js";
+import { createRecyclerView } from "./recycler-view.js";
+import { getVisibleSummaryCodecTrackCounts } from "./summary-model.js";
 import {
   canUseSampleCatalogLocation,
   csvCell,
@@ -53,7 +55,8 @@ const state = {
   progressRawLabel: t("status.initial"),
   progressPercentValue: 0,
   lastPlaybackSynchronizationFrameKey: "",
-  renderFrameRequest: 0
+  playbackSynchronizationRequestId: 0,
+  playbackSynchronizationRequestType: ""
 };
 
 const elements = {
@@ -109,6 +112,24 @@ const elements = {
   metricsBody: document.getElementById("metricsBody")
 };
 
+const frameTableRecycler = createRecyclerView({
+  scrollElement: elements.frameWrap,
+  spacerElement: elements.frameSpacer,
+  rowHeight: ROW_HEIGHT,
+  overscan: 8,
+  scrollTopOffset: FRAME_TABLE_HEADER_HEIGHT,
+  viewportHeightOffset: FRAME_TABLE_HEADER_HEIGHT,
+  renderRow: renderFrameRow
+});
+
+const frameGraphRecycler = createRecyclerView({
+  scrollElement: elements.graphScroller,
+  spacerElement: elements.graphSpacer,
+  rowHeight: GRAPH_ROW_HEIGHT,
+  overscan: 10,
+  renderRow: renderGraphRow
+});
+
 window.MP4AnalyzerDevTools = {
   getAnalysis: () => state.analysis,
   getFilteredRows: () => state.filteredRows,
@@ -116,7 +137,12 @@ window.MP4AnalyzerDevTools = {
   setAutoPlaybackSynchronization: (enabled) => {
     elements.autoPlaybackSynchronizationToggle.checked = Boolean(enabled);
     state.lastPlaybackSynchronizationFrameKey = "";
+    if (!elements.autoPlaybackSynchronizationToggle.checked) {
+      stopPlaybackSynchronizationLoop();
+      return "";
+    }
     const row = synchronizeFrameSelectionToPlayback({ force: true });
+    startPlaybackSynchronizationLoop();
     return row ? getFrameRowKey(row) : "";
   },
   synchronizeFrameSelectionToPlayback: (playbackSeconds) => {
@@ -124,6 +150,7 @@ window.MP4AnalyzerDevTools = {
     elements.autoPlaybackSynchronizationToggle.checked = true;
     state.lastPlaybackSynchronizationFrameKey = "";
     const row = synchronizeFrameSelectionToPlayback({ force: true });
+    startPlaybackSynchronizationLoop();
     return row ? {
       frameKey: getFrameRowKey(row),
       row,
@@ -206,9 +233,25 @@ elements.frameGraphButton.addEventListener("click", () => setFrameViewMode("grap
 elements.frameTableButton.addEventListener("click", () => setFrameViewMode("table"));
 elements.autoPlaybackSynchronizationToggle.addEventListener("change", () => {
   state.lastPlaybackSynchronizationFrameKey = "";
-  if (elements.autoPlaybackSynchronizationToggle.checked) synchronizeFrameSelectionToPlayback({ force: true });
+  if (elements.autoPlaybackSynchronizationToggle.checked) {
+    synchronizeFrameSelectionToPlayback({ force: true });
+    startPlaybackSynchronizationLoop();
+  } else {
+    stopPlaybackSynchronizationLoop();
+  }
 });
 elements.filePreview.addEventListener("timeupdate", () => synchronizeFrameSelectionToPlayback());
+elements.filePreview.addEventListener("play", startPlaybackSynchronizationLoop);
+elements.filePreview.addEventListener("playing", startPlaybackSynchronizationLoop);
+elements.filePreview.addEventListener("pause", () => {
+  stopPlaybackSynchronizationLoop();
+  synchronizeFrameSelectionToPlayback({ force: true });
+});
+elements.filePreview.addEventListener("ended", () => {
+  stopPlaybackSynchronizationLoop();
+  synchronizeFrameSelectionToPlayback({ force: true });
+});
+elements.filePreview.addEventListener("seeking", () => synchronizeFrameSelectionToPlayback({ force: true }));
 elements.filePreview.addEventListener("seeked", () => synchronizeFrameSelectionToPlayback({ force: true }));
 elements.filePreview.addEventListener("loadedmetadata", () => synchronizeFrameSelectionToPlayback({ force: true }));
 for (const input of [elements.trackFilter, elements.typeFilter, elements.syncFilter, elements.minSizeFilter, elements.maxSizeFilter, elements.warningOnlyFilter]) {
@@ -397,6 +440,52 @@ function seekPreviewToFrameRow(row) {
   }
 }
 
+function startPlaybackSynchronizationLoop() {
+  if (state.playbackSynchronizationRequestId || !shouldRunPlaybackSynchronizationLoop()) return;
+  requestNextPlaybackSynchronizationStep();
+}
+
+function stopPlaybackSynchronizationLoop() {
+  if (!state.playbackSynchronizationRequestId) return;
+  if (
+    state.playbackSynchronizationRequestType === "video-frame" &&
+    typeof elements.filePreview.cancelVideoFrameCallback === "function"
+  ) {
+    elements.filePreview.cancelVideoFrameCallback(state.playbackSynchronizationRequestId);
+  } else {
+    cancelAnimationFrame(state.playbackSynchronizationRequestId);
+  }
+  state.playbackSynchronizationRequestId = 0;
+  state.playbackSynchronizationRequestType = "";
+}
+
+function requestNextPlaybackSynchronizationStep() {
+  if (typeof elements.filePreview.requestVideoFrameCallback === "function") {
+    state.playbackSynchronizationRequestType = "video-frame";
+    state.playbackSynchronizationRequestId = elements.filePreview.requestVideoFrameCallback(runPlaybackSynchronizationStep);
+    return;
+  }
+  state.playbackSynchronizationRequestType = "animation-frame";
+  state.playbackSynchronizationRequestId = requestAnimationFrame(runPlaybackSynchronizationStep);
+}
+
+function runPlaybackSynchronizationStep() {
+  state.playbackSynchronizationRequestId = 0;
+  state.playbackSynchronizationRequestType = "";
+  synchronizeFrameSelectionToPlayback();
+  if (shouldRunPlaybackSynchronizationLoop()) requestNextPlaybackSynchronizationStep();
+}
+
+function shouldRunPlaybackSynchronizationLoop() {
+  return Boolean(
+    elements.autoPlaybackSynchronizationToggle.checked &&
+    elements.filePreview &&
+    elements.filePreview.src &&
+    elements.filePreview.paused === false &&
+    !elements.filePreview.ended
+  );
+}
+
 function synchronizeFrameSelectionToPlayback(options = {}) {
   if (!state.analysis || !elements.autoPlaybackSynchronizationToggle.checked) return null;
   const playbackSeconds = Number(elements.filePreview.currentTime);
@@ -453,23 +542,13 @@ function scrollSynchronizedFrameRowIntoView(row) {
 function scrollTableFrameRowIntoCenter(row) {
   const rowIndex = findRowIndexByKey(state.filteredRows, getFrameRowKey(row));
   if (rowIndex < 0) return;
-  const clientHeight = Number(elements.frameWrap.clientHeight) || 400;
-  const contentHeight = FRAME_TABLE_HEADER_HEIGHT + state.filteredRows.length * ROW_HEIGHT;
-  const scrollHeight = Number(elements.frameWrap.scrollHeight);
-  const maxScrollTop = Math.max(0, (Number.isFinite(scrollHeight) && scrollHeight > 0 ? scrollHeight : contentHeight) - clientHeight);
-  const rowCenter = FRAME_TABLE_HEADER_HEIGHT + rowIndex * ROW_HEIGHT + ROW_HEIGHT / 2;
-  elements.frameWrap.scrollTop = clamp(rowCenter - clientHeight / 2, 0, maxScrollTop);
+  frameTableRecycler.scrollRowIntoCenter(rowIndex);
 }
 
 function scrollGraphFrameRowIntoCenter(row) {
   const rowIndex = findRowIndexByKey(state.graphRows, getFrameRowKey(row));
   if (rowIndex < 0) return;
-  const clientHeight = Number(elements.graphScroller.clientHeight) || 400;
-  const contentHeight = state.graphRows.length * GRAPH_ROW_HEIGHT;
-  const scrollHeight = Number(elements.graphScroller.scrollHeight);
-  const maxScrollTop = Math.max(0, (Number.isFinite(scrollHeight) && scrollHeight > 0 ? scrollHeight : contentHeight) - clientHeight);
-  const rowCenter = rowIndex * GRAPH_ROW_HEIGHT + GRAPH_ROW_HEIGHT / 2;
-  elements.graphScroller.scrollTop = clamp(rowCenter - clientHeight / 2, 0, maxScrollTop);
+  frameGraphRecycler.scrollRowIntoCenter(rowIndex);
 }
 
 function findRowIndexByKey(rows, frameRowKey) {
@@ -578,6 +657,7 @@ function setBusy(isBusy) {
 }
 
 function resetView(file, options = {}) {
+  stopPlaybackSynchronizationLoop();
   state.analysis = null;
   state.selectedBox = null;
   state.selectedFrameKey = "";
@@ -594,10 +674,10 @@ function resetView(file, options = {}) {
   elements.metricsBody.innerHTML = emptyHtml("empty.parsingMetrics");
   elements.frameWrap.scrollTop = 0;
   elements.frameWrap.scrollLeft = 0;
-  elements.frameSpacer.innerHTML = "";
-  elements.frameSpacer.style.height = "0px";
-  elements.graphSpacer.innerHTML = "";
-  elements.graphSpacer.style.height = "0px";
+  frameTableRecycler.setRows([]);
+  frameTableRecycler.renderNow();
+  frameGraphRecycler.setRows([]);
+  frameGraphRecycler.renderNow();
   elements.graphAxisScale.innerHTML = "";
   elements.graphAxisUnit.textContent = t("unit.bytes");
   elements.frameCountText.textContent = t("count.rows", { count: 0 });
@@ -706,25 +786,21 @@ function renderSummary() {
   const videoTracks = analysis.tracks.filter((track) => track.handlerType === "vide").length;
   const audioTracks = analysis.tracks.filter((track) => track.handlerType === "soun").length;
   const fragments = analysis.topBoxes.filter((box) => box.type === "moof").length;
-  const avcTracks = analysis.tracks.filter((track) => track.codec === "avc1" || track.codec === "avc3").length;
-  const hevcTracks = analysis.tracks.filter((track) => track.codec === "hvc1" || track.codec === "hev1").length;
-  const aacTracks = analysis.tracks.filter((track) => track.codec === "mp4a").length;
-  const mp3Tracks = analysis.tracks.filter((track) => track.codec === "mp3").length;
-  const opusTracks = analysis.tracks.filter((track) => track.codec === "opus" || track.codec === "A_OPUS").length;
-  elements.summaryPanel.innerHTML = [
-    '<div class="summary-grid">',
+  const cards = [
     summaryCard(t("summary.fileSize"), formatBytes(analysis.file.size)),
     summaryCard(t("summary.tracks"), String(analysis.tracks.length)),
     summaryCard(t("summary.videoTracks"), String(videoTracks)),
     summaryCard(t("summary.audioTracks"), String(audioTracks)),
     summaryCard(t("summary.fragments"), String(fragments)),
-    summaryCard(t("summary.samples"), String(analysis.sampleRows.length)),
-    summaryCard(t("summary.avcTracks"), String(avcTracks)),
-    summaryCard(t("summary.hevcTracks"), String(hevcTracks)),
-    summaryCard(t("summary.aacTracks"), String(aacTracks)),
-    summaryCard(t("summary.mp3Tracks"), String(mp3Tracks)),
-    summaryCard(t("summary.opusTracks"), String(opusTracks)),
-    summaryCard(t("summary.warnings"), String(analysis.warnings.length)),
+    summaryCard(t("summary.samples"), String(analysis.sampleRows.length))
+  ];
+  for (const codecTrackCount of getVisibleSummaryCodecTrackCounts(analysis.tracks)) {
+    cards.push(summaryCard(t(codecTrackCount.labelKey), String(codecTrackCount.count)));
+  }
+  cards.push(summaryCard(t("summary.warnings"), String(analysis.warnings.length)));
+  elements.summaryPanel.innerHTML = [
+    '<div class="summary-grid">',
+    cards.join(""),
     '</div>',
     '<p class="split-note">' + escapeHtml(t("summary.note")) + '</p>',
     renderTrackTable(analysis.tracks)
@@ -1160,8 +1236,8 @@ function renderFrames() {
   state.graphRows = rows.slice().sort(compareRowsByPresentationTime);
   state.graphMaxSize = Math.max(1, ...state.graphRows.map((row) => row.size || 0));
   elements.frameCountText.textContent = t("count.rows", { count: rows.length });
-  elements.frameSpacer.style.height = Math.max(1, rows.length * ROW_HEIGHT) + "px";
-  elements.graphSpacer.style.height = Math.max(1, state.graphRows.length * GRAPH_ROW_HEIGHT) + "px";
+  frameTableRecycler.setRows(rows);
+  frameGraphRecycler.setRows(state.graphRows);
   renderGraphAxis();
   const synchronizedRow = synchronizeFrameSelectionToPlayback({ force: true });
   if (!synchronizedRow) {
@@ -1230,37 +1306,16 @@ function applyFrameFilters(rows) {
 }
 
 function scheduleFrameRender() {
-  cancelAnimationFrame(state.renderFrameRequest);
-  state.renderFrameRequest = requestAnimationFrame(() => {
-    if (state.frameViewMode === "graph") renderVisibleGraphRows();
-    else renderVisibleFrameRows();
-  });
+  if (state.frameViewMode === "graph") frameGraphRecycler.scheduleRender();
+  else frameTableRecycler.scheduleRender();
 }
 
 function renderVisibleFrameRows() {
-  const rows = state.filteredRows;
-  const scrollTop = Math.max(0, elements.frameWrap.scrollTop - FRAME_TABLE_HEADER_HEIGHT);
-  const height = Math.max(1, (elements.frameWrap.clientHeight || 400) - FRAME_TABLE_HEADER_HEIGHT);
-  const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 8);
-  const last = Math.min(rows.length, Math.ceil((scrollTop + height) / ROW_HEIGHT) + 8);
-  const html = [];
-  for (let index = first; index < last; index += 1) {
-    html.push(renderFrameRow(rows[index], index));
-  }
-  elements.frameSpacer.innerHTML = html.join("");
+  frameTableRecycler.renderNow();
 }
 
 function renderVisibleGraphRows() {
-  const rows = state.graphRows;
-  const scrollTop = elements.graphScroller.scrollTop;
-  const height = elements.graphScroller.clientHeight || 400;
-  const first = Math.max(0, Math.floor(scrollTop / GRAPH_ROW_HEIGHT) - 10);
-  const last = Math.min(rows.length, Math.ceil((scrollTop + height) / GRAPH_ROW_HEIGHT) + 10);
-  const html = [];
-  for (let index = first; index < last; index += 1) {
-    html.push(renderGraphRow(rows[index], index));
-  }
-  elements.graphSpacer.innerHTML = html.join("");
+  frameGraphRecycler.renderNow();
 }
 
 function renderFrameRow(row, visualIndex) {

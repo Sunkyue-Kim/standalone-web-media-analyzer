@@ -148,6 +148,11 @@ function verifyResponsiveLayoutCss() {
   );
   assertCssRule(
     sourceCss,
+    /\.data-grid-table\s*\{[\s\S]*?width:\s*max\(100%,\s*var\(--data-grid-width\)\);[\s\S]*?min-width:\s*var\(--data-grid-width\);/,
+    "Reusable data grid must fill available width while preserving its minimum scroll width."
+  );
+  assertCssRule(
+    sourceCss,
     /\.data-grid-header,[\s\S]*?\.data-grid-row\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*var\(--data-grid-columns\);/,
     "Reusable data grid must share grid row/header layout rules."
   );
