@@ -375,8 +375,23 @@ function verifyResponsiveLayoutCss() {
   );
   assertCssRule(
     sourceCss,
-    /@media\s*\(max-width:\s*700px\)\s*\{[\s\S]*?\.frames-panel\.active\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(320px,\s*auto\) auto;/,
-    "Mobile frame panel must preserve a minimum table row instead of collapsing below filters."
+    /\.frames-panel\.active\s*\{[\s\S]*?--frames-controls-min-height:\s*76px;[\s\S]*?--frames-list-min-height:\s*280px;[\s\S]*?--frames-internals-min-height:\s*220px;[\s\S]*?grid-template-rows:[\s\S]*?minmax\(var\(--frames-controls-min-height\),\s*max-content\)[\s\S]*?minmax\(var\(--frames-list-min-height\),\s*1fr\)[\s\S]*?auto;[\s\S]*?overflow-y:\s*auto;/,
+    "Frame panel must reserve separate minimum areas for controls, the list, and selected-frame internals."
+  );
+  assertCssRule(
+    sourceCss,
+    /\.frame-view\.active\s*\{[\s\S]*?min-height:\s*var\(--frames-list-min-height,\s*0\);/,
+    "Frame graph/table view must keep a minimum list area before the internals panel."
+  );
+  assertCssRule(
+    sourceCss,
+    /\.frame-internals-panel\s*\{[\s\S]*?display:\s*grid;[\s\S]*?min-height:\s*var\(--frames-internals-min-height,\s*220px\);[\s\S]*?height:\s*clamp\([\s\S]*?var\(--frames-internals-min-height,\s*220px\),[\s\S]*?34vh,[\s\S]*?var\(--frames-internals-max-height,\s*300px\)[\s\S]*?\);/,
+    "Selected-frame internals must have a bounded minimum area with its own body scroll."
+  );
+  assertCssRule(
+    sourceCss,
+    /@media\s*\(max-width:\s*700px\)\s*\{[\s\S]*?\.frames-panel\.active\s*\{[\s\S]*?--frames-controls-min-height:\s*152px;[\s\S]*?--frames-list-min-height:\s*320px;[\s\S]*?--frames-internals-min-height:\s*240px;[\s\S]*?grid-template-rows:[\s\S]*?minmax\(var\(--frames-list-min-height\),\s*auto\)/,
+    "Mobile frame panel must preserve separate minimum control, list, and internals areas."
   );
   assertCssRule(
     sourceCss,

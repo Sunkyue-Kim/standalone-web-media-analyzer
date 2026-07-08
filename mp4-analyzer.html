@@ -489,11 +489,16 @@ button:disabled {
   padding: 18px;
 }
 .frames-panel.active {
+  --frames-controls-min-height: 76px;
+  --frames-list-min-height: 280px;
+  --frames-internals-min-height: 220px;
+  --frames-internals-max-height: 300px;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(var(--frames-controls-min-height), max-content) minmax(var(--frames-list-min-height), 1fr) auto;
   min-width: 0;
   padding: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .metrics-panel.active {
   display: grid;
@@ -860,6 +865,7 @@ button:disabled {
   gap: 10px;
   width: 100%;
   max-width: 100%;
+  min-height: var(--frames-controls-min-height, 0);
   padding: 12px;
   border-bottom: 1px solid var(--line);
   background: #f8fafc;
@@ -960,6 +966,7 @@ button:disabled {
 }
 .frame-view.active {
   display: block;
+  min-height: var(--frames-list-min-height, 0);
 }
 .frame-wrap {
   --data-grid-columns: minmax(72px, 1fr) minmax(76px, 1fr) minmax(92px, 1fr) minmax(120px, 1.2fr) minmax(92px, 1fr) minmax(98px, 1fr) minmax(98px, 1fr) minmax(90px, 1fr) minmax(70px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr);
@@ -969,7 +976,7 @@ button:disabled {
   max-width: 100%;
   min-width: 0;
   height: 100%;
-  min-height: 0;
+  min-height: var(--frames-list-min-height, 0);
   display: block;
   overflow: auto;
   scrollbar-gutter: stable;
@@ -1021,7 +1028,7 @@ button:disabled {
 }
 .graph-wrap {
   height: 100%;
-  min-height: 0;
+  min-height: var(--frames-list-min-height, 0);
   display: grid;
   grid-template-rows: 40px 1fr;
   background: #fff;
@@ -1173,8 +1180,12 @@ button:disabled {
   white-space: nowrap;
 }
 .frame-internals-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
-  max-height: 300px;
+  min-height: var(--frames-internals-min-height, 220px);
+  height: clamp(var(--frames-internals-min-height, 220px), 34vh, var(--frames-internals-max-height, 300px));
+  max-height: var(--frames-internals-max-height, 300px);
   border-top: 1px solid var(--line);
   background: #fff;
   overflow: hidden;
@@ -1200,7 +1211,7 @@ button:disabled {
   white-space: nowrap;
 }
 .frame-internals-body {
-  max-height: 260px;
+  min-height: 0;
   overflow: auto;
   padding: 12px;
 }
@@ -1590,7 +1601,11 @@ button:disabled {
     overflow: visible;
   }
   .frames-panel.active {
-    grid-template-rows: auto minmax(320px, auto) auto;
+    --frames-controls-min-height: 152px;
+    --frames-list-min-height: 320px;
+    --frames-internals-min-height: 240px;
+    --frames-internals-max-height: 360px;
+    grid-template-rows: minmax(var(--frames-controls-min-height), max-content) minmax(var(--frames-list-min-height), auto) auto;
   }
   .filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1712,10 +1727,9 @@ button:disabled {
     min-height: 320px;
   }
   .frame-internals-panel {
-    max-height: none;
+    height: clamp(var(--frames-internals-min-height), 42dvh, var(--frames-internals-max-height));
   }
   .frame-internals-body {
-    max-height: none;
     padding: 10px;
   }
   .frame-internals-layout {
