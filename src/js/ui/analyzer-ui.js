@@ -104,6 +104,8 @@ const state = {
   boxTreeActivationCount: 0,
   lastBoxTreeActivation: null,
   frameInternalsTooltipTarget: null,
+  frameInternalsMapDrag: null,
+  suppressNextFrameInternalsMapClick: false,
   frameInternalsColorScaleCache: new Map()
 };
 
@@ -363,6 +365,13 @@ elements.frameInternalsBody.addEventListener("pointerout", handleFrameInternalsT
 elements.frameInternalsBody.addEventListener("focusin", handleFrameInternalsTooltipFocusIn);
 elements.frameInternalsBody.addEventListener("focusout", hideFrameInternalsTooltip);
 elements.frameInternalsBody.addEventListener("scroll", hideFrameInternalsTooltip);
+elements.frameInternalsBody.addEventListener("click", handleFrameInternalsMapClick);
+elements.frameInternalsBody.addEventListener("dblclick", handleFrameInternalsMapDoubleClick);
+elements.frameInternalsBody.addEventListener("keydown", handleFrameInternalsMapKeyDown);
+elements.frameInternalsBody.addEventListener("pointerdown", handleFrameInternalsMapPointerDown);
+elements.frameInternalsBody.addEventListener("pointermove", handleFrameInternalsMapPointerMove);
+window.addEventListener("pointerup", handleFrameInternalsMapPointerUp, true);
+window.addEventListener("pointercancel", handleFrameInternalsMapPointerUp, true);
 elements.frameSpacer.addEventListener("click", handleFrameRowPointerActivation);
 elements.graphSpacer.addEventListener("click", handleFrameRowPointerActivation);
 elements.metricsBody.addEventListener("click", handleFrameRowPointerActivation);
@@ -1739,12 +1748,17 @@ function getFrameInternalsColorScale(track) {
 }
 
 function handleFrameInternalsTooltipPointerOver(event) {
+  if (state.frameInternalsMapDrag) return;
   const target = getFrameInternalsTooltipTarget(event.target);
   if (!target) return;
   showFrameInternalsTooltip(target, event.clientX, event.clientY);
 }
 
 function handleFrameInternalsTooltipPointerMove(event) {
+  if (state.frameInternalsMapDrag) {
+    hideFrameInternalsTooltip();
+    return;
+  }
   const target = getFrameInternalsTooltipTarget(event.target);
   if (!target) {
     hideFrameInternalsTooltip();
@@ -1771,6 +1785,129 @@ function handleFrameInternalsTooltipFocusIn(event) {
   if (!target) return;
   const rect = target.getBoundingClientRect();
   showFrameInternalsTooltip(target, rect.left + rect.width / 2, rect.bottom, { anchorMode: "center" });
+}
+
+function handleFrameInternalsMapClick(event) {
+  const viewport = getFrameInternalsMapViewport(event.target);
+  if (!viewport) return;
+  if (state.suppressNextFrameInternalsMapClick) {
+    state.suppressNextFrameInternalsMapClick = false;
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  if (viewport.classList.contains("zoomed")) return;
+  zoomFrameInternalsMapViewport(viewport, event.clientX, event.clientY);
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function handleFrameInternalsMapDoubleClick(event) {
+  const viewport = getFrameInternalsMapViewport(event.target);
+  if (!viewport || !viewport.classList.contains("zoomed")) return;
+  resetFrameInternalsMapViewport(viewport);
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function handleFrameInternalsMapKeyDown(event) {
+  const viewport = getFrameInternalsMapViewport(event.target);
+  if (!viewport) return;
+  if (event.key === "Escape" && viewport.classList.contains("zoomed")) {
+    resetFrameInternalsMapViewport(viewport);
+    event.preventDefault();
+    return;
+  }
+  if ((event.key === "Enter" || event.key === " ") && !viewport.classList.contains("zoomed")) {
+    const rect = viewport.getBoundingClientRect();
+    zoomFrameInternalsMapViewport(viewport, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    event.preventDefault();
+  }
+}
+
+function handleFrameInternalsMapPointerDown(event) {
+  const viewport = getFrameInternalsMapViewport(event.target);
+  if (!viewport || !viewport.classList.contains("zoomed")) return;
+  if (event.button !== undefined && event.button !== 0) return;
+  state.frameInternalsMapDrag = {
+    viewport,
+    pointerId: event.pointerId,
+    startClientX: event.clientX,
+    startClientY: event.clientY,
+    startScrollLeft: viewport.scrollLeft,
+    startScrollTop: viewport.scrollTop,
+    moved: false
+  };
+  viewport.classList.add("dragging");
+  if (typeof viewport.setPointerCapture === "function") {
+    try {
+      viewport.setPointerCapture(event.pointerId);
+    } catch (_) {
+      // Pointer capture can fail if the browser has already released the pointer.
+    }
+  }
+  hideFrameInternalsTooltip();
+  event.preventDefault();
+}
+
+function handleFrameInternalsMapPointerMove(event) {
+  const dragState = state.frameInternalsMapDrag;
+  if (!dragState || dragState.pointerId !== event.pointerId) return;
+  const deltaX = event.clientX - dragState.startClientX;
+  const deltaY = event.clientY - dragState.startClientY;
+  dragState.viewport.scrollLeft = dragState.startScrollLeft - deltaX;
+  dragState.viewport.scrollTop = dragState.startScrollTop - deltaY;
+  if (Math.abs(deltaX) + Math.abs(deltaY) > 3) dragState.moved = true;
+  hideFrameInternalsTooltip();
+  event.preventDefault();
+}
+
+function handleFrameInternalsMapPointerUp(event) {
+  const dragState = state.frameInternalsMapDrag;
+  if (!dragState || dragState.pointerId !== event.pointerId) return;
+  dragState.viewport.classList.remove("dragging");
+  if (typeof dragState.viewport.releasePointerCapture === "function") {
+    try {
+      dragState.viewport.releasePointerCapture(event.pointerId);
+    } catch (_) {
+      // Pointer capture may already be gone after pointercancel.
+    }
+  }
+  state.frameInternalsMapDrag = null;
+  if (dragState.moved) {
+    state.suppressNextFrameInternalsMapClick = true;
+    setTimeout(() => {
+      state.suppressNextFrameInternalsMapClick = false;
+    }, 0);
+  }
+}
+
+function getFrameInternalsMapViewport(eventTarget) {
+  if (!eventTarget || !elements.frameInternalsBody || typeof eventTarget.closest !== "function") return null;
+  const viewport = eventTarget.closest(".block-map-viewport");
+  if (!viewport || !elements.frameInternalsBody.contains(viewport)) return null;
+  return viewport;
+}
+
+function zoomFrameInternalsMapViewport(viewport, clientX, clientY) {
+  hideFrameInternalsTooltip();
+  const rect = viewport.getBoundingClientRect();
+  const relativeX = clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
+  const relativeY = clamp((clientY - rect.top) / Math.max(1, rect.height), 0, 1);
+  viewport.classList.add("zoomed");
+  viewport.setAttribute("aria-pressed", "true");
+  requestAnimationFrame(() => {
+    viewport.scrollLeft = relativeX * viewport.scrollWidth - viewport.clientWidth / 2;
+    viewport.scrollTop = relativeY * viewport.scrollHeight - viewport.clientHeight / 2;
+  });
+}
+
+function resetFrameInternalsMapViewport(viewport) {
+  hideFrameInternalsTooltip();
+  viewport.classList.remove("zoomed", "dragging");
+  viewport.setAttribute("aria-pressed", "false");
+  viewport.scrollLeft = 0;
+  viewport.scrollTop = 0;
 }
 
 function getFrameInternalsTooltipTarget(eventTarget) {

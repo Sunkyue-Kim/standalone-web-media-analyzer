@@ -33,8 +33,10 @@ export function renderVideoFrameInternals(model, options = {}) {
     renderFrameInternalsStats(stats) +
     '</div>' +
     '<div class="block-heatmap-wrap">' +
-    '<div class="block-map" style="' + renderVideoBlockMapStyle(model) + '">' +
-    model.cells.map((cell) => renderVideoBlockCell(cell, model, frameClass)).join("") +
+    '<div class="block-map-viewport" tabindex="0" role="button" aria-pressed="false" aria-label="' + escapeHtml(t("frameInternals.zoomPlotAria")) + '" style="' + renderVideoBlockMapStyle(model) + '">' +
+    '<div class="block-map">' +
+      model.cells.map((cell) => renderVideoBlockCell(cell, model, frameClass)).join("") +
+    '</div>' +
     '</div>' +
     '<p class="frame-internals-note">' + escapeHtml(t("frameInternals.videoEstimateNote")) + '</p>' +
     '</div>' +

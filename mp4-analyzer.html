@@ -1654,7 +1654,7 @@ button:disabled {
   border: 1px solid #cdd8e3;
   overflow: hidden;
 }
-.block-map {
+.block-map-viewport {
   position: relative;
   width: min(100%, var(--frame-map-max-width, 100%));
   min-width: 0;
@@ -1663,6 +1663,34 @@ button:disabled {
   background: linear-gradient(rgba(255, 255, 255, 0.44), rgba(255, 255, 255, 0.44)), #d7e2ea;
   border: 1px solid #cdd8e3;
   overflow: hidden;
+  cursor: zoom-in;
+  scrollbar-gutter: stable;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.block-map-viewport:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.block-map-viewport.zoomed {
+  overflow: auto;
+  cursor: grab;
+}
+.block-map-viewport.dragging {
+  cursor: grabbing;
+}
+.block-map {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 100%;
+  min-height: 100%;
+  overflow: hidden;
+}
+.block-map-viewport.zoomed .block-map {
+  width: 400%;
+  height: 400%;
 }
 .block-cell {
   --cell-red: 31;
@@ -7880,6 +7908,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           "frameInternals.activeBandwidth": "Active bandwidth",
           "frameInternals.channels": "Channels",
           "frameInternals.audioBands": "Audio band budget",
+          "frameInternals.zoomPlotAria": "Click to zoom the frame internals plot. Drag while zoomed to pan.",
           "frameInternals.videoEstimateNote": "Color uses this partition-ready block estimate's percentile within the whole selected video track's area-normalized estimated byte-density distribution. Rectangle layout supports codec partition shapes, including non-square AV1-style splits, but it is not decoded per-block entropy or exact syntax data yet.",
           "frameInternals.audioEstimateNote": "Band sizes are estimated from packet size and codec metadata; scalefactor or spectral payload decoding is not implemented.",
           "frameInternals.tooltip.pixelRange": "Pixel range",
@@ -8128,6 +8157,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           "frameInternals.activeBandwidth": "\uD65C\uC131 \uB300\uC5ED\uD3ED",
           "frameInternals.channels": "\uCC44\uB110",
           "frameInternals.audioBands": "\uC624\uB514\uC624 \uB300\uC5ED\uBCC4 byte \uCD94\uC815",
+          "frameInternals.zoomPlotAria": "\uD504\uB808\uC784 \uB0B4\uBD80 plot\uC744 \uD655\uB300\uD569\uB2C8\uB2E4. \uD655\uB300\uB41C \uC0C1\uD0DC\uC5D0\uC11C\uB294 \uB4DC\uB798\uADF8\uB85C \uC774\uB3D9\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
           "frameInternals.videoEstimateNote": "\uC0C9\uC0C1\uC740 \uC120\uD0DD\uB41C \uC804\uCCB4 video track\uC758 \uBA74\uC801 \uC815\uADDC\uD654 estimated byte-density \uBD84\uD3EC\uC5D0\uC11C \uC774 partition-ready block \uCD94\uC815\uCE58\uAC00 \uC704\uCE58\uD55C percentile\uC744 \uC0AC\uC6A9\uD569\uB2C8\uB2E4. Rectangle layout\uC740 \uBE44\uC815\uC0AC\uAC01 AV1-style split\uC744 \uD3EC\uD568\uD55C codec partition \uD615\uD0DC\uB97C \uD45C\uD604\uD560 \uC218 \uC788\uC9C0\uB9CC, \uC544\uC9C1 decoded per-block entropy \uB610\uB294 \uC815\uD655\uD55C syntax \uB370\uC774\uD130\uB294 \uC544\uB2D9\uB2C8\uB2E4.",
           "frameInternals.audioEstimateNote": "\uB300\uC5ED\uBCC4 \uD06C\uAE30\uB294 packet size\uC640 codec metadata \uAE30\uBC18 \uCD94\uC815\uCE58\uC785\uB2C8\uB2E4. scalefactor \uB610\uB294 spectral payload decode\uB294 \uAD6C\uD604\uB418\uC5B4 \uC788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
           "frameInternals.tooltip.pixelRange": "\uD53D\uC140 \uBC94\uC704",
@@ -9662,7 +9692,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       [t("frameInternals.colorScale"), formatFrameInternalsColorScale(model.colorScale)],
       [t("frameInternals.accuracy"), t("frameInternals.nominal")]
     ];
-    return '<div class="frame-internals-layout"><div class="frame-internals-summary"><div class="frame-internals-title-row"><strong>' + escapeHtml2(model.title) + '</strong><span class="pill ' + frameClass + '">' + escapeHtml2(formatFrameTypeLabel(model.frameType)) + '</span></div><p class="frame-internals-note">' + escapeHtml2(model.note) + "</p>" + renderFrameInternalsStats(stats) + '</div><div class="block-heatmap-wrap"><div class="block-map" style="' + renderVideoBlockMapStyle(model) + '">' + model.cells.map((cell) => renderVideoBlockCell(cell, model, frameClass)).join("") + '</div><p class="frame-internals-note">' + escapeHtml2(t("frameInternals.videoEstimateNote")) + "</p></div></div>" + renderVideoInternalsMetrics(model);
+    return '<div class="frame-internals-layout"><div class="frame-internals-summary"><div class="frame-internals-title-row"><strong>' + escapeHtml2(model.title) + '</strong><span class="pill ' + frameClass + '">' + escapeHtml2(formatFrameTypeLabel(model.frameType)) + '</span></div><p class="frame-internals-note">' + escapeHtml2(model.note) + "</p>" + renderFrameInternalsStats(stats) + '</div><div class="block-heatmap-wrap"><div class="block-map-viewport" tabindex="0" role="button" aria-pressed="false" aria-label="' + escapeHtml2(t("frameInternals.zoomPlotAria")) + '" style="' + renderVideoBlockMapStyle(model) + '"><div class="block-map">' + model.cells.map((cell) => renderVideoBlockCell(cell, model, frameClass)).join("") + '</div></div><p class="frame-internals-note">' + escapeHtml2(t("frameInternals.videoEstimateNote")) + "</p></div></div>" + renderVideoInternalsMetrics(model);
   }
   function renderVideoBlockMapStyle(model) {
     const mediaWidth = Math.max(1, Number(model.mediaWidth) || 1);
@@ -10082,6 +10112,8 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       boxTreeActivationCount: 0,
       lastBoxTreeActivation: null,
       frameInternalsTooltipTarget: null,
+      frameInternalsMapDrag: null,
+      suppressNextFrameInternalsMapClick: false,
       frameInternalsColorScaleCache: /* @__PURE__ */ new Map()
     };
     const elements = {
@@ -10328,6 +10360,13 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     elements.frameInternalsBody.addEventListener("focusin", handleFrameInternalsTooltipFocusIn);
     elements.frameInternalsBody.addEventListener("focusout", hideFrameInternalsTooltip);
     elements.frameInternalsBody.addEventListener("scroll", hideFrameInternalsTooltip);
+    elements.frameInternalsBody.addEventListener("click", handleFrameInternalsMapClick);
+    elements.frameInternalsBody.addEventListener("dblclick", handleFrameInternalsMapDoubleClick);
+    elements.frameInternalsBody.addEventListener("keydown", handleFrameInternalsMapKeyDown);
+    elements.frameInternalsBody.addEventListener("pointerdown", handleFrameInternalsMapPointerDown);
+    elements.frameInternalsBody.addEventListener("pointermove", handleFrameInternalsMapPointerMove);
+    window.addEventListener("pointerup", handleFrameInternalsMapPointerUp, true);
+    window.addEventListener("pointercancel", handleFrameInternalsMapPointerUp, true);
     elements.frameSpacer.addEventListener("click", handleFrameRowPointerActivation);
     elements.graphSpacer.addEventListener("click", handleFrameRowPointerActivation);
     elements.metricsBody.addEventListener("click", handleFrameRowPointerActivation);
@@ -11545,11 +11584,16 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       return state.frameInternalsColorScaleCache.get(cacheKey);
     }
     function handleFrameInternalsTooltipPointerOver(event) {
+      if (state.frameInternalsMapDrag) return;
       const target = getFrameInternalsTooltipTarget(event.target);
       if (!target) return;
       showFrameInternalsTooltip(target, event.clientX, event.clientY);
     }
     function handleFrameInternalsTooltipPointerMove(event) {
+      if (state.frameInternalsMapDrag) {
+        hideFrameInternalsTooltip();
+        return;
+      }
       const target = getFrameInternalsTooltipTarget(event.target);
       if (!target) {
         hideFrameInternalsTooltip();
@@ -11574,6 +11618,118 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       if (!target) return;
       const rect = target.getBoundingClientRect();
       showFrameInternalsTooltip(target, rect.left + rect.width / 2, rect.bottom, { anchorMode: "center" });
+    }
+    function handleFrameInternalsMapClick(event) {
+      const viewport = getFrameInternalsMapViewport(event.target);
+      if (!viewport) return;
+      if (state.suppressNextFrameInternalsMapClick) {
+        state.suppressNextFrameInternalsMapClick = false;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (viewport.classList.contains("zoomed")) return;
+      zoomFrameInternalsMapViewport(viewport, event.clientX, event.clientY);
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    function handleFrameInternalsMapDoubleClick(event) {
+      const viewport = getFrameInternalsMapViewport(event.target);
+      if (!viewport || !viewport.classList.contains("zoomed")) return;
+      resetFrameInternalsMapViewport(viewport);
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    function handleFrameInternalsMapKeyDown(event) {
+      const viewport = getFrameInternalsMapViewport(event.target);
+      if (!viewport) return;
+      if (event.key === "Escape" && viewport.classList.contains("zoomed")) {
+        resetFrameInternalsMapViewport(viewport);
+        event.preventDefault();
+        return;
+      }
+      if ((event.key === "Enter" || event.key === " ") && !viewport.classList.contains("zoomed")) {
+        const rect = viewport.getBoundingClientRect();
+        zoomFrameInternalsMapViewport(viewport, rect.left + rect.width / 2, rect.top + rect.height / 2);
+        event.preventDefault();
+      }
+    }
+    function handleFrameInternalsMapPointerDown(event) {
+      const viewport = getFrameInternalsMapViewport(event.target);
+      if (!viewport || !viewport.classList.contains("zoomed")) return;
+      if (event.button !== void 0 && event.button !== 0) return;
+      state.frameInternalsMapDrag = {
+        viewport,
+        pointerId: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startScrollLeft: viewport.scrollLeft,
+        startScrollTop: viewport.scrollTop,
+        moved: false
+      };
+      viewport.classList.add("dragging");
+      if (typeof viewport.setPointerCapture === "function") {
+        try {
+          viewport.setPointerCapture(event.pointerId);
+        } catch (_) {
+        }
+      }
+      hideFrameInternalsTooltip();
+      event.preventDefault();
+    }
+    function handleFrameInternalsMapPointerMove(event) {
+      const dragState = state.frameInternalsMapDrag;
+      if (!dragState || dragState.pointerId !== event.pointerId) return;
+      const deltaX = event.clientX - dragState.startClientX;
+      const deltaY = event.clientY - dragState.startClientY;
+      dragState.viewport.scrollLeft = dragState.startScrollLeft - deltaX;
+      dragState.viewport.scrollTop = dragState.startScrollTop - deltaY;
+      if (Math.abs(deltaX) + Math.abs(deltaY) > 3) dragState.moved = true;
+      hideFrameInternalsTooltip();
+      event.preventDefault();
+    }
+    function handleFrameInternalsMapPointerUp(event) {
+      const dragState = state.frameInternalsMapDrag;
+      if (!dragState || dragState.pointerId !== event.pointerId) return;
+      dragState.viewport.classList.remove("dragging");
+      if (typeof dragState.viewport.releasePointerCapture === "function") {
+        try {
+          dragState.viewport.releasePointerCapture(event.pointerId);
+        } catch (_) {
+        }
+      }
+      state.frameInternalsMapDrag = null;
+      if (dragState.moved) {
+        state.suppressNextFrameInternalsMapClick = true;
+        setTimeout(() => {
+          state.suppressNextFrameInternalsMapClick = false;
+        }, 0);
+      }
+    }
+    function getFrameInternalsMapViewport(eventTarget) {
+      if (!eventTarget || !elements.frameInternalsBody || typeof eventTarget.closest !== "function") return null;
+      const viewport = eventTarget.closest(".block-map-viewport");
+      if (!viewport || !elements.frameInternalsBody.contains(viewport)) return null;
+      return viewport;
+    }
+    function zoomFrameInternalsMapViewport(viewport, clientX, clientY) {
+      hideFrameInternalsTooltip();
+      const rect = viewport.getBoundingClientRect();
+      const relativeX = clamp2((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
+      const relativeY = clamp2((clientY - rect.top) / Math.max(1, rect.height), 0, 1);
+      viewport.classList.add("zoomed");
+      viewport.setAttribute("aria-pressed", "true");
+      requestAnimationFrame(() => {
+        viewport.scrollLeft = relativeX * viewport.scrollWidth - viewport.clientWidth / 2;
+        viewport.scrollTop = relativeY * viewport.scrollHeight - viewport.clientHeight / 2;
+      });
+    }
+    function resetFrameInternalsMapViewport(viewport) {
+      hideFrameInternalsTooltip();
+      viewport.classList.remove("zoomed", "dragging");
+      viewport.setAttribute("aria-pressed", "false");
+      viewport.scrollLeft = 0;
+      viewport.scrollTop = 0;
     }
     function getFrameInternalsTooltipTarget(eventTarget) {
       if (!eventTarget || !elements.frameInternalsBody || typeof eventTarget.closest !== "function") return null;

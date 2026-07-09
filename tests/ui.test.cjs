@@ -456,7 +456,9 @@ test("frame internals view renders reusable video, audio, and tooltip markup", a
   });
 
   assert.match(videoHtml, /block-cell i/);
+  assert.match(videoHtml, /block-map-viewport/);
   assert.match(videoHtml, /block-map/);
+  assert.match(videoHtml, /aria-pressed="false"/);
   assert.match(videoHtml, /Partition/);
   assert.match(videoHtml, /--frame-aspect-ratio:16 \/ 32/);
   assert.match(videoHtml, /--frame-map-max-width:140px/);
@@ -983,14 +985,20 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceFrameInternalsView, /renderAudioFrameInternals/);
   assert.doesNotMatch(sourceUi, /function renderVideoFrameInternals/);
   assert.match(sourceUi, /handleFrameInternalsTooltipPointerOver/);
+  assert.match(sourceUi, /handleFrameInternalsMapClick/);
+  assert.match(sourceUi, /handleFrameInternalsMapPointerDown/);
+  assert.match(sourceUi, /zoomFrameInternalsMapViewport/);
+  assert.match(sourceUi, /resetFrameInternalsMapViewport/);
   assert.match(sourceFrameInternalsView, /data-inspection-tooltip/);
   assert.match(sourceFrameInternalsView, /--cell-red:/);
   assert.match(sourceFrameInternalsView, /globalPercentile/);
   assert.match(sourceFrameInternalsView, /partitionModes/);
-  assert.match(sourceCss, /\.block-map\s*\{[\s\S]*?position:\s*relative;[\s\S]*?width:\s*min\(100%,\s*var\(--frame-map-max-width/);
-  assert.match(sourceCss, /\.block-map\s*\{[\s\S]*?aspect-ratio:\s*var\(--frame-aspect-ratio/);
+  assert.match(sourceCss, /\.block-map-viewport\s*\{[\s\S]*?position:\s*relative;[\s\S]*?width:\s*min\(100%,\s*var\(--frame-map-max-width/);
+  assert.match(sourceCss, /\.block-map-viewport\s*\{[\s\S]*?aspect-ratio:\s*var\(--frame-aspect-ratio/);
   assert.doesNotMatch(sourceCss.match(/\.block-map\s*\{[\s\S]*?\}/)?.[0] || "", /max-height:/);
   assert.doesNotMatch(sourceCss.match(/\.block-map\s*\{[\s\S]*?\}/)?.[0] || "", /min-width:\s*min/);
+  assert.match(sourceCss, /\.block-map-viewport\.zoomed\s*\{[\s\S]*?overflow:\s*auto;/);
+  assert.match(sourceCss, /\.block-map-viewport\.zoomed \.block-map\s*\{[\s\S]*?width:\s*400%;[\s\S]*?height:\s*400%;/);
   assert.match(sourceCss, /\.block-map \.block-cell\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?left:\s*var\(--cell-left\);/);
   assert.match(sourceCss, /\.frame-internals-metrics\s*\{[\s\S]*?display:\s*grid;/);
   assert.match(sourceCss, /\.frame-internals-chart-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
