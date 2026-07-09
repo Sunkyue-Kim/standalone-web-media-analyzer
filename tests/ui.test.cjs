@@ -466,9 +466,15 @@ test("frame internals view renders reusable video, audio, and tooltip markup", a
   assert.match(videoHtml, /Encoded pixel range/);
   assert.match(videoHtml, /Display pixel range/);
   assert.match(videoHtml, /Byte density/);
+  assert.match(videoHtml, /Internal statistics/);
+  assert.match(videoHtml, /Total bits/);
+  assert.match(videoHtml, /Block size distribution/);
+  assert.match(videoHtml, /Byte density distribution/);
   assert.match(videoHtml, /data-inspection-tooltip=/);
   assert.match(videoHtml, /--cell-red:1;--cell-green:2;--cell-blue:3;--cell-alpha:0\.500/);
   assert.match(audioHtml, /audio-band-row/);
+  assert.match(audioHtml, /Band byte share/);
+  assert.match(audioHtml, /Band activity/);
   assert.match(audioHtml, /12\.0 kHz/);
   assert.match(tooltipHtml, /tooltip-title/);
   assert.equal(frameInternalsView.formatFrameTypeLabel("unknown"), "unknown");
@@ -986,6 +992,8 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.doesNotMatch(sourceCss.match(/\.block-map\s*\{[\s\S]*?\}/)?.[0] || "", /max-height:/);
   assert.doesNotMatch(sourceCss.match(/\.block-map\s*\{[\s\S]*?\}/)?.[0] || "", /min-width:\s*min/);
   assert.match(sourceCss, /\.block-map \.block-cell\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?left:\s*var\(--cell-left\);/);
+  assert.match(sourceCss, /\.frame-internals-metrics\s*\{[\s\S]*?display:\s*grid;/);
+  assert.match(sourceCss, /\.frame-internals-chart-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
   assert.match(sourceCss, /--frame-i:\s*oklch\(0\.82 0\.09 145\);/);
   assert.match(sourceCss, /--frame-p:\s*oklch\(0\.80 0\.085 260\);/);
   assert.match(sourceCss, /--frame-b:\s*oklch\(0\.82 0\.09 325\);/);

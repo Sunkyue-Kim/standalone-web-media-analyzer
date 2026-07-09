@@ -1675,6 +1675,136 @@
       font-size: 12px;
     }
 
+    .frame-internals-metrics {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .frame-internals-metrics-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .frame-internals-metrics-head h3 {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.2;
+    }
+
+    .frame-internals-metrics-head span {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .frame-internals-metric-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .frame-internals-metric-card {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 8px;
+      background: #f8fafc;
+    }
+
+    .frame-internals-metric-card span {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .frame-internals-metric-card strong {
+      display: block;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    .frame-internals-chart-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .frame-internals-chart-card {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 9px;
+      background: #fdfefe;
+    }
+
+    .frame-internals-chart-card h4 {
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.2;
+    }
+
+    .frame-internals-bar-list {
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .frame-internals-bar-row {
+      display: grid;
+      grid-template-columns: minmax(70px, 0.34fr) minmax(84px, 1fr) minmax(54px, 0.28fr);
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      font-size: 12px;
+    }
+
+    .frame-internals-bar-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+    }
+
+    .frame-internals-bar-track {
+      display: block;
+      min-width: 0;
+      height: 16px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: #eef2f7;
+      overflow: hidden;
+    }
+
+    .frame-internals-bar-track span {
+      display: block;
+      height: 100%;
+      min-width: 2px;
+      background: rgba(31, 122, 140, 0.54);
+    }
+
+    .frame-internals-bar-row strong {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-family: var(--mono);
+      font-size: 11px;
+      text-align: right;
+    }
+
     .block-heatmap-wrap {
       min-width: 0;
       border: 1px solid var(--line);
@@ -2101,6 +2231,18 @@
       }
       .frame-internals-stats {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .frame-internals-metrics-head {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .frame-internals-chart-grid {
+        grid-template-columns: 1fr;
+      }
+      .frame-internals-bar-row {
+        grid-template-columns: minmax(62px, 0.32fr) minmax(72px, 1fr) minmax(48px, 0.3fr);
+        gap: 6px;
       }
       .block-heatmap {
         max-height: 260px;

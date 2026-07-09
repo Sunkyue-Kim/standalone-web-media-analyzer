@@ -38,7 +38,8 @@ export function renderVideoFrameInternals(model, options = {}) {
     '</div>' +
     '<p class="frame-internals-note">' + escapeHtml(t("frameInternals.videoEstimateNote")) + '</p>' +
     '</div>' +
-    '</div>';
+    '</div>' +
+    renderVideoInternalsMetrics(model);
 }
 
 function renderVideoBlockMapStyle(model) {
@@ -172,6 +173,50 @@ function formatFrameInternalsColorScale(colorScale) {
   return t("value.notAvailable");
 }
 
+function renderVideoInternalsMetrics(model) {
+  const cells = Array.isArray(model.cells) ? model.cells : [];
+  if (!cells.length) return "";
+  const densities = cells.map((cell) => Number(cell.estimatedBytesPerPixel)).filter(isFiniteNonNegative);
+  const estimatedBytes = cells.map((cell) => Number(cell.estimatedBytes)).filter(isFiniteNonNegative);
+  const areas = cells.map((cell) => Math.max(1, Number(cell.blockWidth) * Number(cell.blockHeight) || 1));
+  const blockSizeGroups = getTopCountGroups(cells.map((cell) => (cell.blockWidth || 0) + "x" + (cell.blockHeight || 0)), 6);
+  const depthGroups = getTopCountGroups(cells.map((cell) => t("frameInternals.depthLabel", { depth: cell.depth || 0 })), 8);
+  const modeGroups = getTopCountGroups(cells.map((cell) => cell.partitionMode || t("value.unknown")), 8);
+  const commonBlock = blockSizeGroups[0];
+  const sampleBytes = Math.max(0, Number(model.sampleSize) || sumNumbers(estimatedBytes));
+  const cards = [
+    [t("frameInternals.stats.blocks"), formatMetricNumber(cells.length, 0)],
+    [t("frameInternals.stats.totalBits"), formatBits(sampleBytes * 8)],
+    [t("frameInternals.stats.commonBlock"), commonBlock ? commonBlock.label + " (" + commonBlock.count + ")" : t("value.notAvailable")],
+    [t("frameInternals.stats.medianArea"), formatArea(getQuantile(areas, 0.5))],
+    [t("frameInternals.stats.medianDensity"), formatDensityValue(getQuantile(densities, 0.5))],
+    [t("frameInternals.stats.p95Density"), formatDensityValue(getQuantile(densities, 0.95))],
+    [t("frameInternals.stats.maxBlockBits"), formatBits(Math.max(0, ...estimatedBytes) * 8)],
+    [t("frameInternals.stats.p95BlockBits"), formatBits(getQuantile(estimatedBytes, 0.95) * 8)]
+  ];
+  return renderInternalsMetricsSection([
+    renderInternalMetricCards(cards),
+    '<div class="frame-internals-chart-grid">' +
+      renderInternalsBarChart(t("frameInternals.stats.blockSizeDistribution"), blockSizeGroups.map((group) => ({
+        label: group.label,
+        value: group.count,
+        detail: t("frameInternals.stats.blockCount", { count: group.count })
+      }))) +
+      renderInternalsBarChart(t("frameInternals.stats.byteDensityDistribution"), buildHistogramEntries(densities, 6, formatDensityValue)) +
+      renderInternalsBarChart(t("frameInternals.stats.partitionModes"), modeGroups.map((group) => ({
+        label: group.label,
+        value: group.count,
+        detail: t("frameInternals.stats.blockCount", { count: group.count })
+      }))) +
+      renderInternalsBarChart(t("frameInternals.stats.partitionDepth"), depthGroups.map((group) => ({
+        label: group.label,
+        value: group.count,
+        detail: t("frameInternals.stats.blockCount", { count: group.count })
+      }))) +
+    '</div>'
+  ].join(""));
+}
+
 export function renderAudioFrameInternals(model, options = {}) {
   const stats = [
     [t("frameInternals.codec"), model.title],
@@ -191,7 +236,42 @@ export function renderAudioFrameInternals(model, options = {}) {
     '<div class="audio-band-plot">' + model.bands.map(renderAudioBandRow).join("") + '</div>' +
     '<p class="frame-internals-note">' + escapeHtml(t("frameInternals.audioEstimateNote")) + '</p>' +
     '</div>' +
-    '</div>';
+    '</div>' +
+    renderAudioInternalsMetrics(model);
+}
+
+function renderAudioInternalsMetrics(model) {
+  const bands = Array.isArray(model.bands) ? model.bands : [];
+  if (!bands.length) return "";
+  const estimatedBytes = bands.map((band) => Number(band.estimatedBytes)).filter(isFiniteNonNegative);
+  const totalBytes = Math.max(0, Number(model.sampleSize) || sumNumbers(estimatedBytes));
+  const activeBands = bands.filter((band) => band.active).length;
+  const peakBand = bands.reduce((currentPeak, band) =>
+    Number(band.estimatedBytes) > Number(currentPeak && currentPeak.estimatedBytes || -1) ? band : currentPeak,
+  null);
+  const cards = [
+    [t("frameInternals.stats.bands"), formatMetricNumber(bands.length, 0)],
+    [t("frameInternals.stats.activeBands"), formatMetricNumber(activeBands, 0)],
+    [t("frameInternals.stats.totalBits"), formatBits(totalBytes * 8)],
+    [t("frameInternals.stats.peakBand"), peakBand ? peakBand.label : t("value.notAvailable")],
+    [t("frameInternals.stats.medianBandBits"), formatBits(getQuantile(estimatedBytes, 0.5) * 8)],
+    [t("frameInternals.activeBandwidth"), formatAudioFrequency(model.activeBandwidthHz)]
+  ];
+  return renderInternalsMetricsSection([
+    renderInternalMetricCards(cards),
+    '<div class="frame-internals-chart-grid">' +
+      renderInternalsBarChart(t("frameInternals.stats.bandByteShare"), bands.map((band) => ({
+        label: band.label,
+        value: Number(band.estimatedBytes) || 0,
+        detail: formatBits((Number(band.estimatedBytes) || 0) * 8) + " · " + formatMetricNumber((band.ratio || 0) * 100, 1) + "%"
+      }))) +
+      renderInternalsBarChart(t("frameInternals.stats.bandActivity"), bands.map((band) => ({
+        label: band.label,
+        value: band.active ? 1 : 0.08,
+        detail: band.active ? t("frameInternals.stats.active") : t("frameInternals.stats.inactive")
+      }))) +
+    '</div>'
+  ].join(""));
 }
 
 function renderAudioBandRow(band) {
@@ -249,6 +329,122 @@ function renderFrameInternalsStats(stats) {
   return '<div class="frame-internals-stats">' + stats.map(([label, value]) =>
     '<div class="frame-internals-stat"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(String(value)) + '</strong></div>'
   ).join("") + '</div>';
+}
+
+function renderInternalsMetricsSection(content) {
+  return '<section class="frame-internals-metrics">' +
+    '<div class="frame-internals-metrics-head">' +
+      '<h3>' + escapeHtml(t("frameInternals.stats.title")) + '</h3>' +
+      '<span>' + escapeHtml(t("frameInternals.stats.subtitle")) + '</span>' +
+    '</div>' +
+    content +
+  '</section>';
+}
+
+function renderInternalMetricCards(cards) {
+  return '<div class="frame-internals-metric-cards">' + cards.map(([label, value]) =>
+    '<div class="frame-internals-metric-card"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(String(value)) + '</strong></div>'
+  ).join("") + '</div>';
+}
+
+function renderInternalsBarChart(title, entries) {
+  const visibleEntries = (Array.isArray(entries) ? entries : []).filter((entry) => entry && isFiniteNonNegative(entry.value));
+  if (!visibleEntries.length) return '<section class="frame-internals-chart-card"><h4>' + escapeHtml(title) + '</h4>' + escapeHtml(t("value.notAvailable")) + '</section>';
+  const maxValue = Math.max(...visibleEntries.map((entry) => entry.value), 1);
+  return '<section class="frame-internals-chart-card">' +
+    '<h4>' + escapeHtml(title) + '</h4>' +
+    '<div class="frame-internals-bar-list">' +
+      visibleEntries.map((entry) => renderInternalsBarRow(entry, maxValue)).join("") +
+    '</div>' +
+  '</section>';
+}
+
+function renderInternalsBarRow(entry, maxValue) {
+  const widthPercent = clamp((Number(entry.value) || 0) * 100 / Math.max(1, maxValue), 1.2, 100);
+  return '<div class="frame-internals-bar-row">' +
+    '<span class="frame-internals-bar-label">' + escapeHtml(entry.label) + '</span>' +
+    '<span class="frame-internals-bar-track"><span style="width:' + widthPercent.toFixed(3) + '%"></span></span>' +
+    '<strong>' + escapeHtml(entry.detail || formatMetricNumber(entry.value, 0)) + '</strong>' +
+  '</div>';
+}
+
+function getTopCountGroups(values, limit) {
+  const counts = new Map();
+  for (const value of values) {
+    const label = String(value || t("value.unknown"));
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([label, count]) => ({ label, count, value: count }))
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
+    .slice(0, limit);
+}
+
+function buildHistogramEntries(values, binCount, formatter) {
+  const sortedValues = values.filter(isFiniteNonNegative).sort((left, right) => left - right);
+  if (!sortedValues.length) return [];
+  const minValue = sortedValues[0];
+  const maxValue = sortedValues[sortedValues.length - 1];
+  if (minValue === maxValue) {
+    return [{
+      label: formatter(minValue),
+      value: sortedValues.length,
+      detail: t("frameInternals.stats.blockCount", { count: sortedValues.length })
+    }];
+  }
+  const bins = Array.from({ length: binCount }, (_, index) => ({
+    index,
+    start: minValue + (maxValue - minValue) * index / binCount,
+    end: minValue + (maxValue - minValue) * (index + 1) / binCount,
+    count: 0
+  }));
+  for (const value of sortedValues) {
+    const rawIndex = Math.floor((value - minValue) * binCount / (maxValue - minValue));
+    bins[Math.min(binCount - 1, Math.max(0, rawIndex))].count += 1;
+  }
+  return bins
+    .filter((bin) => bin.count > 0)
+    .map((bin) => ({
+      label: formatter(bin.start) + " - " + formatter(bin.end),
+      value: bin.count,
+      detail: t("frameInternals.stats.blockCount", { count: bin.count })
+    }));
+}
+
+function getQuantile(values, quantile) {
+  const sortedValues = values.filter(isFiniteNonNegative).sort((left, right) => left - right);
+  if (!sortedValues.length) return 0;
+  const position = (sortedValues.length - 1) * clamp(quantile, 0, 1);
+  const lowerIndex = Math.floor(position);
+  const upperIndex = Math.ceil(position);
+  if (lowerIndex === upperIndex) return sortedValues[lowerIndex];
+  const weight = position - lowerIndex;
+  return sortedValues[lowerIndex] * (1 - weight) + sortedValues[upperIndex] * weight;
+}
+
+function formatBits(value) {
+  const bits = Math.max(0, Number(value) || 0);
+  if (bits < 1000) return formatMetricNumber(bits, 0) + " bits";
+  if (bits < 1000000) return formatMetricNumber(bits / 1000, bits < 10000 ? 2 : 1) + " Kbits";
+  return formatMetricNumber(bits / 1000000, bits < 10000000 ? 2 : 1) + " Mbits";
+}
+
+function formatArea(value) {
+  return formatMetricNumber(Math.max(0, Number(value) || 0), 0) + " px";
+}
+
+function formatDensityValue(value) {
+  const density = Math.max(0, Number(value) || 0);
+  return formatMetricNumber(density, density < 0.01 ? 4 : 3) + " B/px";
+}
+
+function sumNumbers(values) {
+  return values.reduce((sum, value) => sum + (Number(value) || 0), 0);
+}
+
+function isFiniteNonNegative(value) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue >= 0;
 }
 
 export function formatFrameTypeLabel(type) {
