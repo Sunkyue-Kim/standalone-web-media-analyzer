@@ -14,6 +14,10 @@ const SUMMARY_CODEC_GROUPS = [
     matches: (track) => track.codec === "V_VP9" || track.codec === "vp09" || track.codecDescriptor === "V_VP9"
   },
   {
+    labelKey: "summary.av1Tracks",
+    matches: (track) => track.codec === "av01" || track.codec === "V_AV1" || track.codecDescriptor === "av1"
+  },
+  {
     labelKey: "summary.proResTracks",
     matches: (track) => PRO_RES_SAMPLE_ENTRY_TYPES.has(track.codec)
   },

@@ -274,12 +274,14 @@ test("summary codec track counts only include present codec groups", async () =>
     { codec: "avc1", codecDescriptor: "avc" },
     { codec: "mp4a", codecDescriptor: "aac" },
     { codec: "A_OPUS", codecDescriptor: "opus" },
-    { codec: "V_VP9", codecDescriptor: "V_VP9" }
+    { codec: "V_VP9", codecDescriptor: "V_VP9" },
+    { codec: "av01", codecDescriptor: "av1" }
   ]);
 
   assert.deepEqual(JSON.parse(JSON.stringify(counts)), [
     { labelKey: "summary.avcTracks", count: 1 },
     { labelKey: "summary.vp9Tracks", count: 1 },
+    { labelKey: "summary.av1Tracks", count: 1 },
     { labelKey: "summary.aacTracks", count: 1 },
     { labelKey: "summary.opusTracks", count: 1 }
   ]);
@@ -921,6 +923,7 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   }
 
   assert.match(sourceHtml, /<title>Standalone Web Media Analyzer<\/title>/);
+  assert.match(sourceHtml, /WebM, AV1, MP3/);
   assert.match(sourceHtml, /id="autoPlaybackSynchronizationToggle" type="checkbox" checked/);
   assert.match(sourceUi, /requestVideoFrameCallback/);
   assert.match(sourceUi, /requestAnimationFrame\(runPlaybackSynchronizationStep\)/);
@@ -1042,6 +1045,8 @@ test("i18n catalog contains matching Korean and English keys for visible UI stri
   const koreanKeys = Object.keys(I18N.ko).sort();
   assert.deepEqual(koreanKeys, englishKeys);
   assert.ok(Object.keys(BOX_TYPE_I18N.ko).includes("stco"));
+  assert.ok(Object.keys(BOX_TYPE_I18N.ko).includes("av1C"));
+  assert.ok(Object.keys(BOX_TYPE_I18N.ko).includes("av01"));
   assert.ok(Object.keys(BOX_TYPE_I18N.ko).includes("@xyz"));
   assert.ok(Object.keys(BOX_TYPE_I18N.ko).includes("caml"));
   assert.equal(setLanguage("ko"), "ko");

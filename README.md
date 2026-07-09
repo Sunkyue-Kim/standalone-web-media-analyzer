@@ -16,7 +16,7 @@ The runtime is fully static. You can use it as a single self-contained HTML file
 | Hosted samples | Available from GitHub Pages when the app is served over HTTP/HTTPS |
 | Remote URLs | Supported when CORS and range-read requirements are satisfied |
 | Containers | ISO BMFF MP4/fMP4/MOV, WebM/Matroska, MP3, Ogg Opus |
-| Video codecs | AVC/H.264, HEVC/H.265, VP9 metadata, ProRes metadata, unknown-codec fallback |
+| Video codecs | AVC/H.264, HEVC/H.265, AV1 metadata/OBU scan, VP9 metadata, ProRes metadata, unknown-codec fallback |
 | Audio codecs | AAC, MP3, Opus, unknown-codec fallback |
 | Views | Summary, boxes/elements, tracks, frames, metrics, fragments, warnings |
 | Frame internals | Partition-ready rectangular video block maps and audio band byte-budget estimates for selected samples |
@@ -31,7 +31,7 @@ The runtime is fully static. You can use it as a single self-contained HTML file
 - Container structure: ISO BMFF box trees, WebM EBML elements, MP3 headers, Ogg pages, offsets, sizes, parsed fields, and warnings
 - QuickTime/Android private metadata: selected text, GPS, Samsung `smta` child atoms, and raw hex payload previews for unknown private boxes
 - Track summaries: codec, handler/type, duration, timescale, dimensions, sample counts, audio configuration, and codec configuration
-- Sample/frame rows: index, track, type, offset, size, DTS, PTS, duration, sync/keyframe state, NAL types, chunks, and fragments where available
+- Sample/frame rows: index, track, type, offset, size, DTS, PTS, duration, sync/keyframe state, NAL/OBU tags, chunks, and fragments where available
 - Visual analysis: frame-size graph, bitrate moving average, FPS moving average, largest samples, and fragment timing
 - Selected-frame internals: partition-ready rectangular AVC macroblock, HEVC CTU/CU, VP9/AV1 superblock maps, and audio band byte-budget estimates
 - Playback-assisted navigation: selecting frame/fragment rows can seek the preview player when browser playback supports the file
@@ -76,9 +76,9 @@ For remote URLs:
 
 | Format | Structure | Samples/Packets | Frame Type | Notes |
 | --- | --- | --- | --- | --- |
-| MP4/MOV | Box tree and parsed sample tables | Yes | AVC/HEVC when slice headers are available | Includes `ftyp`, `moov`, `trak`, `stbl`, `mdat`, `uuid`, and many common media boxes |
-| fMP4 | `moov`/`mvex`, `moof`/`traf`/`trun`, fragment timing | Yes | AVC/HEVC when slice headers are available | Expects init data and fragments in the same analyzed resource |
-| WebM | EBML hierarchy, tracks, clusters, blocks | Yes | Keyframe metadata | VP9 bitstream decoding is not implemented |
+| MP4/MOV | Box tree and parsed sample tables | Yes | AVC/HEVC slice headers; AV1 OBU headers/light frame-header bits | Includes `ftyp`, `moov`, `trak`, `stbl`, `mdat`, `uuid`, `av1C`, and many common media boxes |
+| fMP4 | `moov`/`mvex`, `moof`/`traf`/`trun`, fragment timing | Yes | AVC/HEVC slice headers; AV1 OBU headers/light frame-header bits | Expects init data and fragments in the same analyzed resource |
+| WebM | EBML hierarchy, tracks, clusters, blocks | Yes | Keyframe metadata; AV1 OBU tags when `V_AV1` is present | VP9 bitstream decoding is not implemented |
 | MP3 | ID3 detection and MPEG audio frame scanning | Yes | Not applicable | Audio metadata and frame rows only |
 | Ogg Opus | Ogg pages, lacing, Opus identification | Packet-level rows | Not applicable | Opus packets are parsed structurally, not decoded |
 

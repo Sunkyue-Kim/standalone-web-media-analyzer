@@ -1,5 +1,6 @@
 import { createRangeReader, getResourceInfo, readResourcePrefix } from "../../common/binary.js";
 import { parseOpusHead, parseOpusPacket } from "../../codecs/audio/opus.js";
+import { parseAv1Sample } from "../../codecs/video/av1.js";
 
 const UNKNOWN_SIZE = -1n;
 const MAX_INLINE_FIELD_BYTES = 256 * 1024;
@@ -279,12 +280,15 @@ function buildWebmTracks(context) {
       channelDescription: channels ? channels + (channels === 1 ? " channel" : " channels") : "audio",
       samplingFrequency: codec === "A_OPUS" ? 48000 : samplingFrequency,
       opusHead
+    } : codec === "V_AV1" ? {
+      codecString: "av01",
+      codecFamily: "AV1"
     } : null;
     return {
       trackId: trackNumber,
       handlerType,
       codec,
-      codecDescriptor: codec === "A_OPUS" ? "opus" : codec,
+      codecDescriptor: codec === "A_OPUS" ? "opus" : codec === "V_AV1" ? "av1" : codec,
       codecConfig,
       timescale: 1000000000,
       duration: String(context.duration || 0),
@@ -327,6 +331,7 @@ async function buildWebmSamples(reader, topBoxes, tracks, context, warnings, onP
         const sampleIndex = (sampleIndexByTrack.get(track.trackId) || 0) + 1;
         sampleIndexByTrack.set(track.trackId, sampleIndex);
         const duration = getWebmFrameDuration(track, frame.bytes);
+        const sampleDescription = describeWebmSample(track, blockInfo, frame.bytes);
         rows.push({
           trackId: track.trackId,
           sampleIndex,
@@ -336,11 +341,11 @@ async function buildWebmSamples(reader, topBoxes, tracks, context, warnings, onP
           pts: localTimeNs,
           duration,
           isSync: track.handlerType === "vide" ? Boolean(blockInfo.keyframe) : true,
-          frameType: getWebmFrameType(track, blockInfo),
-          nalTypes: getWebmSampleTags(track, frame.bytes),
+          frameType: sampleDescription.frameType,
+          nalTypes: sampleDescription.nalTypes,
           chunkIndex: clusterIndex,
           fragmentIndex: "",
-          warnings: []
+          warnings: sampleDescription.warnings
         });
         localTimeNs += duration;
       }
@@ -466,19 +471,38 @@ function getWebmFrameDuration(track, bytes) {
   return track.defaultDuration || 0;
 }
 
-function getWebmFrameType(track, blockInfo) {
-  if (track.handlerType === "vide") return blockInfo.keyframe ? "I" : "P";
-  if (track.codec === "A_OPUS") return "Opus";
-  if (track.handlerType === "soun") return "audio";
-  return "";
-}
-
-function getWebmSampleTags(track, bytes) {
+function describeWebmSample(track, blockInfo, bytes) {
+  if (track.codec === "V_AV1") {
+    const parsedSample = parseAv1Sample(bytes, { defaultFrameType: blockInfo.keyframe ? "I" : "P" });
+    return {
+      frameType: parsedSample.frameType,
+      nalTypes: parsedSample.nalTypes,
+      warnings: parsedSample.warnings || []
+    };
+  }
   if (track.codec === "A_OPUS") {
     const packet = parseOpusPacket(bytes);
-    return ["Opus", packet.mode, packet.bandwidth, packet.frameCount + " frames"];
+    return {
+      frameType: "Opus",
+      nalTypes: ["Opus", packet.mode, packet.bandwidth, packet.frameCount + " frames"],
+      warnings: []
+    };
   }
-  return [track.codec];
+  if (track.handlerType === "vide") {
+    return {
+      frameType: blockInfo.keyframe ? "I" : "P",
+      nalTypes: [track.codec],
+      warnings: []
+    };
+  }
+  if (track.handlerType === "soun") {
+    return {
+      frameType: "audio",
+      nalTypes: [track.codec],
+      warnings: []
+    };
+  }
+  return { frameType: "", nalTypes: [track.codec], warnings: [] };
 }
 
 function numberField(node, childType) {

@@ -12,9 +12,11 @@ const sampleExpectations = [
   ["20260612_091058.mp4", "video/mp4", "isobmff", 2, 1752, ["I", "P", "B", "AAC"]],
   ["avc_bframes.mp4", "video/mp4", "isobmff", 1, 120, ["I", "P", "B"]],
   ["avc_fragmented.mp4", "video/mp4", "isobmff", 1, 120, ["I", "P", "B"]],
+  ["av1_mp4.mp4", "video/mp4", "isobmff", 1, 15, ["I", "P"]],
   ["audio_mp3.mp3", "audio/mpeg", "mp3", 1, 78, ["MP3"]],
   ["audio_opus.opus", "audio/ogg", "ogg-opus", 1, 101, ["Opus"]],
-  ["webm_vp9_opus.webm", "video/webm", "webm", 2, 149, ["I", "P", "Opus"]]
+  ["webm_vp9_opus.webm", "video/webm", "webm", 2, 149, ["I", "P", "Opus"]],
+  ["webm_av1.webm", "video/webm", "webm", 1, 15, ["I", "P"]]
 ];
 
 function loadSampleFile(fileName, type) {

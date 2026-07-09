@@ -583,6 +583,10 @@ export const BOX_TYPE_INFO = {
     name: "HEVC Configuration Box",
     description: "H.265/HEVC decoder configuration including profile, level, VPS/SPS/PPS, and NAL length size."
   },
+  av1C: {
+    name: "AV1 Configuration Box",
+    description: "AV1 decoder configuration including profile, level, tier, bit depth, chroma format, and configuration OBUs."
+  },
   esds: {
     name: "Elementary Stream Descriptor Box",
     description: "MPEG-4 descriptors, commonly carrying AAC AudioSpecificConfig for mp4a tracks."
@@ -618,6 +622,10 @@ export const BOX_TYPE_INFO = {
   hev1: {
     name: "HEV1 Sample Entry",
     description: "H.265/HEVC sample entry where parameter sets may appear in samples."
+  },
+  av01: {
+    name: "AV1 Sample Entry",
+    description: "AV1 video sample entry using av1C codec configuration."
   },
   mp4a: {
     name: "MPEG-4 Audio Sample Entry",

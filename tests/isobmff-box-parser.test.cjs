@@ -243,6 +243,33 @@ test("ISO BMFF box parser loads codec configuration from audio sample entries", 
   assert.equal(entry.boxes[0].type, "esds");
 });
 
+test("ISO BMFF box parser loads AV1 configuration from video sample entries", async () => {
+  const av1ConfigBox = box("av1C", new Uint8Array([0x81, 0x08, 0x40, 0x00, 0x0a, 0x00]));
+  const videoSampleEntry = new Uint8Array(86);
+  videoSampleEntry.set(uint32(videoSampleEntry.byteLength + av1ConfigBox.byteLength), 0);
+  videoSampleEntry.set(fourCharacterCode("av01"), 4);
+  videoSampleEntry.set(uint16(1), 14);
+  videoSampleEntry.set(uint16(640), 32);
+  videoSampleEntry.set(uint16(360), 34);
+  videoSampleEntry.set(uint16(24), 82);
+  const stsdPayload = fullBoxPayload(0, 0, concatBytes([
+    uint32(1),
+    videoSampleEntry,
+    av1ConfigBox
+  ]));
+
+  const { nodes, warnings } = await parseSyntheticBoxes(box("stsd", stsdPayload));
+  const entry = nodes[0].fields.entries[0];
+
+  assert.equal(warnings.length, 0);
+  assert.equal(entry.format, "av01");
+  assert.equal(entry.codecDescriptor, "av1");
+  assert.equal(entry.codecConfig.codecString, "av01.0.08M.10");
+  assert.equal(entry.codecConfig.bitDepth, 10);
+  assert.equal(entry.boxes[0].type, "av1C");
+  assert.equal(entry.boxes[0].fields.configOBUByteLength, 2);
+});
+
 test("ISO BMFF box parser covers fMP4 tfhd and trun optional fields", async () => {
   const tfhdFlags = 0x000001 | 0x000002 | 0x000008 | 0x000010 | 0x000020 | 0x010000 | 0x020000;
   const trunFlags = 0x000001 | 0x000004 | 0x000100 | 0x000200 | 0x000400 | 0x000800;

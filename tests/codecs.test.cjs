@@ -132,10 +132,11 @@ test("MP3 and Opus parsers cover layer, channel, lacing-count, and invalid-heade
   assert.equal(multiFramePacket.stereo, true);
 });
 
-test("AVC and HEVC parsers expose config and classify synthetic sample payloads", async () => {
+test("AVC, HEVC, and AV1 parsers expose config and classify synthetic sample payloads", async () => {
   const loader = await createSourceModuleLoader();
   const avc = await loader.import("src/js/core/codecs/video/avc.js");
   const hevc = await loader.import("src/js/core/codecs/video/hevc.js");
+  const av1 = await loader.import("src/js/core/codecs/video/av1.js");
 
   const avcConfig = avc.parseAvcC(new Uint8Array([
     0x01, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0x00, 0x04,
@@ -161,6 +162,18 @@ test("AVC and HEVC parsers expose config and classify synthetic sample payloads"
   assert.equal(hevc.parseHevcC(new Uint8Array([1, 2])).error, "hvcC too short");
   assert.equal(hevc.parseHevcSample(new Uint8Array([0x00, 0x00, 0x00, 0x03, 0x26, 0x01, 0xac]), 4).frameType, "I");
   assert.equal(hevc.hevcNalTypeName(33), "SPS");
+
+  const av1Config = av1.parseAv1C(new Uint8Array([0x81, 0x08, 0x40, 0x00, 0x0a, 0x00]));
+  assert.equal(av1Config.codecString, "av01.0.08M.10");
+  assert.equal(av1Config.seqProfile, 0);
+  assert.equal(av1Config.seqLevelIdx0, 8);
+  assert.equal(av1Config.bitDepth, 10);
+  assert.equal(av1Config.chromaFormat, "4:4:4");
+  assert.equal(av1.parseAv1C(new Uint8Array([1, 2])).error, "av1C too short");
+  assert.equal(av1.parseAv1Sample(new Uint8Array([0x32, 0x01, 0x00])).frameType, "I");
+  assert.equal(av1.parseAv1Sample(new Uint8Array([0x32, 0x01, 0x20])).frameType, "P");
+  assert.deepEqual(Array.from(av1.parseAv1ObuStream(new Uint8Array([0x1a, 0x01, 0x00])).obus.map((obu) => obu.typeName)), ["Frame Header"]);
+  assert.equal(av1.av1ObuTypeName(6), "Frame");
 });
 
 test("codec registry provides interchangeable descriptors and scanners", async () => {
@@ -169,6 +182,8 @@ test("codec registry provides interchangeable descriptors and scanners", async (
 
   assert.equal(registry.getCodecBySampleEntryType("avc1").id, "avc");
   assert.equal(registry.getCodecByConfigurationBoxType("hvcC").id, "hevc");
+  assert.equal(registry.getCodecBySampleEntryType("av01").id, "av1");
+  assert.equal(registry.getCodecByConfigurationBoxType("av1C").id, "av1");
   assert.equal(registry.getCodecBySampleEntryType("mp3").kind, "audio");
   assert.equal(registry.getCodecBySampleEntryType("missing"), null);
 
@@ -178,6 +193,13 @@ test("codec registry provides interchangeable descriptors and scanners", async (
   });
   assert.equal(scanner.codec, "AVC / H.264");
   assert.equal((await scanner.parse(new Uint8Array([0x00, 0x00, 0x00, 0x02, 0x65, 0xb0]))).frameType, "I");
+
+  const av1Scanner = registry.getFrameTypeScanner({
+    codec: "av01",
+    codecConfig: { codecString: "av01.0.08M.08" }
+  });
+  assert.equal(av1Scanner.codec, "AV1");
+  assert.equal((await av1Scanner.parse(new Uint8Array([0x32, 0x01, 0x00]))).frameType, "I");
 });
 
 test("frame internals model builds partition-ready video maps and audio band estimates", async () => {

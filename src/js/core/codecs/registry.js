@@ -26,6 +26,20 @@ const VIDEO_CODEC_DESCRIPTORS = [
         : null;
     },
     loadImplementation: () => import("./video/hevc.js").then((module) => module.hevcVideoCodec)
+  },
+  {
+    id: "av1",
+    label: "AV1",
+    kind: "video",
+    sampleEntryTypes: ["av01", "V_AV1"],
+    configurationBoxTypes: ["av1C"],
+    canScanSamples: true,
+    getSampleContext(track) {
+      return {
+        codecConfig: track && track.codecConfig ? track.codecConfig : null
+      };
+    },
+    loadImplementation: () => import("./video/av1.js").then((module) => module.av1VideoCodec)
   }
 ];
 
@@ -59,7 +73,7 @@ const AUDIO_CODEC_DESCRIPTORS = [
 const CODEC_DESCRIPTORS = VIDEO_CODEC_DESCRIPTORS.concat(AUDIO_CODEC_DESCRIPTORS);
 
 export const VIDEO_SAMPLE_ENTRIES = new Set(VIDEO_CODEC_DESCRIPTORS.flatMap((codec) => codec.sampleEntryTypes).concat([
-  "av01", "encv", "mp4v",
+  "encv", "mp4v",
   "ap4h", "ap4x", "apch", "apcn", "apcs", "apco", "aprn", "aprh"
 ]));
 

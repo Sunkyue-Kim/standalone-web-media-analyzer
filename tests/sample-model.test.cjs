@@ -152,5 +152,6 @@ test("sample model reports missing init and default audio frame labels", async (
   assert.match(warnings[0], /No moov/);
   assert.equal(sampleModel.getDefaultSampleFrameType({ codec: "mp4a" }), "AAC");
   assert.equal(sampleModel.getDefaultSampleFrameType({ codec: "A_OPUS" }), "Opus");
+  assert.deepEqual(Array.from(sampleModel.getDefaultSampleTags({ codec: "av01", codecDescriptor: "av1" })), ["AV1"]);
   assert.deepEqual(Array.from(sampleModel.getDefaultSampleTags({ handlerType: "soun", codec: "alac" })), ["alac"]);
 });

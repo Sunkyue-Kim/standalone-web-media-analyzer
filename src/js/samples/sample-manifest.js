@@ -60,6 +60,26 @@ export const SAMPLE_FILES = [
     }
   },
   {
+    id: "av1-mp4",
+    fileName: "av1_mp4.mp4",
+    path: "validation/generated/av1_mp4.mp4",
+    type: "video/mp4",
+    labels: {
+      en: "AV1 MP4 sample",
+      ko: "AV1 MP4 샘플"
+    }
+  },
+  {
+    id: "webm-av1",
+    fileName: "webm_av1.webm",
+    path: "validation/generated/webm_av1.webm",
+    type: "video/webm",
+    labels: {
+      en: "WebM AV1 sample",
+      ko: "WebM AV1 샘플"
+    }
+  },
+  {
     id: "mp3-audio",
     fileName: "audio_mp3.mp3",
     path: "validation/generated/audio_mp3.mp3",

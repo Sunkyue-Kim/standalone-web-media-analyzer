@@ -330,6 +330,7 @@ function getDefaultSampleTags(track) {
   if (track.codec === "mp4a") return ["AAC"];
   if (track.codec === "mp3" || track.codec === ".mp3") return ["MP3"];
   if (track.codec === "opus" || track.codec === "A_OPUS") return ["Opus"];
+  if (track.codec === "av01" || track.codec === "V_AV1" || track.codecDescriptor === "av1") return ["AV1"];
   if (track.handlerType === "soun") return [track.codec];
   return [];
 }

@@ -7,6 +7,7 @@ async function runParserSelfTests() {
   const opus = await import("./codecs/audio/opus.js");
   const avc = await import("./codecs/video/avc.js");
   const hevc = await import("./codecs/video/hevc.js");
+  const av1 = await import("./codecs/video/av1.js");
 
   const audioConfig = aac.parseAudioSpecificConfig(new Uint8Array([0x12, 0x10]));
   assertSelfTest(audioConfig.audioObjectType === 2, "AAC LC object type", results);
@@ -37,6 +38,10 @@ async function runParserSelfTests() {
   const hevcSample = new Uint8Array([0x00, 0x00, 0x00, 0x03, 0x26, 0x01, 0xac]);
   assertSelfTest(hevc.parseHevcSample(hevcSample, 4).frameType === "I", "HEVC synthetic I frame", results);
 
+  const av1Config = av1.parseAv1C(new Uint8Array([0x81, 0x08, 0x40, 0x00]));
+  assertSelfTest(av1Config.codecString === "av01.0.08M.10", "AV1 av1C codec string", results);
+  assertSelfTest(av1.parseAv1Sample(new Uint8Array([0x32, 0x01, 0x00])).frameType === "I", "AV1 synthetic key frame", results);
+
   const mp3Header = mp3.parseMp3FrameHeader(new Uint8Array([0xff, 0xfb, 0x90, 0x64]), 0);
   assertSelfTest(mp3Header && mp3Header.samplingRate === 44100, "MP3 frame header sample rate", results);
   assertSelfTest(mp3Header && mp3Header.frameLength === 417, "MP3 frame header length", results);
@@ -50,6 +55,8 @@ async function runParserSelfTests() {
 
   assertSelfTest(getCodecBySampleEntryType("avc1").id === "avc", "codec registry sample entry lookup", results);
   assertSelfTest(getCodecByConfigurationBoxType("hvcC").id === "hevc", "codec registry config box lookup", results);
+  assertSelfTest(getCodecBySampleEntryType("av01").id === "av1", "AV1 codec registry sample entry lookup", results);
+  assertSelfTest(getCodecByConfigurationBoxType("av1C").id === "av1", "AV1 codec registry configuration lookup", results);
 
   return { passed: true, results };
 }
