@@ -51,6 +51,10 @@ function int32(value) {
   return uint32(value >>> 0);
 }
 
+function textBytes(value) {
+  return Uint8Array.from(Buffer.from(value, "utf8"));
+}
+
 function uint64(value) {
   let remaining = BigInt(value);
   const result = new Uint8Array(8);
@@ -249,4 +253,50 @@ test("ISO BMFF box parser covers fMP4 tfhd and trun optional fields", async () =
     { duration: 1000, size: 300, flags: 0x00010000, compositionTimeOffset: -5 },
     { duration: 900, size: 200, flags: 0, compositionTimeOffset: 7 }
   ]);
+});
+
+test("ISO BMFF box parser decodes QuickTime GPS text and Samsung smta children with raw hex fallback", async () => {
+  const gpsText = "+37.4183+127.1834/";
+  const gpsPayload = concatBytes([
+    uint16(gpsText.length),
+    uint16(0x15c7),
+    textBytes(gpsText)
+  ]);
+  const smtaPayload = fullBoxPayload(0, 0, concatBytes([
+    box("saut", new Uint8Array([0, 0, 0, 0, 0, 0])),
+    box("mdln", textBytes("SM-S928N")),
+    box("svss", new Uint8Array([1, 2, 3, 4]))
+  ]));
+  const bytes = concatBytes([
+    box("auth", concatBytes([uint32(0), uint16(0x15c7), textBytes("Galaxy S24 Ultra"), uint8(0)])),
+    box("@xyz", gpsPayload),
+    box("caml", textBytes("3, 4, 1024, 2216, 3.0")),
+    box("cami", concatBytes([uint32(0), textBytes("3, 4, 1024, 2216, 3.0")])),
+    box("smta", smtaPayload)
+  ]);
+
+  const { nodes, warnings } = await parseSyntheticBoxes(bytes);
+
+  assert.equal(warnings.length, 0);
+  assert.equal(nodes[0].fields.text, "Galaxy S24 Ultra");
+  assert.equal(nodes[0].fields.language, "eng");
+  assert.equal(nodes[1].type, "@xyz");
+  assert.equal(nodes[1].fields.text, gpsText);
+  assert.equal(nodes[1].fields.language, "eng");
+  assert.deepEqual(toPlainValue(nodes[1].fields.gpsCoordinates), {
+    raw: gpsText,
+    parsed: true,
+    latitude: 37.4183,
+    longitude: 127.1834
+  });
+  assert.match(nodes[1].fields.rawPayload.hexDump[0], /2b 33 37 2e 34 31 38 33/);
+  assert.equal(nodes[2].fields.text, "3, 4, 1024, 2216, 3.0");
+  assert.equal(nodes[3].fields.text, "3, 4, 1024, 2216, 3.0");
+  assert.equal(nodes[4].type, "smta");
+  assert.equal(nodes[4].fields.version, 0);
+  assert.equal(nodes[4].children.length, 3);
+  assert.equal(nodes[4].children[0].type, "saut");
+  assert.equal(nodes[4].children[0].fields.rawPayload.byteLength, 6);
+  assert.equal(nodes[4].children[1].fields.text, "SM-S928N");
+  assert.equal(nodes[4].children[2].fields.rawPayload.previewHex, "01 02 03 04");
 });

@@ -666,6 +666,8 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceUi, /synchronizeFragmentSelectionToPlayback/);
   assert.match(sourceUi, /handleFragmentRowPointerActivation/);
   assert.match(sourceUi, /renderJsonViewer/);
+  assert.match(sourceUi, /renderJsonHexDump/);
+  assert.match(sourceUi, /isHexDumpField/);
   assert.match(sourceUi, /getSyntheticBoxChildren/);
   assert.match(sourceUi, /getDerivedBoxFields/);
   assert.match(sourceUi, /SAMPLE_ENTRY_DERIVED_FIELD_NAMES/);
@@ -747,6 +749,8 @@ test("i18n catalog contains matching Korean and English keys for visible UI stri
   const koreanKeys = Object.keys(I18N.ko).sort();
   assert.deepEqual(koreanKeys, englishKeys);
   assert.ok(Object.keys(BOX_TYPE_I18N.ko).includes("stco"));
+  assert.ok(Object.keys(BOX_TYPE_I18N.ko).includes("@xyz"));
+  assert.ok(Object.keys(BOX_TYPE_I18N.ko).includes("caml"));
   assert.equal(setLanguage("ko"), "ko");
   assert.equal(getLanguage(), "ko");
   assert.equal(t("app.title"), "스탠드얼론 웹 미디어 분석기");

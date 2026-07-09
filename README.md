@@ -25,6 +25,7 @@ This project is a local-first inspection tool. It opens files with standard brow
 ## What It Shows
 
 - Container structure: ISO BMFF box trees, WebM EBML elements, MP3 headers, Ogg pages, offsets, sizes, parsed fields, and warnings
+- QuickTime/Android private metadata: selected text, GPS, Samsung `smta` child atoms, and raw hex payload previews for unknown private boxes
 - Track summaries: codec, handler/type, duration, timescale, dimensions, sample counts, audio configuration, and codec configuration
 - Sample/frame rows: index, track, type, offset, size, DTS, PTS, duration, sync/keyframe state, NAL types, chunks, and fragments where available
 - Visual analysis: frame-size graph, bitrate moving average, FPS moving average, largest samples, and fragment timing
@@ -180,9 +181,9 @@ Validation samples live under `validation/generated/` and are exposed by the Git
 
 Current coverage snapshot from `npm run test:coverage`:
 
-- Tests: 40 passed, 0 failed
-- All files: 95.42% line coverage, 74.30% branch coverage, 93.83% function coverage
-- Strong coverage areas: binary readers, HTTP range readers, remote URL fallback/progress handling, shared media-source preview/download policy, browser worker client message flow, bitstream helpers, formatting edge cases, AAC/MP3/Opus parser branches, nominal frame internals models, codec registry, i18n, data grid/recycler helpers, ISO BMFF sample modeling, ISO BMFF rare box parsing, MP3 container detection, source-map build wiring, and bundled sample container integration
+- Tests: 41 passed, 0 failed
+- All files: 95.40% line coverage, 74.27% branch coverage, 94.05% function coverage
+- Strong coverage areas: binary readers, HTTP range readers, remote URL fallback/progress handling, shared media-source preview/download policy, browser worker client message flow, bitstream helpers, formatting edge cases, AAC/MP3/Opus parser branches, nominal frame internals models, codec registry, i18n, data grid/recycler helpers, ISO BMFF sample modeling, ISO BMFF rare/private box parsing, MP3 container detection, source-map build wiring, and bundled sample container integration
 - Lower branch coverage remains mainly in browser-worker runtime branches and malformed/edge container branches such as oversized/invalid MP4 boxes, MP3 ID3v1 edge metadata, Ogg page edge cases, and WebM lacing variants
 
 ## Export Model

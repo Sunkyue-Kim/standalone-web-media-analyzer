@@ -4,12 +4,14 @@ export const CONTAINER_BOXES = new Set([
 ]);
 
 export const FULLBOX_CONTAINER_OFFSETS = new Map([
-  ["meta", 4]
+  ["meta", 4],
+  ["smta", 4]
 ]);
 
 export const PARSED_FIELD_BOXES = new Set([
   "ftyp", "mvhd", "tkhd", "mdhd", "hdlr", "stsd", "stts", "ctts", "stss", "stsc",
-  "stsz", "stz2", "stco", "co64", "trex", "mfhd", "tfhd", "tfdt", "trun"
+  "stsz", "stz2", "stco", "co64", "trex", "mfhd", "tfhd", "tfdt", "trun",
+  "@xyz", "©xyz", "auth", "cami", "caml", "mdln", "saut", "SDLN", "smrd", "smta", "svss"
 ]);
 
 export const BOX_TYPE_INFO = {
@@ -515,11 +517,15 @@ export const BOX_TYPE_INFO = {
   },
   smta: {
     name: "Samsung Metadata Atom",
-    description: "Samsung/Android vendor-specific metadata atom that may carry nested maker, model, or capture metadata."
+    description: "Samsung/Android vendor-specific metadata atom. ExifTool maps it as SamsungSmta; its payload commonly starts with a 4-byte prefix followed by nested atoms such as mdln, saut, or svss."
   },
   auth: {
     name: "Author Metadata Atom",
     description: "QuickTime-style user-data atom carrying author, device, or creator text metadata."
+  },
+  "@xyz": {
+    name: "Location Metadata Item",
+    description: "Ricoh/Samsung-style variant of the QuickTime location metadata item, commonly storing ISO 6709-style latitude, longitude, and altitude text."
   },
   "©xyz": {
     name: "Location Metadata Item",
@@ -528,6 +534,22 @@ export const BOX_TYPE_INFO = {
   cami: {
     name: "Camera Information Metadata Box",
     description: "Vendor-specific camera information atom observed in Android/Samsung camera files."
+  },
+  caml: {
+    name: "Camera Metadata Atom",
+    description: "Vendor-specific camera metadata atom. No stable public field layout is known, so this analyzer exposes text candidates and a raw hex payload view."
+  },
+  mdln: {
+    name: "Samsung Model Metadata Atom",
+    description: "Nested Samsung smta atom commonly storing the device model string."
+  },
+  saut: {
+    name: "Samsung Authoring Metadata Atom",
+    description: "Nested Samsung smta atom observed in Galaxy MP4 files. The public structure is not well documented, so raw bytes are shown."
+  },
+  svss: {
+    name: "Samsung Video Metadata Atom",
+    description: "Nested Samsung smta atom mapped by ExifTool as SamsungSvss for Galaxy-era video metadata."
   },
   udta: {
     name: "User Data Box",

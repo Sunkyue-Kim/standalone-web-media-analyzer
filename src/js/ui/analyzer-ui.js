@@ -1502,6 +1502,7 @@ function renderJsonObject(value, context) {
 
 function renderJsonArray(value, context) {
   if (isByteArrayField(context.key, value)) return renderJsonByteArray(value);
+  if (isHexDumpField(context.key, value)) return renderJsonHexDump(value);
   const openAttribute = context.depth < context.defaultOpenDepth && value.length <= 20 ? " open" : "";
   return '<details class="json-node json-array"' + openAttribute + '><summary><span class="json-summary-type">[ ]</span><span class="json-preview">' +
     escapeHtml(t("boxes.jsonItems", { count: value.length })) + createJsonArrayPreview(value) + '</span></summary><div class="json-children">' +
@@ -1529,6 +1530,12 @@ function renderJsonByteArray(value) {
     escapeHtml(expandedValues) + '</code>' + truncatedHtml + '</details>';
 }
 
+function renderJsonHexDump(value) {
+  return '<details class="json-node json-hex-dump" open><summary><span class="json-summary-type">hex</span><span class="json-preview">' +
+    escapeHtml(t("boxes.hexRows", { count: value.length })) + '</span></summary><code class="json-byte-dump">' +
+    escapeHtml(value.join("\n")) + '</code></details>';
+}
+
 function normalizeJsonValue(value) {
   return JSON.parse(JSON.stringify(value === undefined ? null : value, safeJsonReplacer));
 }
@@ -1541,6 +1548,10 @@ function isEmptyJsonValue(value) {
 
 function isByteArrayField(fieldName, value) {
   return fieldName === "bytes" && value.every((item) => Number.isInteger(item) && item >= 0 && item <= 255);
+}
+
+function isHexDumpField(fieldName, value) {
+  return fieldName === "hexDump" && value.every((item) => typeof item === "string");
 }
 
 function createJsonArrayPreview(value) {
