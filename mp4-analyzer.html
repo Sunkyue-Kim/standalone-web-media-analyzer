@@ -6550,7 +6550,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           "button.exportCsv": "Export CSV",
           "button.clear": "Clear",
           "preview.loadedMedia": "Loaded media",
-          "preview.remoteFetchDeferred": "preview fetch deferred until playback",
+          "preview.remoteFetchDeferred": "preview uses metadata preload",
           "tab.summary": "Summary",
           "tab.boxes": "Boxes",
           "tab.tracks": "Tracks",
@@ -6718,8 +6718,8 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           "warning.sampleLoadFailed": "Sample load failed. If this page is opened from file://, the browser may block loading local sample files. Use the GitHub Pages URL or open/drop the sample manually. {message}",
           "warning.remoteLoadFailed": "Remote URL load failed. Check that the URL is reachable and allows browser CORS access. {message}",
           "warning.remoteRangeFallback": "HTTP range analysis was not available, so the remote file was fully downloaded before parsing. {reason}",
-          "warning.remotePreviewDeferred": "Remote preview preload was disabled to avoid duplicate network traffic. Playing or seeking the preview may let the browser fetch the media separately.",
-          "warning.remoteSharedDownloadFailed": "Single-download playback reuse failed, so range analysis continued with preview fetch deferred. {message}",
+          "warning.remotePreviewDeferred": "Remote preview uses metadata preload. The browser may fetch metadata and a small initial media range separately from analyzer range reads.",
+          "warning.remoteSharedDownloadFailed": "Single-download playback reuse failed, so range analysis continued with native preview metadata preload. {message}",
           "box.field.type": "type",
           "box.field.description": "description",
           "box.field.path": "path",
@@ -6760,7 +6760,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           "button.exportCsv": "CSV \uB0B4\uBCF4\uB0B4\uAE30",
           "button.clear": "\uCD08\uAE30\uD654",
           "preview.loadedMedia": "\uB85C\uB4DC\uB41C \uBBF8\uB514\uC5B4",
-          "preview.remoteFetchDeferred": "\uC7AC\uC0DD \uC804\uAE4C\uC9C0 preview fetch \uC9C0\uC5F0",
+          "preview.remoteFetchDeferred": "preview metadata preload \uC0AC\uC6A9",
           "tab.summary": "\uC694\uC57D",
           "tab.boxes": "\uBC15\uC2A4",
           "tab.tracks": "\uD2B8\uB799",
@@ -6928,8 +6928,8 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           "warning.sampleLoadFailed": "\uC0D8\uD50C \uB85C\uB4DC\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. file://\uB85C \uC5F0 \uACBD\uC6B0 \uBE0C\uB77C\uC6B0\uC800\uAC00 \uB85C\uCEEC \uC0D8\uD50C \uD30C\uC77C \uB85C\uB529\uC744 \uB9C9\uC744 \uC218 \uC788\uC2B5\uB2C8\uB2E4. GitHub Pages URL\uC744 \uC0AC\uC6A9\uD558\uAC70\uB098 \uC0D8\uD50C \uD30C\uC77C\uC744 \uC9C1\uC811 \uC5F4\uAE30/\uB4DC\uB86D\uD558\uC138\uC694. {message}",
           "warning.remoteLoadFailed": "\uC6D0\uACA9 URL \uB85C\uB4DC\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. URL \uC811\uADFC \uAC00\uB2A5 \uC5EC\uBD80\uC640 \uBE0C\uB77C\uC6B0\uC800 CORS \uD5C8\uC6A9 \uC5EC\uBD80\uB97C \uD655\uC778\uD558\uC138\uC694. {message}",
           "warning.remoteRangeFallback": "HTTP range \uBD84\uC11D\uC744 \uC0AC\uC6A9\uD560 \uC218 \uC5C6\uC5B4 \uC6D0\uACA9 \uD30C\uC77C\uC744 \uC804\uCCB4 \uB2E4\uC6B4\uB85C\uB4DC\uD55C \uB4A4 \uD30C\uC2F1\uD588\uC2B5\uB2C8\uB2E4. {reason}",
-          "warning.remotePreviewDeferred": "\uC911\uBCF5 \uB124\uD2B8\uC6CC\uD06C \uD2B8\uB798\uD53D\uC744 \uD53C\uD558\uB824\uACE0 \uC6D0\uACA9 preview preload\uB97C \uBE44\uD65C\uC131\uD654\uD588\uC2B5\uB2C8\uB2E4. preview\uB97C \uC7AC\uC0DD\uD558\uAC70\uB098 seek\uD558\uBA74 \uBE0C\uB77C\uC6B0\uC800\uAC00 \uBBF8\uB514\uC5B4\uB97C \uBCC4\uB3C4\uB85C \uAC00\uC838\uC62C \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
-          "warning.remoteSharedDownloadFailed": "\uB2E8\uC77C \uB2E4\uC6B4\uB85C\uB4DC \uAE30\uBC18 \uC7AC\uC0DD \uACF5\uC720\uC5D0 \uC2E4\uD328\uD574 preview fetch\uB97C \uC9C0\uC5F0\uD55C \uC0C1\uD0DC\uB85C range \uBD84\uC11D\uC744 \uACC4\uC18D\uD588\uC2B5\uB2C8\uB2E4. {message}",
+          "warning.remotePreviewDeferred": "\uC6D0\uACA9 preview\uB294 metadata preload\uB97C \uC0AC\uC6A9\uD569\uB2C8\uB2E4. \uBE0C\uB77C\uC6B0\uC800\uAC00 analyzer range \uC77D\uAE30\uC640 \uBCC4\uB3C4\uB85C metadata \uBC0F \uC791\uC740 \uCD08\uAE30 media range\uB97C \uAC00\uC838\uC62C \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
+          "warning.remoteSharedDownloadFailed": "\uB2E8\uC77C \uB2E4\uC6B4\uB85C\uB4DC \uAE30\uBC18 \uC7AC\uC0DD \uACF5\uC720\uC5D0 \uC2E4\uD328\uD574 native preview metadata preload \uC0C1\uD0DC\uB85C range \uBD84\uC11D\uC744 \uACC4\uC18D\uD588\uC2B5\uB2C8\uB2E4. {message}",
           "box.field.type": "\uD0C0\uC785",
           "box.field.description": "\uC124\uBA85",
           "box.field.path": "\uACBD\uB85C",
@@ -7965,7 +7965,6 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       graphMaxSize: 1,
       filePreviewUrl: "",
       filePreviewObjectUrl: false,
-      previewNetworkDeferred: false,
       dropHintHideTimer: 0,
       remoteAbortController: null,
       transientWarnings: [],
@@ -8462,7 +8461,6 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
             await startAnalysis(probe.resource, {
               keepSampleSelection: options2.keepSampleSelection,
               previewUrl: probe.resource.previewUrl,
-              deferPreviewNetwork: true,
               initialWarnings: streamingWarnings,
               rethrow: true
             });
@@ -8898,16 +8896,15 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     function setFilePreview(file, options2 = {}) {
       if (state.filePreviewUrl && state.filePreviewObjectUrl) URL.revokeObjectURL(state.filePreviewUrl);
       state.filePreviewObjectUrl = false;
-      state.previewNetworkDeferred = Boolean(options2.deferPreviewNetwork);
       state.filePreviewUrl = options2.previewUrl || file.previewUrl || "";
       if (!state.filePreviewUrl) {
         state.filePreviewUrl = URL.createObjectURL(file);
         state.filePreviewObjectUrl = true;
       }
-      elements.filePreview.preload = state.previewNetworkDeferred ? "none" : "metadata";
-      elements.filePreview.title = state.previewNetworkDeferred ? t("preview.remoteFetchDeferred") : "";
+      elements.filePreview.preload = "metadata";
+      elements.filePreview.title = "";
       elements.filePreview.src = state.filePreviewUrl;
-      if (!state.previewNetworkDeferred) elements.filePreview.load();
+      elements.filePreview.load();
       elements.mediaPreviewName.textContent = file.name || "Unnamed media";
       updateMediaPreviewMeta(file, null);
       elements.mediaPreviewBar.hidden = false;
@@ -8919,7 +8916,6 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
         parts.push(formatPreviewBitrate(file.size * 8 / durationSeconds));
       }
       parts.push(file.type || t("value.unknownMime"));
-      if (state.previewNetworkDeferred) parts.push(t("preview.remoteFetchDeferred"));
       elements.mediaPreviewMeta.textContent = parts.filter(Boolean).join(" \xB7 ");
     }
     function getAnalysisDurationSeconds(analysis) {

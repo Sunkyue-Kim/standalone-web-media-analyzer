@@ -65,7 +65,7 @@ For remote URLs:
 - Use `Load URL` from the app toolbar.
 - Files up to 4 MB are downloaded once and reused through a Blob URL for both analysis and playback.
 - Larger files use script-driven HTTP range reads for analysis when the server and CORS policy allow it.
-- The preview player defers native media loading for large remote URLs so opening a URL does not immediately duplicate the analyzer traffic.
+- The preview player uses native `preload="metadata"` for remote URLs. Browsers do not expose a precise "first frame only" preload mode, so the browser may fetch metadata and a small initial media range.
 
 ## Supported Formats
 
@@ -90,7 +90,8 @@ Remote URLs are different because the app must fetch bytes from the remote serve
 - Header and metadata probes use a 4 KB small-range cache to avoid both tiny per-box requests and early 4 MB downloads.
 - Larger sample and payload reads use a 4 MB range cache with a 64 MB LRU cap.
 - For remote files over 4 MB, the analyzer and native media player cannot share the browser media element's private network buffer.
-- If the user later plays or seeks a large remote preview, the browser may issue its own media requests.
+- The preview player uses `preload="metadata"` rather than `preload="none"` so the first visible frame or nearby initial chunk can become available when the browser chooses to fetch it. This can add small native media requests before playback.
+- If the user later plays or seeks a large remote preview, the browser may issue additional media requests.
 - `Response.blob()` is only available after a full download completes. Partial response chunks cannot become a normal Blob-backed `<video>` source before the full resource is loaded.
 - MediaSource-based reuse is not implemented because it would require a separate segmenting and playback pipeline and would not cover all supported inputs uniformly.
 

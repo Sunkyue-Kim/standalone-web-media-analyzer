@@ -66,7 +66,6 @@ const state = {
   graphMaxSize: 1,
   filePreviewUrl: "",
   filePreviewObjectUrl: false,
-  previewNetworkDeferred: false,
   dropHintHideTimer: 0,
   remoteAbortController: null,
   transientWarnings: [],
@@ -594,7 +593,6 @@ async function loadRemoteUrl(url, options = {}) {
         await startAnalysis(probe.resource, {
           keepSampleSelection: options.keepSampleSelection,
           previewUrl: probe.resource.previewUrl,
-          deferPreviewNetwork: true,
           initialWarnings: streamingWarnings,
           rethrow: true
         });
@@ -1094,16 +1092,15 @@ function resetView(file, options = {}) {
 function setFilePreview(file, options = {}) {
   if (state.filePreviewUrl && state.filePreviewObjectUrl) URL.revokeObjectURL(state.filePreviewUrl);
   state.filePreviewObjectUrl = false;
-  state.previewNetworkDeferred = Boolean(options.deferPreviewNetwork);
   state.filePreviewUrl = options.previewUrl || file.previewUrl || "";
   if (!state.filePreviewUrl) {
     state.filePreviewUrl = URL.createObjectURL(file);
     state.filePreviewObjectUrl = true;
   }
-  elements.filePreview.preload = state.previewNetworkDeferred ? "none" : "metadata";
-  elements.filePreview.title = state.previewNetworkDeferred ? t("preview.remoteFetchDeferred") : "";
+  elements.filePreview.preload = "metadata";
+  elements.filePreview.title = "";
   elements.filePreview.src = state.filePreviewUrl;
-  if (!state.previewNetworkDeferred) elements.filePreview.load();
+  elements.filePreview.load();
   elements.mediaPreviewName.textContent = file.name || "Unnamed media";
   updateMediaPreviewMeta(file, null);
   elements.mediaPreviewBar.hidden = false;
@@ -1116,7 +1113,6 @@ function updateMediaPreviewMeta(file, analysis) {
     parts.push(formatPreviewBitrate(file.size * 8 / durationSeconds));
   }
   parts.push(file.type || t("value.unknownMime"));
-  if (state.previewNetworkDeferred) parts.push(t("preview.remoteFetchDeferred"));
   elements.mediaPreviewMeta.textContent = parts.filter(Boolean).join(" · ");
 }
 

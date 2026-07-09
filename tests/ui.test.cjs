@@ -658,7 +658,9 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceUi, /createAnalysisWorkerClient/);
   assert.match(sourceUi, /probeRemoteMediaResource/);
   assert.match(sourceUi, /downloadRemoteMediaFile/);
-  assert.match(sourceUi, /deferPreviewNetwork/);
+  assert.match(sourceUi, /filePreview\.preload = "metadata"/);
+  assert.doesNotMatch(sourceUi, /deferPreviewNetwork/);
+  assert.doesNotMatch(sourceUi, /preload = "none"/);
   assert.match(sourceUi, /shouldDownloadRemoteOnceForSharedPlayback/);
   assert.match(sourceUi, /openRemoteUrlModal/);
   assert.match(sourceWorker, /self\.onmessage/);
