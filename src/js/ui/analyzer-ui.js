@@ -77,6 +77,8 @@ export function startUserInterface(Core, options = {}) {
   if (typeof document === "undefined" || !document.getElementById) return;
 const FRAME_TABLE_HEADER_HEIGHT = 34;
 const FRAME_TABLE_MINIMUM_WIDTH = "1048px";
+const FRAME_INTERNALS_MAP_MINIMUM_SCALE = 1;
+const FRAME_INTERNALS_MAP_MAXIMUM_SCALE = 8;
 const state = {
   analysis: null,
   language: options.initialLanguage || getLanguage(),
@@ -105,7 +107,8 @@ const state = {
   lastBoxTreeActivation: null,
   frameInternalsTooltipTarget: null,
   frameInternalsMapDrag: null,
-  suppressNextFrameInternalsMapClick: false,
+  frameInternalsMapGesture: null,
+  frameInternalsMapPointers: new Map(),
   frameInternalsColorScaleCache: new Map()
 };
 
@@ -365,8 +368,7 @@ elements.frameInternalsBody.addEventListener("pointerout", handleFrameInternalsT
 elements.frameInternalsBody.addEventListener("focusin", handleFrameInternalsTooltipFocusIn);
 elements.frameInternalsBody.addEventListener("focusout", hideFrameInternalsTooltip);
 elements.frameInternalsBody.addEventListener("scroll", hideFrameInternalsTooltip);
-elements.frameInternalsBody.addEventListener("click", handleFrameInternalsMapClick);
-elements.frameInternalsBody.addEventListener("dblclick", handleFrameInternalsMapDoubleClick);
+elements.frameInternalsBody.addEventListener("wheel", handleFrameInternalsMapWheel, { passive: false });
 elements.frameInternalsBody.addEventListener("keydown", handleFrameInternalsMapKeyDown);
 elements.frameInternalsBody.addEventListener("pointerdown", handleFrameInternalsMapPointerDown);
 elements.frameInternalsBody.addEventListener("pointermove", handleFrameInternalsMapPointerMove);
@@ -1699,6 +1701,7 @@ function renderFrames() {
 
 function renderFrameInternals() {
   if (!elements.frameInternalsBody) return;
+  resetFrameInternalsMapInteractionState();
   hideFrameInternalsTooltip();
   const model = buildSelectedFrameInternalsModel();
   if (model.kind === "empty") {
@@ -1748,14 +1751,14 @@ function getFrameInternalsColorScale(track) {
 }
 
 function handleFrameInternalsTooltipPointerOver(event) {
-  if (state.frameInternalsMapDrag) return;
+  if (state.frameInternalsMapDrag || state.frameInternalsMapGesture) return;
   const target = getFrameInternalsTooltipTarget(event.target);
   if (!target) return;
   showFrameInternalsTooltip(target, event.clientX, event.clientY);
 }
 
 function handleFrameInternalsTooltipPointerMove(event) {
-  if (state.frameInternalsMapDrag) {
+  if (state.frameInternalsMapDrag || state.frameInternalsMapGesture) {
     hideFrameInternalsTooltip();
     return;
   }
@@ -1787,58 +1790,48 @@ function handleFrameInternalsTooltipFocusIn(event) {
   showFrameInternalsTooltip(target, rect.left + rect.width / 2, rect.bottom, { anchorMode: "center" });
 }
 
-function handleFrameInternalsMapClick(event) {
-  const viewport = getFrameInternalsMapViewport(event.target);
-  if (!viewport) return;
-  if (state.suppressNextFrameInternalsMapClick) {
-    state.suppressNextFrameInternalsMapClick = false;
-    event.preventDefault();
-    event.stopPropagation();
-    return;
-  }
-  if (viewport.classList.contains("zoomed")) return;
-  zoomFrameInternalsMapViewport(viewport, event.clientX, event.clientY);
-  event.preventDefault();
-  event.stopPropagation();
-}
-
-function handleFrameInternalsMapDoubleClick(event) {
-  const viewport = getFrameInternalsMapViewport(event.target);
-  if (!viewport || !viewport.classList.contains("zoomed")) return;
-  resetFrameInternalsMapViewport(viewport);
-  event.preventDefault();
-  event.stopPropagation();
-}
-
 function handleFrameInternalsMapKeyDown(event) {
   const viewport = getFrameInternalsMapViewport(event.target);
   if (!viewport) return;
-  if (event.key === "Escape" && viewport.classList.contains("zoomed")) {
+  if (event.key === "Escape") {
     resetFrameInternalsMapViewport(viewport);
     event.preventDefault();
     return;
   }
-  if ((event.key === "Enter" || event.key === " ") && !viewport.classList.contains("zoomed")) {
+  if (event.key === "+" || event.key === "=") {
     const rect = viewport.getBoundingClientRect();
-    zoomFrameInternalsMapViewport(viewport, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    zoomFrameInternalsMapViewport(viewport, getFrameInternalsMapTransform(viewport).scale * 1.2, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    event.preventDefault();
+    return;
+  }
+  if (event.key === "-" || event.key === "_") {
+    const rect = viewport.getBoundingClientRect();
+    zoomFrameInternalsMapViewport(viewport, getFrameInternalsMapTransform(viewport).scale / 1.2, rect.left + rect.width / 2, rect.top + rect.height / 2);
     event.preventDefault();
   }
 }
 
+function handleFrameInternalsMapWheel(event) {
+  const viewport = getFrameInternalsMapViewport(event.target);
+  if (!viewport) return;
+  const deltaScale = getFrameInternalsWheelScale(event);
+  const currentTransform = getFrameInternalsMapTransform(viewport);
+  zoomFrameInternalsMapViewport(viewport, currentTransform.scale * deltaScale, event.clientX, event.clientY);
+  hideFrameInternalsTooltip();
+  event.preventDefault();
+  event.stopPropagation();
+}
+
 function handleFrameInternalsMapPointerDown(event) {
   const viewport = getFrameInternalsMapViewport(event.target);
-  if (!viewport || !viewport.classList.contains("zoomed")) return;
+  if (!viewport) return;
   if (event.button !== undefined && event.button !== 0) return;
-  state.frameInternalsMapDrag = {
-    viewport,
+  state.frameInternalsMapPointers.set(event.pointerId, {
     pointerId: event.pointerId,
-    startClientX: event.clientX,
-    startClientY: event.clientY,
-    startScrollLeft: viewport.scrollLeft,
-    startScrollTop: viewport.scrollTop,
-    moved: false
-  };
-  viewport.classList.add("dragging");
+    viewport,
+    clientX: event.clientX,
+    clientY: event.clientY
+  });
   if (typeof viewport.setPointerCapture === "function") {
     try {
       viewport.setPointerCapture(event.pointerId);
@@ -1846,39 +1839,81 @@ function handleFrameInternalsMapPointerDown(event) {
       // Pointer capture can fail if the browser has already released the pointer.
     }
   }
+  if (getFrameInternalsMapPointersForViewport(viewport).length >= 2) {
+    startFrameInternalsMapPinch(viewport);
+  } else if (getFrameInternalsMapTransform(viewport).scale > FRAME_INTERNALS_MAP_MINIMUM_SCALE) {
+    const currentTransform = getFrameInternalsMapTransform(viewport);
+    state.frameInternalsMapDrag = {
+      viewport,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startPanX: currentTransform.panX,
+      startPanY: currentTransform.panY
+    };
+    viewport.classList.add("dragging");
+  }
   hideFrameInternalsTooltip();
   event.preventDefault();
 }
 
 function handleFrameInternalsMapPointerMove(event) {
+  const storedPointer = state.frameInternalsMapPointers.get(event.pointerId);
+  if (storedPointer) {
+    storedPointer.clientX = event.clientX;
+    storedPointer.clientY = event.clientY;
+  }
+  if (state.frameInternalsMapGesture && updateFrameInternalsMapPinch(event)) {
+    hideFrameInternalsTooltip();
+    event.preventDefault();
+    return;
+  }
   const dragState = state.frameInternalsMapDrag;
   if (!dragState || dragState.pointerId !== event.pointerId) return;
   const deltaX = event.clientX - dragState.startClientX;
   const deltaY = event.clientY - dragState.startClientY;
-  dragState.viewport.scrollLeft = dragState.startScrollLeft - deltaX;
-  dragState.viewport.scrollTop = dragState.startScrollTop - deltaY;
-  if (Math.abs(deltaX) + Math.abs(deltaY) > 3) dragState.moved = true;
+  setFrameInternalsMapTransform(dragState.viewport, {
+    scale: getFrameInternalsMapTransform(dragState.viewport).scale,
+    panX: dragState.startPanX + deltaX,
+    panY: dragState.startPanY + deltaY
+  });
   hideFrameInternalsTooltip();
   event.preventDefault();
 }
 
 function handleFrameInternalsMapPointerUp(event) {
+  const storedPointer = state.frameInternalsMapPointers.get(event.pointerId);
+  state.frameInternalsMapPointers.delete(event.pointerId);
   const dragState = state.frameInternalsMapDrag;
-  if (!dragState || dragState.pointerId !== event.pointerId) return;
-  dragState.viewport.classList.remove("dragging");
-  if (typeof dragState.viewport.releasePointerCapture === "function") {
+  if (dragState && dragState.pointerId === event.pointerId) {
+    dragState.viewport.classList.remove("dragging");
+    state.frameInternalsMapDrag = null;
+  }
+  if (state.frameInternalsMapGesture && frameInternalsMapGestureUsesPointer(event.pointerId)) {
+    const viewport = state.frameInternalsMapGesture.viewport;
+    state.frameInternalsMapGesture = null;
+    const remainingPointers = getFrameInternalsMapPointersForViewport(viewport);
+    if (remainingPointers.length === 1 && getFrameInternalsMapTransform(viewport).scale > FRAME_INTERNALS_MAP_MINIMUM_SCALE) {
+      const remainingPointer = remainingPointers[0];
+      const currentTransform = getFrameInternalsMapTransform(viewport);
+      state.frameInternalsMapDrag = {
+        viewport,
+        pointerId: remainingPointer.pointerId,
+        startClientX: remainingPointer.clientX,
+        startClientY: remainingPointer.clientY,
+        startPanX: currentTransform.panX,
+        startPanY: currentTransform.panY
+      };
+      viewport.classList.add("dragging");
+    }
+  }
+  const releaseViewport = storedPointer?.viewport || dragState?.viewport || state.frameInternalsMapGesture?.viewport;
+  if (releaseViewport && typeof releaseViewport.releasePointerCapture === "function") {
     try {
-      dragState.viewport.releasePointerCapture(event.pointerId);
+      releaseViewport.releasePointerCapture(event.pointerId);
     } catch (_) {
       // Pointer capture may already be gone after pointercancel.
     }
-  }
-  state.frameInternalsMapDrag = null;
-  if (dragState.moved) {
-    state.suppressNextFrameInternalsMapClick = true;
-    setTimeout(() => {
-      state.suppressNextFrameInternalsMapClick = false;
-    }, 0);
   }
 }
 
@@ -1889,25 +1924,145 @@ function getFrameInternalsMapViewport(eventTarget) {
   return viewport;
 }
 
-function zoomFrameInternalsMapViewport(viewport, clientX, clientY) {
+function getFrameInternalsWheelScale(event) {
+  const modeFactor = event.deltaMode === 1 ? 18 : event.deltaMode === 2 ? 240 : 1;
+  const normalizedDelta = clamp(event.deltaY * modeFactor, -500, 500);
+  return Math.exp(-normalizedDelta * 0.002);
+}
+
+function zoomFrameInternalsMapViewport(viewport, targetScale, clientX, clientY) {
   hideFrameInternalsTooltip();
   const rect = viewport.getBoundingClientRect();
-  const relativeX = clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
-  const relativeY = clamp((clientY - rect.top) / Math.max(1, rect.height), 0, 1);
-  viewport.classList.add("zoomed");
-  viewport.setAttribute("aria-pressed", "true");
-  requestAnimationFrame(() => {
-    viewport.scrollLeft = relativeX * viewport.scrollWidth - viewport.clientWidth / 2;
-    viewport.scrollTop = relativeY * viewport.scrollHeight - viewport.clientHeight / 2;
+  const currentTransform = getFrameInternalsMapTransform(viewport);
+  const nextScale = clamp(targetScale, FRAME_INTERNALS_MAP_MINIMUM_SCALE, FRAME_INTERNALS_MAP_MAXIMUM_SCALE);
+  const scaleRatio = nextScale / Math.max(FRAME_INTERNALS_MAP_MINIMUM_SCALE, currentTransform.scale);
+  const anchorX = clientX - rect.left - rect.width / 2;
+  const anchorY = clientY - rect.top - rect.height / 2;
+  setFrameInternalsMapTransform(viewport, {
+    scale: nextScale,
+    panX: anchorX - (anchorX - currentTransform.panX) * scaleRatio,
+    panY: anchorY - (anchorY - currentTransform.panY) * scaleRatio
   });
 }
 
 function resetFrameInternalsMapViewport(viewport) {
   hideFrameInternalsTooltip();
-  viewport.classList.remove("zoomed", "dragging");
-  viewport.setAttribute("aria-pressed", "false");
-  viewport.scrollLeft = 0;
-  viewport.scrollTop = 0;
+  setFrameInternalsMapTransform(viewport, {
+    scale: FRAME_INTERNALS_MAP_MINIMUM_SCALE,
+    panX: 0,
+    panY: 0
+  });
+  viewport.classList.remove("dragging");
+}
+
+function getFrameInternalsMapTransform(viewport) {
+  return {
+    scale: Number(viewport.dataset.mapScale) || FRAME_INTERNALS_MAP_MINIMUM_SCALE,
+    panX: Number(viewport.dataset.mapPanX) || 0,
+    panY: Number(viewport.dataset.mapPanY) || 0
+  };
+}
+
+function setFrameInternalsMapTransform(viewport, transform) {
+  const normalizedTransform = normalizeFrameInternalsMapTransform(viewport, transform);
+  viewport.dataset.mapScale = normalizedTransform.scale.toFixed(4);
+  viewport.dataset.mapPanX = normalizedTransform.panX.toFixed(3);
+  viewport.dataset.mapPanY = normalizedTransform.panY.toFixed(3);
+  viewport.style.setProperty("--frame-map-scale", normalizedTransform.scale.toFixed(4));
+  viewport.style.setProperty("--frame-map-pan-x", normalizedTransform.panX.toFixed(3) + "px");
+  viewport.style.setProperty("--frame-map-pan-y", normalizedTransform.panY.toFixed(3) + "px");
+  viewport.classList.toggle("is-scaled", normalizedTransform.scale > FRAME_INTERNALS_MAP_MINIMUM_SCALE + 0.001);
+}
+
+function normalizeFrameInternalsMapTransform(viewport, transform) {
+  const scale = clamp(
+    Number(transform.scale) || FRAME_INTERNALS_MAP_MINIMUM_SCALE,
+    FRAME_INTERNALS_MAP_MINIMUM_SCALE,
+    FRAME_INTERNALS_MAP_MAXIMUM_SCALE
+  );
+  if (scale <= FRAME_INTERNALS_MAP_MINIMUM_SCALE + 0.001) {
+    return { scale: FRAME_INTERNALS_MAP_MINIMUM_SCALE, panX: 0, panY: 0 };
+  }
+  const map = viewport.querySelector(".block-map");
+  const viewportRect = viewport.getBoundingClientRect();
+  const baseWidth = Math.max(1, map?.offsetWidth || viewportRect.width);
+  const baseHeight = Math.max(1, map?.offsetHeight || viewportRect.height);
+  const panLimitX = Math.max(0, (baseWidth * scale - viewportRect.width) / 2);
+  const panLimitY = Math.max(0, (baseHeight * scale - viewportRect.height) / 2);
+  return {
+    scale,
+    panX: clamp(Number(transform.panX) || 0, -panLimitX, panLimitX),
+    panY: clamp(Number(transform.panY) || 0, -panLimitY, panLimitY)
+  };
+}
+
+function getFrameInternalsMapPointersForViewport(viewport) {
+  return Array.from(state.frameInternalsMapPointers.values()).filter((pointer) => pointer.viewport === viewport);
+}
+
+function startFrameInternalsMapPinch(viewport) {
+  const pointers = getFrameInternalsMapPointersForViewport(viewport).slice(0, 2);
+  if (pointers.length < 2) return;
+  const currentTransform = getFrameInternalsMapTransform(viewport);
+  const center = getFrameInternalsMapPointerCenter(pointers[0], pointers[1], viewport);
+  state.frameInternalsMapDrag = null;
+  viewport.classList.remove("dragging");
+  state.frameInternalsMapGesture = {
+    viewport,
+    firstPointerId: pointers[0].pointerId,
+    secondPointerId: pointers[1].pointerId,
+    startDistance: Math.max(1, getFrameInternalsMapPointerDistance(pointers[0], pointers[1])),
+    startCenterX: center.x,
+    startCenterY: center.y,
+    startScale: currentTransform.scale,
+    startPanX: currentTransform.panX,
+    startPanY: currentTransform.panY
+  };
+}
+
+function updateFrameInternalsMapPinch(event) {
+  const gesture = state.frameInternalsMapGesture;
+  if (!gesture) return false;
+  const firstPointer = state.frameInternalsMapPointers.get(gesture.firstPointerId);
+  const secondPointer = state.frameInternalsMapPointers.get(gesture.secondPointerId);
+  if (!firstPointer || !secondPointer) return false;
+  const distance = Math.max(1, getFrameInternalsMapPointerDistance(firstPointer, secondPointer));
+  const nextScale = gesture.startScale * distance / gesture.startDistance;
+  const center = getFrameInternalsMapPointerCenter(firstPointer, secondPointer, gesture.viewport);
+  const nextScaleRatio = clamp(
+    nextScale,
+    FRAME_INTERNALS_MAP_MINIMUM_SCALE,
+    FRAME_INTERNALS_MAP_MAXIMUM_SCALE
+  ) / Math.max(FRAME_INTERNALS_MAP_MINIMUM_SCALE, gesture.startScale);
+  setFrameInternalsMapTransform(gesture.viewport, {
+    scale: nextScale,
+    panX: center.x - (gesture.startCenterX - gesture.startPanX) * nextScaleRatio,
+    panY: center.y - (gesture.startCenterY - gesture.startPanY) * nextScaleRatio
+  });
+  return true;
+}
+
+function frameInternalsMapGestureUsesPointer(pointerId) {
+  const gesture = state.frameInternalsMapGesture;
+  return Boolean(gesture && (gesture.firstPointerId === pointerId || gesture.secondPointerId === pointerId));
+}
+
+function getFrameInternalsMapPointerDistance(firstPointer, secondPointer) {
+  return Math.hypot(firstPointer.clientX - secondPointer.clientX, firstPointer.clientY - secondPointer.clientY);
+}
+
+function getFrameInternalsMapPointerCenter(firstPointer, secondPointer, viewport) {
+  const rect = viewport.getBoundingClientRect();
+  return {
+    x: (firstPointer.clientX + secondPointer.clientX) / 2 - rect.left - rect.width / 2,
+    y: (firstPointer.clientY + secondPointer.clientY) / 2 - rect.top - rect.height / 2
+  };
+}
+
+function resetFrameInternalsMapInteractionState() {
+  state.frameInternalsMapDrag = null;
+  state.frameInternalsMapGesture = null;
+  state.frameInternalsMapPointers.clear();
 }
 
 function getFrameInternalsTooltipTarget(eventTarget) {

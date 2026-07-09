@@ -33,7 +33,7 @@ export function renderVideoFrameInternals(model, options = {}) {
     renderFrameInternalsStats(stats) +
     '</div>' +
     '<div class="block-heatmap-wrap">' +
-    '<div class="block-map-viewport" tabindex="0" role="button" aria-pressed="false" aria-label="' + escapeHtml(t("frameInternals.zoomPlotAria")) + '" style="' + renderVideoBlockMapStyle(model) + '">' +
+    '<div class="block-map-viewport" tabindex="0" role="region" aria-label="' + escapeHtml(t("frameInternals.zoomPlotAria")) + '" style="' + renderVideoBlockMapStyle(model) + '">' +
     '<div class="block-map">' +
       model.cells.map((cell) => renderVideoBlockCell(cell, model, frameClass)).join("") +
     '</div>' +
@@ -51,7 +51,11 @@ function renderVideoBlockMapStyle(model) {
   const maxWidth = Math.max(1, Math.round(maxHeight * mediaWidth / mediaHeight));
   return [
     "--frame-aspect-ratio:" + mediaWidth + " / " + mediaHeight,
-    "--frame-map-max-width:" + maxWidth + "px"
+    "--frame-map-width:" + maxWidth + "px",
+    "--frame-map-height:" + maxHeight + "px",
+    "--frame-map-scale:1",
+    "--frame-map-pan-x:0px",
+    "--frame-map-pan-y:0px"
   ].join(";");
 }
 
