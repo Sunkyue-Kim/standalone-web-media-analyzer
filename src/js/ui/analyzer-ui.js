@@ -1877,10 +1877,11 @@ function handleFrameInternalsMapPointerMove(event) {
   const deltaY = event.clientY - dragState.startClientY;
   const currentTransform = getFrameInternalsMapTransform(dragState.viewport);
   const svgRect = getFrameInternalsMapSvgRect(dragState.viewport);
+  const viewBoxMetrics = getFrameInternalsMapViewBoxMetrics(dragState.viewport, currentTransform);
   setFrameInternalsMapTransform(dragState.viewport, {
     scale: currentTransform.scale,
-    centerX: dragState.startCenterX - deltaX / Math.max(1, svgRect.width) / currentTransform.scale,
-    centerY: dragState.startCenterY - deltaY / Math.max(1, svgRect.height) / currentTransform.scale
+    centerX: dragState.startCenterX - deltaX / Math.max(1, svgRect.width) * viewBoxMetrics.widthRatio,
+    centerY: dragState.startCenterY - deltaY / Math.max(1, svgRect.height) * viewBoxMetrics.heightRatio
   });
   hideFrameInternalsTooltip();
   event.preventDefault();
@@ -1940,12 +1941,14 @@ function zoomFrameInternalsMapViewport(viewport, targetScale, clientX, clientY) 
   const currentTransform = getFrameInternalsMapTransform(viewport);
   const nextScale = clamp(targetScale, FRAME_INTERNALS_MAP_MINIMUM_SCALE, FRAME_INTERNALS_MAP_MAXIMUM_SCALE);
   const anchor = getFrameInternalsMapClientPoint(viewport, clientX, clientY, currentTransform);
-  const nextVisibleWidth = 1 / nextScale;
-  const nextVisibleHeight = 1 / nextScale;
+  const nextMetrics = getFrameInternalsMapViewBoxMetrics(viewport, {
+    ...currentTransform,
+    scale: nextScale
+  });
   setFrameInternalsMapTransform(viewport, {
     scale: nextScale,
-    centerX: anchor.mapX - (anchor.relativeX - 0.5) * nextVisibleWidth,
-    centerY: anchor.mapY - (anchor.relativeY - 0.5) * nextVisibleHeight
+    centerX: anchor.mapX - (anchor.relativeX - 0.5) * nextMetrics.widthRatio,
+    centerY: anchor.mapY - (anchor.relativeY - 0.5) * nextMetrics.heightRatio
   });
 }
 
@@ -1990,31 +1993,27 @@ function normalizeFrameInternalsMapTransform(viewport, transform) {
   if (scale <= FRAME_INTERNALS_MAP_MINIMUM_SCALE + 0.001) {
     return { scale: FRAME_INTERNALS_MAP_MINIMUM_SCALE, centerX: 0.5, centerY: 0.5 };
   }
-  const visibleWidth = 1 / scale;
-  const visibleHeight = 1 / scale;
-  const halfVisibleWidth = visibleWidth / 2;
-  const halfVisibleHeight = visibleHeight / 2;
+  const viewBoxMetrics = getFrameInternalsMapViewBoxMetrics(viewport, {
+    scale,
+    centerX: Number(transform.centerX) || 0.5,
+    centerY: Number(transform.centerY) || 0.5
+  });
   return {
     scale,
-    centerX: clamp(Number(transform.centerX) || 0.5, halfVisibleWidth, 1 - halfVisibleWidth),
-    centerY: clamp(Number(transform.centerY) || 0.5, halfVisibleHeight, 1 - halfVisibleHeight)
+    centerX: normalizeFrameInternalsMapCenter(Number(transform.centerX) || 0.5, viewBoxMetrics.mediaWidth, viewBoxMetrics.viewWidth),
+    centerY: normalizeFrameInternalsMapCenter(Number(transform.centerY) || 0.5, viewBoxMetrics.mediaHeight, viewBoxMetrics.viewHeight)
   };
 }
 
 function applyFrameInternalsMapViewBox(viewport, transform) {
   const svg = getFrameInternalsMapSvg(viewport);
   if (!svg) return;
-  const mediaWidth = getFrameInternalsMapMediaWidth(viewport);
-  const mediaHeight = getFrameInternalsMapMediaHeight(viewport);
-  const viewWidth = mediaWidth / transform.scale;
-  const viewHeight = mediaHeight / transform.scale;
-  const viewLeft = transform.centerX * mediaWidth - viewWidth / 2;
-  const viewTop = transform.centerY * mediaHeight - viewHeight / 2;
+  const viewBoxMetrics = getFrameInternalsMapViewBoxMetrics(viewport, transform);
   svg.setAttribute("viewBox", [
-    formatFrameInternalsViewBoxNumber(viewLeft),
-    formatFrameInternalsViewBoxNumber(viewTop),
-    formatFrameInternalsViewBoxNumber(viewWidth),
-    formatFrameInternalsViewBoxNumber(viewHeight)
+    formatFrameInternalsViewBoxNumber(viewBoxMetrics.left),
+    formatFrameInternalsViewBoxNumber(viewBoxMetrics.top),
+    formatFrameInternalsViewBoxNumber(viewBoxMetrics.viewWidth),
+    formatFrameInternalsViewBoxNumber(viewBoxMetrics.viewHeight)
   ].join(" "));
 }
 
@@ -2026,13 +2025,14 @@ function restoreFrameInternalsMapViewport() {
 
 function getFrameInternalsMapClientPoint(viewport, clientX, clientY, transform = getFrameInternalsMapTransform(viewport)) {
   const svgRect = getFrameInternalsMapSvgRect(viewport);
+  const viewBoxMetrics = getFrameInternalsMapViewBoxMetrics(viewport, transform);
   const relativeX = clamp((clientX - svgRect.left) / Math.max(1, svgRect.width), 0, 1);
   const relativeY = clamp((clientY - svgRect.top) / Math.max(1, svgRect.height), 0, 1);
   return {
     relativeX,
     relativeY,
-    mapX: transform.centerX + (relativeX - 0.5) / transform.scale,
-    mapY: transform.centerY + (relativeY - 0.5) / transform.scale
+    mapX: (viewBoxMetrics.left + relativeX * viewBoxMetrics.viewWidth) / viewBoxMetrics.mediaWidth,
+    mapY: (viewBoxMetrics.top + relativeY * viewBoxMetrics.viewHeight) / viewBoxMetrics.mediaHeight
   };
 }
 
@@ -2051,6 +2051,58 @@ function getFrameInternalsMapMediaWidth(viewport) {
 
 function getFrameInternalsMapMediaHeight(viewport) {
   return Math.max(1, Number(getFrameInternalsMapSvg(viewport)?.dataset.mediaHeight) || 1);
+}
+
+function getFrameInternalsMapViewBoxMetrics(viewport, transform) {
+  const mediaWidth = getFrameInternalsMapMediaWidth(viewport);
+  const mediaHeight = getFrameInternalsMapMediaHeight(viewport);
+  const viewSize = getFrameInternalsMapViewSize(viewport, transform.scale);
+  const left = (Number(transform.centerX) || 0.5) * mediaWidth - viewSize.viewWidth / 2;
+  const top = (Number(transform.centerY) || 0.5) * mediaHeight - viewSize.viewHeight / 2;
+  return {
+    mediaWidth,
+    mediaHeight,
+    viewWidth: viewSize.viewWidth,
+    viewHeight: viewSize.viewHeight,
+    widthRatio: viewSize.viewWidth / mediaWidth,
+    heightRatio: viewSize.viewHeight / mediaHeight,
+    left,
+    top
+  };
+}
+
+function getFrameInternalsMapViewSize(viewport, scale) {
+  const mediaWidth = getFrameInternalsMapMediaWidth(viewport);
+  const mediaHeight = getFrameInternalsMapMediaHeight(viewport);
+  const safeScale = clamp(
+    Number(scale) || FRAME_INTERNALS_MAP_MINIMUM_SCALE,
+    FRAME_INTERNALS_MAP_MINIMUM_SCALE,
+    FRAME_INTERNALS_MAP_MAXIMUM_SCALE
+  );
+  const viewportAspectRatio = getFrameInternalsMapViewportAspectRatio(viewport, mediaWidth, mediaHeight);
+  const mediaAspectRatio = mediaWidth / mediaHeight;
+  const baseViewWidth = viewportAspectRatio >= mediaAspectRatio
+    ? mediaHeight * viewportAspectRatio
+    : mediaWidth;
+  const baseViewHeight = viewportAspectRatio >= mediaAspectRatio
+    ? mediaHeight
+    : mediaWidth / viewportAspectRatio;
+  return {
+    viewWidth: baseViewWidth / safeScale,
+    viewHeight: baseViewHeight / safeScale
+  };
+}
+
+function getFrameInternalsMapViewportAspectRatio(viewport, fallbackWidth, fallbackHeight) {
+  const svgRect = getFrameInternalsMapSvgRect(viewport);
+  if (svgRect.width > 0 && svgRect.height > 0) return svgRect.width / svgRect.height;
+  return Math.max(1, fallbackWidth) / Math.max(1, fallbackHeight);
+}
+
+function normalizeFrameInternalsMapCenter(center, mediaLength, viewLength) {
+  if (viewLength >= mediaLength) return 0.5;
+  const halfView = viewLength / Math.max(1, mediaLength) / 2;
+  return clamp(center, halfView, 1 - halfView);
 }
 
 function formatFrameInternalsViewBoxNumber(value) {
@@ -2106,13 +2158,18 @@ function updateFrameInternalsMapPinch(event) {
     FRAME_INTERNALS_MAP_MINIMUM_SCALE,
     FRAME_INTERNALS_MAP_MAXIMUM_SCALE
   );
+  const nextMetrics = getFrameInternalsMapViewBoxMetrics(gesture.viewport, {
+    scale: normalizedScale,
+    centerX: getFrameInternalsMapTransform(gesture.viewport).centerX,
+    centerY: getFrameInternalsMapTransform(gesture.viewport).centerY
+  });
   const svgRect = getFrameInternalsMapSvgRect(gesture.viewport);
   const relativeX = clamp((center.clientX - svgRect.left) / Math.max(1, svgRect.width), 0, 1);
   const relativeY = clamp((center.clientY - svgRect.top) / Math.max(1, svgRect.height), 0, 1);
   setFrameInternalsMapTransform(gesture.viewport, {
     scale: nextScale,
-    centerX: gesture.startMapX - (relativeX - 0.5) / normalizedScale,
-    centerY: gesture.startMapY - (relativeY - 0.5) / normalizedScale
+    centerX: gesture.startMapX - (relativeX - 0.5) * nextMetrics.widthRatio,
+    centerY: gesture.startMapY - (relativeY - 0.5) * nextMetrics.heightRatio
   });
   return true;
 }

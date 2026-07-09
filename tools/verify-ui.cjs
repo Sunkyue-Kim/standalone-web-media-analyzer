@@ -231,6 +231,7 @@ function assertCssRule(css, pattern, message) {
 
 function verifyResponsiveLayoutCss() {
   const sourceCss = fs.readFileSync(sourceStylePath, "utf8");
+  const sourceUi = fs.readFileSync(sourceUiPath, "utf8");
 
   assertCssRule(
     sourceCss,
@@ -411,6 +412,16 @@ function verifyResponsiveLayoutCss() {
     sourceCss,
     /\.block-map \.block-cell\s*\{[\s\S]*?vector-effect:\s*non-scaling-stroke;/,
     "Frame internals block cells must keep vector strokes stable while zooming through SVG viewBox."
+  );
+  assertCssRule(
+    sourceCss,
+    /\.block-map\s*\{[\s\S]*?width:\s*100%;[\s\S]*?height:\s*100%;/,
+    "Frame internals SVG must fill the whole zoom viewport so side gutters remain usable while zoomed."
+  );
+  assertCssRule(
+    sourceUi,
+    /function getFrameInternalsMapViewBoxMetrics[\s\S]*?getFrameInternalsMapViewSize[\s\S]*?widthRatio:[\s\S]*?heightRatio:/,
+    "Frame internals zoom must compute viewBox dimensions from the rendered viewport aspect ratio."
   );
   assertCssRule(
     sourceCss,

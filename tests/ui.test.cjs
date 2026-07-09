@@ -1000,6 +1000,10 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceUi, /resetFrameInternalsMapViewport/);
   assert.match(sourceUi, /restoreFrameInternalsMapViewport/);
   assert.match(sourceUi, /applyFrameInternalsMapViewBox/);
+  assert.match(sourceUi, /getFrameInternalsMapViewBoxMetrics/);
+  assert.match(sourceUi, /getFrameInternalsMapViewSize/);
+  assert.match(sourceUi, /getFrameInternalsMapViewportAspectRatio/);
+  assert.match(sourceUi, /normalizeFrameInternalsMapCenter/);
   assert.match(sourceUi, /frameInternalsMapView/);
   assert.match(sourceUi, /dataset\.mapCenterX/);
   assert.match(sourceFrameInternalsView, /data-inspection-tooltip/);
@@ -1013,11 +1017,12 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceCss, /\.block-map-viewport\s*\{[\s\S]*?height:\s*var\(--frame-map-height/);
   assert.match(sourceCss, /\.block-map-viewport\s*\{[\s\S]*?scrollbar-width:\s*none;/);
   assert.match(sourceCss, /\.block-map-viewport::-webkit-scrollbar\s*\{[\s\S]*?display:\s*none;/);
-  assert.match(sourceCss.match(/\.block-map\s*\{[\s\S]*?\}/)?.[0] || "", /max-height:\s*100%;/);
+  assert.doesNotMatch(sourceCss.match(/\.block-map\s*\{[\s\S]*?\}/)?.[0] || "", /max-height:/);
   assert.doesNotMatch(sourceCss.match(/\.block-map\s*\{[\s\S]*?\}/)?.[0] || "", /min-width:\s*min/);
+  assert.doesNotMatch(sourceCss.match(/\.block-map\s*\{[\s\S]*?\}/)?.[0] || "", /width:\s*min/);
   assert.doesNotMatch(sourceCss.match(/\.block-map\s*\{[\s\S]*?\}/)?.[0] || "", /transform:/);
   assert.doesNotMatch(sourceCss, /\.block-map-viewport\.zoomed/);
-  assert.match(sourceCss, /\.block-map\s*\{[\s\S]*?height:\s*auto;/);
+  assert.match(sourceCss, /\.block-map\s*\{[\s\S]*?width:\s*100%;[\s\S]*?height:\s*100%;/);
   assert.match(sourceCss, /\.block-map \.block-cell\s*\{[\s\S]*?vector-effect:\s*non-scaling-stroke;/);
   assert.match(sourceCss, /\.frame-internals-metrics\s*\{[\s\S]*?display:\s*grid;/);
   assert.match(sourceCss, /\.frame-internals-chart-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
