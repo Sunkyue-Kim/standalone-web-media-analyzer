@@ -68,6 +68,8 @@ test("sample model builds normal MP4 track and timing rows", async () => {
   assert.equal(tracks[0].width, 1280);
   assert.equal(tracks[0].displayWidth, 1920);
   assert.equal(tracks[0].displayHeight, 1080);
+  assert.equal(tracks[0].pixelAspectRatioNumerator, 1);
+  assert.equal(tracks[0].pixelAspectRatioDenominator, 1);
 
   const rows = sampleModel.buildNormalSamples(tracks, warnings);
   assert.equal(rows.length, 3);
@@ -77,6 +79,28 @@ test("sample model builds normal MP4 track and timing rows", async () => {
   assert.deepEqual(Array.from(rows.map((row) => row.isSync)), [true, false, true]);
   assert.equal(tracks[0].sampleCount, 3);
   assert.deepEqual(Array.from(warnings), []);
+});
+
+test("sample model exposes pixel aspect ratio from video sample entries", async () => {
+  const loader = await createSourceModuleLoader();
+  const sampleModel = await loader.import("src/js/core/containers/isobmff/sample-model.js");
+  const warnings = [];
+  const moov = box("moov", {}, [
+    makeTrackTree([], {
+      sampleEntry: {
+        width: 720,
+        height: 480,
+        boxes: [{ type: "pasp", fields: { hSpacing: 8, vSpacing: 9 } }]
+      }
+    })
+  ]);
+
+  const tracks = sampleModel.buildTrackModels([moov], warnings);
+
+  assert.equal(tracks.length, 1);
+  assert.equal(tracks[0].pixelAspectRatioNumerator, 8);
+  assert.equal(tracks[0].pixelAspectRatioDenominator, 9);
+  assert.equal(tracks[0].pixelAspectRatio.value, 8 / 9);
 });
 
 test("sample model keeps encoded and display dimensions separate for rotated video tracks", async () => {

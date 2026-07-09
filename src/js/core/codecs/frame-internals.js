@@ -124,9 +124,7 @@ function buildVideoInternalsModel(row, track, options = {}) {
   const dimensions = getVideoTrackDimensions(track);
   const width = dimensions.encodedWidth;
   const height = dimensions.encodedHeight;
-  const displayWidth = dimensions.displayWidth;
-  const displayHeight = dimensions.displayHeight;
-  if (!descriptor || !width || !height || !displayWidth || !displayHeight) {
+  if (!descriptor || !width || !height) {
     return {
       kind: "unsupported",
       title: "Video block view unavailable",
@@ -144,7 +142,9 @@ function buildVideoInternalsModel(row, track, options = {}) {
     height,
     maxCells: MAX_VIDEO_DISPLAY_CELLS
   });
-  orientVideoPartitionCells(cells, dimensions);
+  const intrinsicBounds = getPartitionCellIntrinsicBounds(cells, width, height);
+  const displayDimensions = getDisplayDimensionsForIntrinsicBounds(intrinsicBounds, dimensions);
+  orientVideoPartitionCells(cells, dimensions, intrinsicBounds);
   const partitionSummary = summarizePartitionCells(cells);
   const colorScale = options.colorScale || buildFrameInternalsColorScale(track, options.sampleRows, {
     descriptor,
@@ -164,11 +164,16 @@ function buildVideoInternalsModel(row, track, options = {}) {
     unitName: descriptor.unitName,
     unitWidth: descriptor.unitWidth,
     unitHeight: descriptor.unitHeight,
-    mediaWidth: displayWidth,
-    mediaHeight: displayHeight,
+    mediaWidth: displayDimensions.width,
+    mediaHeight: displayDimensions.height,
+    intrinsicWidth: intrinsicBounds.width,
+    intrinsicHeight: intrinsicBounds.height,
     encodedWidth: dimensions.encodedWidth,
     encodedHeight: dimensions.encodedHeight,
     displayRotationDegrees: dimensions.displayRotationDegrees,
+    pixelAspectRatioNumerator: dimensions.pixelAspectRatioNumerator,
+    pixelAspectRatioDenominator: dimensions.pixelAspectRatioDenominator,
+    pixelAspectRatio: dimensions.pixelAspectRatio,
     layout: "partition-map",
     nominalColumns,
     nominalRows,
@@ -235,23 +240,61 @@ function getVideoTrackDimensions(track) {
   const encodedWidth = positiveRoundedDimension(track.encodedWidth) || positiveRoundedDimension(track.width);
   const encodedHeight = positiveRoundedDimension(track.encodedHeight) || positiveRoundedDimension(track.height);
   const displayRotationDegrees = normalizeRotationDegrees(track.displayRotationDegrees);
-  const quarterTurn = Math.abs(displayRotationDegrees) === 90;
-  const fallbackDisplayWidth = quarterTurn ? encodedHeight : encodedWidth;
-  const fallbackDisplayHeight = quarterTurn ? encodedWidth : encodedHeight;
-  const displayWidth = positiveRoundedDimension(track.displayWidth) || fallbackDisplayWidth;
-  const displayHeight = positiveRoundedDimension(track.displayHeight) || fallbackDisplayHeight;
+  const pixelAspectRatio = getTrackPixelAspectRatio(track);
   return {
     encodedWidth,
     encodedHeight,
-    displayWidth,
-    displayHeight,
-    displayRotationDegrees
+    displayWidth: getOrientedDisplayWidth(encodedWidth, encodedHeight, displayRotationDegrees, pixelAspectRatio.value),
+    displayHeight: getOrientedDisplayHeight(encodedWidth, encodedHeight, displayRotationDegrees, pixelAspectRatio.value),
+    displayRotationDegrees,
+    pixelAspectRatioNumerator: pixelAspectRatio.numerator,
+    pixelAspectRatioDenominator: pixelAspectRatio.denominator,
+    pixelAspectRatio: pixelAspectRatio.value
   };
+}
+
+function getTrackPixelAspectRatio(track) {
+  const numerator = positiveDimension(track && track.pixelAspectRatioNumerator) ||
+    positiveDimension(track && track.pixelAspectRatio && track.pixelAspectRatio.numerator) ||
+    positiveDimension(track && track.pixelAspectRatio && track.pixelAspectRatio.hSpacing) ||
+    1;
+  const denominator = positiveDimension(track && track.pixelAspectRatioDenominator) ||
+    positiveDimension(track && track.pixelAspectRatio && track.pixelAspectRatio.denominator) ||
+    positiveDimension(track && track.pixelAspectRatio && track.pixelAspectRatio.vSpacing) ||
+    1;
+  const value = numerator > 0 && denominator > 0 ? numerator / denominator : 1;
+  return {
+    numerator,
+    denominator,
+    value: Number.isFinite(value) && value > 0 ? value : 1
+  };
+}
+
+function getOrientedDisplayWidth(width, height, rotationDegrees, pixelAspectRatio) {
+  const squarePixelWidth = Math.max(0, Number(width) || 0) * getSafePixelAspectRatio(pixelAspectRatio);
+  const squarePixelHeight = Math.max(0, Number(height) || 0);
+  return Math.abs(rotationDegrees) === 90 ? squarePixelHeight : squarePixelWidth;
+}
+
+function getOrientedDisplayHeight(width, height, rotationDegrees, pixelAspectRatio) {
+  const squarePixelWidth = Math.max(0, Number(width) || 0) * getSafePixelAspectRatio(pixelAspectRatio);
+  const squarePixelHeight = Math.max(0, Number(height) || 0);
+  return Math.abs(rotationDegrees) === 90 ? squarePixelWidth : squarePixelHeight;
+}
+
+function getSafePixelAspectRatio(pixelAspectRatio) {
+  const value = Number(pixelAspectRatio);
+  return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
 function positiveRoundedDimension(value) {
   const numberValue = Number(value);
   return Number.isFinite(numberValue) && numberValue > 0 ? Math.round(numberValue) : 0;
+}
+
+function positiveDimension(value) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : 0;
 }
 
 function normalizeRotationDegrees(value) {
@@ -559,10 +602,12 @@ function estimateVideoPartitionCellCount(options) {
 
 function assignPartitionByteEstimates(cells, options) {
   let totalWeight = 0;
-  const frameArea = Math.max(1, options.width * options.height);
+  const intrinsicBounds = getPartitionCellIntrinsicBounds(cells, options.width, options.height);
+  const intrinsicWidth = Math.max(1, intrinsicBounds.width);
+  const intrinsicHeight = Math.max(1, intrinsicBounds.height);
   for (const cell of cells) {
-    const centerColumn = clamp((cell.pixelLeft + cell.pixelRight) / 2 / Math.max(1, options.width), 0, 1);
-    const centerRow = clamp((cell.pixelTop + cell.pixelBottom) / 2 / Math.max(1, options.height), 0, 1);
+    const centerColumn = clamp((cell.pixelLeft + cell.pixelRight) / 2 / intrinsicWidth, 0, 1);
+    const centerRow = clamp((cell.pixelTop + cell.pixelBottom) / 2 / intrinsicHeight, 0, 1);
     const area = Math.max(1, cell.blockWidth * cell.blockHeight);
     const areaWeight = Math.sqrt(area / Math.max(1, options.descriptor.unitWidth * options.descriptor.unitHeight));
     const depthWeight = 1 + cell.depth * 0.17;
@@ -571,6 +616,7 @@ function assignPartitionByteEstimates(cells, options) {
     totalWeight += cell.weight;
   }
   const sampleSize = Math.max(0, Number(options.row.size) || 0);
+  const frameArea = Math.max(1, sumPartitionCellAreas(cells));
   const frameAverageBytesPerPixel = sampleSize / frameArea;
   for (const cell of cells) {
     const byteEstimate = totalWeight > 0 ? sampleSize * cell.weight / totalWeight : 0;
@@ -585,9 +631,43 @@ function assignPartitionByteEstimates(cells, options) {
   return cells;
 }
 
-function orientVideoPartitionCells(cells, dimensions) {
+function sumPartitionCellAreas(cells) {
+  return cells.reduce((total, cell) => total + Math.max(1, cell.blockWidth * cell.blockHeight), 0);
+}
+
+function getPartitionCellIntrinsicBounds(cells, fallbackWidth, fallbackHeight) {
+  let maximumRight = Math.max(1, Number(fallbackWidth) || 1);
+  let maximumBottom = Math.max(1, Number(fallbackHeight) || 1);
+  for (const cell of cells || []) {
+    maximumRight = Math.max(maximumRight, Number(cell.pixelRight) || 0);
+    maximumBottom = Math.max(maximumBottom, Number(cell.pixelBottom) || 0);
+  }
+  return {
+    width: maximumRight,
+    height: maximumBottom
+  };
+}
+
+function getDisplayDimensionsForIntrinsicBounds(intrinsicBounds, dimensions) {
+  return {
+    width: getOrientedDisplayWidth(
+      intrinsicBounds.width,
+      intrinsicBounds.height,
+      dimensions.displayRotationDegrees,
+      dimensions.pixelAspectRatio
+    ),
+    height: getOrientedDisplayHeight(
+      intrinsicBounds.width,
+      intrinsicBounds.height,
+      dimensions.displayRotationDegrees,
+      dimensions.pixelAspectRatio
+    )
+  };
+}
+
+function orientVideoPartitionCells(cells, dimensions, intrinsicBounds) {
   for (const cell of cells) {
-    const displayBounds = transformEncodedRectangleToDisplay(cell, dimensions);
+    const displayBounds = transformIntrinsicRectangleToDisplay(cell, dimensions, intrinsicBounds);
     cell.displayPixelLeft = displayBounds.left;
     cell.displayPixelTop = displayBounds.top;
     cell.displayPixelRight = displayBounds.right;
@@ -598,39 +678,41 @@ function orientVideoPartitionCells(cells, dimensions) {
   return cells;
 }
 
-function transformEncodedRectangleToDisplay(cell, dimensions) {
-  const encodedWidth = Math.max(1, dimensions.encodedWidth);
-  const encodedHeight = Math.max(1, dimensions.encodedHeight);
-  const displayWidth = Math.max(1, dimensions.displayWidth);
-  const displayHeight = Math.max(1, dimensions.displayHeight);
+function transformIntrinsicRectangleToDisplay(cell, dimensions, intrinsicBounds) {
+  const intrinsicWidth = Math.max(1, intrinsicBounds.width);
+  const intrinsicHeight = Math.max(1, intrinsicBounds.height);
+  const displayDimensions = getDisplayDimensionsForIntrinsicBounds(intrinsicBounds, dimensions);
+  const displayWidth = Math.max(1, displayDimensions.width);
+  const displayHeight = Math.max(1, displayDimensions.height);
   const rotation = dimensions.displayRotationDegrees || 0;
-  const rotatedWidth = Math.abs(rotation) === 90 ? encodedHeight : encodedWidth;
-  const rotatedHeight = Math.abs(rotation) === 90 ? encodedWidth : encodedHeight;
+  const pixelAspectRatio = getSafePixelAspectRatio(dimensions.pixelAspectRatio);
+  const squarePixelWidth = intrinsicWidth * pixelAspectRatio;
+  const squarePixelHeight = intrinsicHeight;
   const corners = [
-    rotateEncodedPointToDisplay(cell.pixelLeft, cell.pixelTop, rotation, encodedWidth, encodedHeight),
-    rotateEncodedPointToDisplay(cell.pixelRight, cell.pixelTop, rotation, encodedWidth, encodedHeight),
-    rotateEncodedPointToDisplay(cell.pixelLeft, cell.pixelBottom, rotation, encodedWidth, encodedHeight),
-    rotateEncodedPointToDisplay(cell.pixelRight, cell.pixelBottom, rotation, encodedWidth, encodedHeight)
+    rotateIntrinsicPointToDisplay(cell.pixelLeft, cell.pixelTop, rotation, pixelAspectRatio, squarePixelWidth, squarePixelHeight),
+    rotateIntrinsicPointToDisplay(cell.pixelRight, cell.pixelTop, rotation, pixelAspectRatio, squarePixelWidth, squarePixelHeight),
+    rotateIntrinsicPointToDisplay(cell.pixelLeft, cell.pixelBottom, rotation, pixelAspectRatio, squarePixelWidth, squarePixelHeight),
+    rotateIntrinsicPointToDisplay(cell.pixelRight, cell.pixelBottom, rotation, pixelAspectRatio, squarePixelWidth, squarePixelHeight)
   ];
   const left = Math.min(...corners.map((point) => point.x));
   const top = Math.min(...corners.map((point) => point.y));
   const right = Math.max(...corners.map((point) => point.x));
   const bottom = Math.max(...corners.map((point) => point.y));
-  const scaleX = displayWidth / Math.max(1, rotatedWidth);
-  const scaleY = displayHeight / Math.max(1, rotatedHeight);
   return {
-    left: clampDisplayCoordinate(left * scaleX, displayWidth),
-    top: clampDisplayCoordinate(top * scaleY, displayHeight),
-    right: clampDisplayCoordinate(right * scaleX, displayWidth),
-    bottom: clampDisplayCoordinate(bottom * scaleY, displayHeight)
+    left: clampDisplayCoordinate(left, displayWidth),
+    top: clampDisplayCoordinate(top, displayHeight),
+    right: clampDisplayCoordinate(right, displayWidth),
+    bottom: clampDisplayCoordinate(bottom, displayHeight)
   };
 }
 
-function rotateEncodedPointToDisplay(x, y, rotation, encodedWidth, encodedHeight) {
-  if (rotation === 90) return { x: encodedHeight - y, y: x };
-  if (rotation === -90) return { x: y, y: encodedWidth - x };
-  if (Math.abs(rotation) === 180) return { x: encodedWidth - x, y: encodedHeight - y };
-  return { x, y };
+function rotateIntrinsicPointToDisplay(x, y, rotation, pixelAspectRatio, squarePixelWidth, squarePixelHeight) {
+  const squarePixelX = x * pixelAspectRatio;
+  const squarePixelY = y;
+  if (rotation === 90) return { x: squarePixelHeight - squarePixelY, y: squarePixelX };
+  if (rotation === -90) return { x: squarePixelY, y: squarePixelWidth - squarePixelX };
+  if (Math.abs(rotation) === 180) return { x: squarePixelWidth - squarePixelX, y: squarePixelHeight - squarePixelY };
+  return { x: squarePixelX, y: squarePixelY };
 }
 
 function clampDisplayCoordinate(value, maximum) {

@@ -228,6 +228,10 @@ test("frame internals model builds partition-ready video maps and audio band est
   assert.equal(videoModel.unitName, "macroblock");
   assert.equal(videoModel.nominalColumns, 120);
   assert.equal(videoModel.nominalRows, 68);
+  assert.equal(videoModel.intrinsicWidth, 1920);
+  assert.equal(videoModel.intrinsicHeight, 1088);
+  assert.equal(videoModel.mediaWidth, 1920);
+  assert.equal(videoModel.mediaHeight, 1088);
   assert.equal(videoModel.layout, "partition-map");
   assert.ok(videoModel.partitionBlockCount > videoModel.displayColumns * videoModel.displayRows);
   assert.ok(videoModel.maxPartitionDepth > 0);
@@ -237,7 +241,8 @@ test("frame internals model builds partition-ready video maps and audio band est
   assert.equal(Math.round(sum(videoModel.cells.map((cell) => cell.estimatedBytes))), 120000);
   assert.ok(videoModel.cells.every((cell) => cell.pixelLeft < 1920 && cell.pixelTop < 1080));
   assert.ok(videoModel.cells.some((cell) => cell.pixelRight > 1920 || cell.pixelBottom > 1080));
-  assert.ok(videoModel.cells.every((cell) => cell.displayPixelRight <= 1920 && cell.displayPixelBottom <= 1080));
+  assert.ok(videoModel.cells.every((cell) => cell.displayPixelRight <= 1920 && cell.displayPixelBottom <= 1088));
+  assert.ok(videoModel.cells.some((cell) => cell.displayPixelBottom > 1080));
   assert.ok(videoModel.cells.every((cell) => Number.isFinite(cell.estimatedBytesPerPixel) && Number.isFinite(cell.normalizedByteDensity)));
   assert.ok(videoModel.cells.some((cell) => cell.blockWidth !== cell.blockHeight));
   const splitCells = videoModel.cells.filter((cell) => cell.depth > 0);
@@ -279,8 +284,10 @@ test("frame internals model builds partition-ready video maps and audio band est
       displayRotationDegrees: -90
     }
   );
-  assert.equal(rotatedVideoModel.mediaWidth, 1080);
+  assert.equal(rotatedVideoModel.mediaWidth, 1088);
   assert.equal(rotatedVideoModel.mediaHeight, 1920);
+  assert.equal(rotatedVideoModel.intrinsicWidth, 1920);
+  assert.equal(rotatedVideoModel.intrinsicHeight, 1088);
   assert.equal(rotatedVideoModel.encodedWidth, 1920);
   assert.equal(rotatedVideoModel.encodedHeight, 1080);
   assert.equal(rotatedVideoModel.displayRotationDegrees, -90);
@@ -289,10 +296,52 @@ test("frame internals model builds partition-ready video maps and audio band est
   assertSingleExpandedDepth(assert, rotatedVideoModel);
   assert.ok(rotatedVideoModel.cells.every((cell) => cell.pixelLeft < 1920 && cell.pixelTop < 1080));
   assert.ok(rotatedVideoModel.cells.some((cell) => cell.pixelBottom > 1080));
-  assert.ok(rotatedVideoModel.cells.every((cell) => cell.displayPixelRight <= 1080 && cell.displayPixelBottom <= 1920));
+  assert.ok(rotatedVideoModel.cells.every((cell) => cell.displayPixelRight <= 1088 && cell.displayPixelBottom <= 1920));
   assert.ok(rotatedVideoModel.cells.some((cell) => cell.pixelRight !== cell.displayPixelRight || cell.pixelBottom !== cell.displayPixelBottom));
   assert.ok(rotatedVideoModel.cells.every((cell) => Number.isFinite(cell.displayBlockWidth) && Number.isFinite(cell.displayBlockHeight)));
   assert.ok(rotatedVideoModel.cells.every((cell) => cell.blockWidth % 8 === 0 && cell.blockHeight % 8 === 0));
+
+  const croppedDisplayModel = buildFrameInternalsModel(
+    { trackId: 8, sampleIndex: 1, size: 64000, frameType: "P" },
+    {
+      trackId: 8,
+      handlerType: "vide",
+      codec: "avc1",
+      codecDescriptor: "avc",
+      width: 1920,
+      height: 1080,
+      encodedWidth: 1920,
+      encodedHeight: 1080,
+      displayWidth: 1280,
+      displayHeight: 720
+    }
+  );
+  assert.equal(croppedDisplayModel.mediaWidth, 1920);
+  assert.equal(croppedDisplayModel.mediaHeight, 1088);
+  assert.equal(croppedDisplayModel.intrinsicWidth, 1920);
+  assert.equal(croppedDisplayModel.intrinsicHeight, 1088);
+  assert.ok(croppedDisplayModel.cells.every((cell) => cell.blockWidth % 4 === 0 && cell.blockHeight % 4 === 0));
+
+  const pixelAspectRatioModel = buildFrameInternalsModel(
+    { trackId: 9, sampleIndex: 1, size: 64000, frameType: "P" },
+    {
+      trackId: 9,
+      handlerType: "vide",
+      codec: "avc1",
+      codecDescriptor: "avc",
+      width: 720,
+      height: 480,
+      pixelAspectRatioNumerator: 8,
+      pixelAspectRatioDenominator: 9
+    }
+  );
+  assert.equal(pixelAspectRatioModel.intrinsicWidth, 720);
+  assert.equal(pixelAspectRatioModel.intrinsicHeight, 480);
+  assert.equal(pixelAspectRatioModel.mediaWidth, 640);
+  assert.equal(pixelAspectRatioModel.mediaHeight, 480);
+  assert.equal(pixelAspectRatioModel.pixelAspectRatioNumerator, 8);
+  assert.equal(pixelAspectRatioModel.pixelAspectRatioDenominator, 9);
+  assert.ok(pixelAspectRatioModel.cells.every((cell) => cell.blockWidth % 4 === 0 && cell.blockHeight % 4 === 0));
 
   const hevcModel = buildFrameInternalsModel(
     { trackId: 2, sampleIndex: 1, size: 90000, frameType: "P" },
@@ -300,6 +349,10 @@ test("frame internals model builds partition-ready video maps and audio band est
   );
   assert.equal(hevcModel.unitName, "CTU");
   assert.equal(hevcModel.unitWidth, 64);
+  assert.equal(hevcModel.intrinsicWidth, 1280);
+  assert.equal(hevcModel.intrinsicHeight, 768);
+  assert.equal(hevcModel.mediaWidth, 1280);
+  assert.equal(hevcModel.mediaHeight, 768);
   assertSingleExpandedDepth(assert, hevcModel);
   assert.ok(hevcModel.cells.some((cell) => cell.pixelBottom > 720));
   assert.ok(hevcModel.cells.every((cell) => cell.blockWidth % 8 === 0 && cell.blockHeight % 8 === 0));

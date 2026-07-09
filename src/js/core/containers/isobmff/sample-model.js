@@ -47,6 +47,7 @@ function buildTrackModels(topBoxes, warnings) {
     const codec = sampleEntry ? sampleEntry.format : "unknown";
     const codecDescriptor = getCodecBySampleEntryType(codec);
     const dimensions = buildTrackDimensions(sampleEntry, tkhd);
+    const pixelAspectRatio = getSampleEntryPixelAspectRatio(sampleEntry);
     const track = {
       trackId,
       handlerType: hdlr ? hdlr.fields.handlerType : "unknown",
@@ -62,6 +63,9 @@ function buildTrackModels(topBoxes, warnings) {
       displayWidth: dimensions.displayWidth,
       displayHeight: dimensions.displayHeight,
       displayRotationDegrees: dimensions.displayRotationDegrees,
+      pixelAspectRatioNumerator: pixelAspectRatio.numerator,
+      pixelAspectRatioDenominator: pixelAspectRatio.denominator,
+      pixelAspectRatio,
       channelCount: sampleEntry && sampleEntry.channelCount ? sampleEntry.channelCount : 0,
       sampleRate: sampleEntry && sampleEntry.sampleRate ? sampleEntry.sampleRate : 0,
       sampleCount: 0,
@@ -98,6 +102,19 @@ function buildTrackDimensions(sampleEntry, tkhd) {
     displayWidth: displayDimensions.width,
     displayHeight: displayDimensions.height,
     displayRotationDegrees: rotationDegrees
+  };
+}
+
+function getSampleEntryPixelAspectRatio(sampleEntry) {
+  const pasp = sampleEntry && Array.isArray(sampleEntry.boxes)
+    ? sampleEntry.boxes.find((box) => box.type === "pasp" && box.fields)
+    : null;
+  const numerator = positiveDimension(pasp && pasp.fields.hSpacing) || 1;
+  const denominator = positiveDimension(pasp && pasp.fields.vSpacing) || 1;
+  return {
+    numerator,
+    denominator,
+    value: denominator > 0 ? numerator / denominator : 1
   };
 }
 
