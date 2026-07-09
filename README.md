@@ -6,6 +6,8 @@ Live app: https://sunkyue-kim.github.io/standalone-web-media-analyzer/
 
 This project is a local-first inspection tool. It opens files with standard browser APIs, parses metadata and sample structures in chunks, and does not upload local files to a server. It is useful when you need to inspect a media file quickly without installing FFmpeg, Bento4, MP4Box, MediaInfo, or a desktop hex viewer.
 
+The runtime is fully static. You can use it as a single self-contained HTML file, or use the chunked lazy-load build when you want smaller initial downloads and CDN-friendly caching. Both modes run entirely in the browser without server-side compute.
+
 ## At A Glance
 
 | Area | Supported |
@@ -21,6 +23,7 @@ This project is a local-first inspection tool. It opens files with standard brow
 | Exports | JSON and CSV |
 | Languages | English and Korean |
 | Output builds | Single-file HTML and chunked lazy-load HTML |
+| Hosting model | Direct local file, static hosting, GitHub Pages, or CDN |
 | License | Beerware |
 
 ## What It Shows
