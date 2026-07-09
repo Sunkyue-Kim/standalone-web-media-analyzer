@@ -238,6 +238,15 @@ test("frame internals model builds partition-ready video maps and audio band est
   assert.ok(videoModel.cells.every((cell) => cell.displayPixelRight <= 1920 && cell.displayPixelBottom <= 1080));
   assert.ok(videoModel.cells.every((cell) => Number.isFinite(cell.estimatedBytesPerPixel) && Number.isFinite(cell.normalizedByteDensity)));
   assert.ok(videoModel.cells.some((cell) => cell.blockWidth !== cell.blockHeight));
+  const splitCells = videoModel.cells.filter((cell) => cell.depth > 0);
+  const splitQuadrants = new Set(splitCells.map((cell) => {
+    const centerX = (cell.pixelLeft + cell.pixelRight) / 2;
+    const centerY = (cell.pixelTop + cell.pixelBottom) / 2;
+    return (centerX >= 960 ? "right" : "left") + "-" + (centerY >= 540 ? "bottom" : "top");
+  }));
+  const leftQuarterSplitRatio = splitCells.filter((cell) => ((cell.pixelLeft + cell.pixelRight) / 2) < 480).length / Math.max(1, splitCells.length);
+  assert.ok(splitQuadrants.size >= 4);
+  assert.ok(leftQuarterSplitRatio < 0.6);
   assert.equal(videoModel.colorScale.mode, "global-track-percentile");
   assert.ok(videoModel.cells.some((cell) => cell.globalPercentile > 0.5));
   assert.ok(videoModel.cells.every((cell) => Number.isFinite(cell.color.red) && Number.isFinite(cell.color.green) && Number.isFinite(cell.color.blue)));
