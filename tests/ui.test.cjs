@@ -8,12 +8,8 @@ test("UI helpers keep sample catalog, media detection, escaping, CSV, and frame 
   const loader = await createSourceModuleLoader();
   const helpers = await loader.import("src/js/ui/ui-helpers.js");
 
-  assert.equal(helpers.REMOTE_SHARED_DOWNLOAD_LIMIT_BYTES, 4 * 1024 * 1024);
   assert.equal(helpers.canUseSampleCatalogLocation({ protocol: "file:" }), false);
   assert.equal(helpers.canUseSampleCatalogLocation({ protocol: "https:" }), true);
-  assert.equal(helpers.shouldDownloadRemoteOnceForSharedPlayback({ size: 4 * 1024 * 1024 }), true);
-  assert.equal(helpers.shouldDownloadRemoteOnceForSharedPlayback({ size: 4 * 1024 * 1024 + 1 }), false);
-  assert.equal(helpers.shouldDownloadRemoteOnceForSharedPlayback({ size: 100 }, { forceStreaming: true }), false);
   assert.equal(helpers.isLikelyMediaFile({ name: "clip.MOV", type: "" }), true);
   assert.equal(helpers.isLikelyMediaFile({ name: "notes.txt", type: "text/plain" }), false);
   assert.equal(helpers.isLikelyMediaFile({ name: "", type: "audio/ogg" }), true);
@@ -22,6 +18,44 @@ test("UI helpers keep sample catalog, media detection, escaping, CSV, and frame 
   assert.equal(helpers.getFrameTypeClass("mixed(I/P)"), "err");
   assert.equal(helpers.escapeHtml("<tag attr=\"x\">&'"), "&lt;tag attr=&quot;x&quot;&gt;&amp;&#39;");
   assert.equal(helpers.csvCell("a,b\n\"c\""), "\"a,b\n\"\"c\"\"\"");
+});
+
+test("media source policy shares preload behavior for local blobs and remote URLs", async () => {
+  const loader = await createSourceModuleLoader();
+  const mediaSource = await loader.import("src/js/ui/media-source.js");
+
+  assert.equal(mediaSource.MEDIA_PREVIEW_PRELOAD, "metadata");
+  assert.equal(mediaSource.REMOTE_SHARED_DOWNLOAD_LIMIT_BYTES, 4 * 1024 * 1024);
+  assert.equal(mediaSource.shouldDownloadRemoteOnceForSharedPlayback({ size: 4 * 1024 * 1024 }), true);
+  assert.equal(mediaSource.shouldDownloadRemoteOnceForSharedPlayback({ size: 4 * 1024 * 1024 + 1 }), false);
+  assert.equal(mediaSource.shouldDownloadRemoteOnceForSharedPlayback({ size: 100 }, { forceStreaming: true }), false);
+
+  const localResource = { name: "local.mp4", size: 1024, type: "video/mp4" };
+  const localPlan = mediaSource.createMediaPreviewPlan(localResource, {
+    objectUrlFactory: (resource) => "blob:test-" + resource.name
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(localPlan)), {
+    sourceKind: "local-file",
+    url: "blob:test-local.mp4",
+    isObjectUrl: true,
+    preload: "metadata",
+    title: ""
+  });
+
+  const remoteResource = {
+    kind: "remote-url",
+    name: "remote.mp4",
+    size: 8 * 1024 * 1024,
+    previewUrl: "https://media.test/remote.mp4"
+  };
+  const remotePlan = mediaSource.createMediaPreviewPlan(remoteResource);
+  assert.deepEqual(JSON.parse(JSON.stringify(remotePlan)), {
+    sourceKind: "remote-url",
+    url: "https://media.test/remote.mp4",
+    isObjectUrl: false,
+    preload: "metadata",
+    title: ""
+  });
 });
 
 test("data grid renderer builds reusable scrollable grid markup", async () => {
@@ -596,6 +630,7 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   const sourceHtml = fs.readFileSync(path.join(rootDirectory, "src", "index.html"), "utf8");
   const sourceCss = fs.readFileSync(path.join(rootDirectory, "src", "styles.css"), "utf8");
   const sourceUi = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "analyzer-ui.js"), "utf8");
+  const sourceMediaSource = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "media-source.js"), "utf8");
   const sourceWorker = fs.readFileSync(path.join(rootDirectory, "src", "js", "worker", "analyzer-worker.js"), "utf8");
   const builtHtml = fs.readFileSync(path.join(rootDirectory, "mp4-analyzer.html"), "utf8");
   const builtMinifiedHtml = fs.readFileSync(path.join(rootDirectory, "index.html"), "utf8");
@@ -658,7 +693,10 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceUi, /createAnalysisWorkerClient/);
   assert.match(sourceUi, /probeRemoteMediaResource/);
   assert.match(sourceUi, /downloadRemoteMediaFile/);
-  assert.match(sourceUi, /filePreview\.preload = "metadata"/);
+  assert.match(sourceUi, /createMediaPreviewPlan/);
+  assert.match(sourceUi, /filePreview\.preload = previewPlan\.preload/);
+  assert.match(sourceMediaSource, /MEDIA_PREVIEW_PRELOAD = "metadata"/);
+  assert.match(sourceMediaSource, /getMediaResourceKind/);
   assert.doesNotMatch(sourceUi, /deferPreviewNetwork/);
   assert.doesNotMatch(sourceUi, /preload = "none"/);
   assert.match(sourceUi, /shouldDownloadRemoteOnceForSharedPlayback/);

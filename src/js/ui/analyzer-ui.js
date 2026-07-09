@@ -34,6 +34,10 @@ import {
 } from "./data-grid.js";
 import { createRecyclerView } from "./recycler-view.js";
 import { downloadRemoteMediaFile, probeRemoteMediaResource } from "./remote-loader.js";
+import {
+  createMediaPreviewPlan,
+  shouldDownloadRemoteOnceForSharedPlayback
+} from "./media-source.js";
 import { getVisibleSummaryCodecTrackCounts } from "./summary-model.js";
 import {
   canUseSampleCatalogLocation,
@@ -41,8 +45,7 @@ import {
   escapeHtml,
   getFrameRowKey,
   getFrameTypeClass,
-  isLikelyMediaFile,
-  shouldDownloadRemoteOnceForSharedPlayback
+  isLikelyMediaFile
 } from "./ui-helpers.js";
 
 export function startUserInterface(Core, options = {}) {
@@ -1091,14 +1094,11 @@ function resetView(file, options = {}) {
 
 function setFilePreview(file, options = {}) {
   if (state.filePreviewUrl && state.filePreviewObjectUrl) URL.revokeObjectURL(state.filePreviewUrl);
-  state.filePreviewObjectUrl = false;
-  state.filePreviewUrl = options.previewUrl || file.previewUrl || "";
-  if (!state.filePreviewUrl) {
-    state.filePreviewUrl = URL.createObjectURL(file);
-    state.filePreviewObjectUrl = true;
-  }
-  elements.filePreview.preload = "metadata";
-  elements.filePreview.title = "";
+  const previewPlan = createMediaPreviewPlan(file, options);
+  state.filePreviewUrl = previewPlan.url;
+  state.filePreviewObjectUrl = previewPlan.isObjectUrl;
+  elements.filePreview.preload = previewPlan.preload;
+  elements.filePreview.title = previewPlan.title;
   elements.filePreview.src = state.filePreviewUrl;
   elements.filePreview.load();
   elements.mediaPreviewName.textContent = file.name || "Unnamed media";

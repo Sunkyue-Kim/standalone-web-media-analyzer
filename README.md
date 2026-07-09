@@ -121,6 +121,8 @@ src/
     i18n/                        English/Korean catalogs and descriptions
     samples/                     hosted sample manifest
     ui/                          rendering, data grids, filters, playback, exports
+      media-source.js            shared local/remote media preview and download policy
+      remote-loader.js           remote URL probing, range capability checks, downloads
     worker/                      analyzer worker entry and protocol
 tests/                           node:test coverage for core, containers, UI helpers
 tools/                           build, verification, and sample-check scripts
@@ -132,6 +134,7 @@ Design boundaries:
 - Container analyzers produce normalized tracks, samples, fragments, warnings, and structure nodes.
 - Codec modules expose interchangeable parser/scanner functions through a registry.
 - UI code consumes normalized analysis models rather than container-specific internals where possible.
+- Local files and remote URLs share media-source policy for preview setup and small-file download reuse; remote-loader only handles network probing and download mechanics.
 - Heavy parsing and sample scanning should stay out of direct DOM rendering paths.
 - Final deployable artifacts remain static files that can be hosted on GitHub Pages.
 
@@ -175,9 +178,9 @@ Validation samples live under `validation/generated/` and are exposed by the Git
 
 Current coverage snapshot from `npm run test:coverage`:
 
-- Tests: 39 passed, 0 failed
-- All files: 95.29% line coverage, 74.11% branch coverage, 93.72% function coverage
-- Strong coverage areas: binary readers, HTTP range readers, remote URL fallback/progress handling, browser worker client message flow, bitstream helpers, formatting edge cases, AAC/MP3/Opus parser branches, nominal frame internals models, codec registry, i18n, data grid/recycler helpers, ISO BMFF sample modeling, ISO BMFF rare box parsing, MP3 container detection, source-map build wiring, and bundled sample container integration
+- Tests: 40 passed, 0 failed
+- All files: 95.42% line coverage, 74.30% branch coverage, 93.83% function coverage
+- Strong coverage areas: binary readers, HTTP range readers, remote URL fallback/progress handling, shared media-source preview/download policy, browser worker client message flow, bitstream helpers, formatting edge cases, AAC/MP3/Opus parser branches, nominal frame internals models, codec registry, i18n, data grid/recycler helpers, ISO BMFF sample modeling, ISO BMFF rare box parsing, MP3 container detection, source-map build wiring, and bundled sample container integration
 - Lower branch coverage remains mainly in browser-worker runtime branches and malformed/edge container branches such as oversized/invalid MP4 boxes, MP3 ID3v1 edge metadata, Ogg page edge cases, and WebM lacing variants
 
 ## Export Model

@@ -7473,11 +7473,6 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     if (String(type).startsWith("mixed")) return "err";
     return "";
   }
-  function shouldDownloadRemoteOnceForSharedPlayback(resource, options = {}) {
-    if (options.forceStreaming) return false;
-    const size = Number(resource && resource.size || 0);
-    return Number.isFinite(size) && size > 0 && size <= REMOTE_SHARED_DOWNLOAD_LIMIT_BYTES;
-  }
   function csvCell(value) {
     const text = value === void 0 || value === null ? "" : String(value);
     if (/[",\n]/.test(text)) return '"' + text.replace(/"/g, '""') + '"';
@@ -7492,10 +7487,8 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       "'": "&#39;"
     })[char]);
   }
-  var REMOTE_SHARED_DOWNLOAD_LIMIT_BYTES;
   var init_ui_helpers = __esm({
     "local-source:C:\\Users\\user\\Documents\\Codex\\2026-07-08\\js-html-mp4-html-mp4-i\\src\\js\\ui\\ui-helpers.js"() {
-      REMOTE_SHARED_DOWNLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
     }
   });
 
@@ -7896,6 +7889,50 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
   }
   var init_remote_loader = __esm({
     "local-source:C:\\Users\\user\\Documents\\Codex\\2026-07-08\\js-html-mp4-html-mp4-i\\src\\js\\ui\\remote-loader.js"() {
+    }
+  });
+
+  // local-source:C:\Users\user\Documents\Codex\2026-07-08\js-html-mp4-html-mp4-i\src\js\ui\media-source.js
+  function getMediaResourceKind(resource) {
+    return resource && resource.kind === "remote-url" ? "remote-url" : "local-file";
+  }
+  function createMediaPreviewPlan(resource, options = {}) {
+    const sourceKind = getMediaResourceKind(resource);
+    const suppliedPreviewUrl = options.previewUrl || resource && resource.previewUrl || "";
+    if (suppliedPreviewUrl) {
+      return {
+        sourceKind,
+        url: suppliedPreviewUrl,
+        isObjectUrl: false,
+        preload: MEDIA_PREVIEW_PRELOAD,
+        title: ""
+      };
+    }
+    const objectUrlFactory = options.objectUrlFactory || getDefaultObjectUrlFactory();
+    return {
+      sourceKind,
+      url: objectUrlFactory(resource),
+      isObjectUrl: true,
+      preload: MEDIA_PREVIEW_PRELOAD,
+      title: ""
+    };
+  }
+  function getDefaultObjectUrlFactory() {
+    if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+      return (resource) => URL.createObjectURL(resource);
+    }
+    throw new Error("Object URL creation is not available in this environment.");
+  }
+  function shouldDownloadRemoteOnceForSharedPlayback(resource, options = {}) {
+    if (options.forceStreaming) return false;
+    const size = Number(resource && resource.size || 0);
+    return Number.isFinite(size) && size > 0 && size <= REMOTE_SHARED_DOWNLOAD_LIMIT_BYTES;
+  }
+  var MEDIA_PREVIEW_PRELOAD, REMOTE_SHARED_DOWNLOAD_LIMIT_BYTES;
+  var init_media_source = __esm({
+    "local-source:C:\\Users\\user\\Documents\\Codex\\2026-07-08\\js-html-mp4-html-mp4-i\\src\\js\\ui\\media-source.js"() {
+      MEDIA_PREVIEW_PRELOAD = "metadata";
+      REMOTE_SHARED_DOWNLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
     }
   });
 
@@ -8895,14 +8932,11 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     }
     function setFilePreview(file, options2 = {}) {
       if (state.filePreviewUrl && state.filePreviewObjectUrl) URL.revokeObjectURL(state.filePreviewUrl);
-      state.filePreviewObjectUrl = false;
-      state.filePreviewUrl = options2.previewUrl || file.previewUrl || "";
-      if (!state.filePreviewUrl) {
-        state.filePreviewUrl = URL.createObjectURL(file);
-        state.filePreviewObjectUrl = true;
-      }
-      elements.filePreview.preload = "metadata";
-      elements.filePreview.title = "";
+      const previewPlan = createMediaPreviewPlan(file, options2);
+      state.filePreviewUrl = previewPlan.url;
+      state.filePreviewObjectUrl = previewPlan.isObjectUrl;
+      elements.filePreview.preload = previewPlan.preload;
+      elements.filePreview.title = previewPlan.title;
       elements.filePreview.src = state.filePreviewUrl;
       elements.filePreview.load();
       elements.mediaPreviewName.textContent = file.name || "Unnamed media";
@@ -10270,6 +10304,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       init_data_grid();
       init_recycler_view();
       init_remote_loader();
+      init_media_source();
       init_summary_model();
       init_ui_helpers();
     }
