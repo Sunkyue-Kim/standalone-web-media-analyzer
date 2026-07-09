@@ -467,7 +467,7 @@ test("frame internals view renders reusable video, audio, and tooltip markup", a
   assert.match(videoHtml, /--cell-left:0\.00000%/);
   assert.match(videoHtml, /--cell-top:50\.00000%/);
   assert.match(videoHtml, /16x32 \(rotated -90 deg, encoded 32x16\)/);
-  assert.match(videoHtml, /Encoded pixel range/);
+  assert.match(videoHtml, /Coded pixel range/);
   assert.match(videoHtml, /Display pixel range/);
   assert.match(videoHtml, /Byte density/);
   assert.match(videoHtml, /Internal statistics/);

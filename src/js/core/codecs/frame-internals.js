@@ -25,7 +25,6 @@ const VIDEO_CODING_UNITS = [
       minimumWidth: 4,
       minimumHeight: 4,
       maxDepth: 2,
-      targetMultiplier: { I: 1.75, P: 1.35, B: 1.2, default: 1.25 },
       modes: ["split", "vertical", "horizontal"]
     }
   },
@@ -43,7 +42,6 @@ const VIDEO_CODING_UNITS = [
       minimumWidth: 8,
       minimumHeight: 8,
       maxDepth: 4,
-      targetMultiplier: { I: 6, P: 4.2, B: 3.2, default: 3.6 },
       modes: ["split", "vertical", "horizontal"]
     }
   },
@@ -61,7 +59,6 @@ const VIDEO_CODING_UNITS = [
       minimumWidth: 4,
       minimumHeight: 4,
       maxDepth: 4,
-      targetMultiplier: { I: 5, P: 3.6, B: 2.6, default: 3.2 },
       modes: ["split", "vertical", "horizontal", "verticalA", "verticalB", "horizontalA", "horizontalB"]
     }
   },
@@ -79,7 +76,6 @@ const VIDEO_CODING_UNITS = [
       minimumWidth: 4,
       minimumHeight: 4,
       maxDepth: 5,
-      targetMultiplier: { I: 7, P: 5.2, B: 4, default: 4.8 },
       modes: [
         "split",
         "vertical",
@@ -279,8 +275,8 @@ function buildVideoPartitionCells(options) {
   const profile = options.descriptor.partitionProfile || getDefaultPartitionProfile(options.descriptor);
   const rootLayout = getPartitionRootLayout(options, profile);
   let cells = buildRootPartitionCells(options, profile, rootLayout);
-  const targetCellCount = getTargetPartitionCellCount(cells.length, options.row, profile, options.maxCells);
-  cells = refinePartitionCells(cells, options, profile, targetCellCount);
+  const expansionDepth = getTrackPartitionExpansionDepth(cells.length, profile, options.maxCells);
+  cells = refinePartitionCells(cells, options, profile, expansionDepth);
   return assignPartitionByteEstimates(cells, options);
 }
 
@@ -291,7 +287,6 @@ function getDefaultPartitionProfile(descriptor) {
     minimumWidth: descriptor.unitWidth,
     minimumHeight: descriptor.unitHeight,
     maxDepth: 0,
-    targetMultiplier: { default: 1 },
     modes: []
   };
 }
@@ -303,12 +298,15 @@ function getPartitionRootLayout(options, profile) {
   const rawRows = Math.max(1, Math.ceil(options.height / baseHeight));
   const rootCount = rawColumns * rawRows;
   const maxCells = Math.max(1, options.maxCells || MAX_VIDEO_DISPLAY_CELLS);
-  const aggregation = Math.max(1, Math.ceil(Math.sqrt(rootCount / maxCells)));
+  const splitReserve = getFullDepthSplitReserve(profile);
+  const aggregation = Math.max(1, Math.ceil(Math.sqrt(rootCount * splitReserve / maxCells)));
   const rootWidth = baseWidth * aggregation;
   const rootHeight = baseHeight * aggregation;
   return {
     baseWidth,
     baseHeight,
+    rawColumns,
+    rawRows,
     aggregation,
     columns: Math.max(1, Math.ceil(options.width / rootWidth)),
     rows: Math.max(1, Math.ceil(options.height / rootHeight)),
@@ -317,14 +315,26 @@ function getPartitionRootLayout(options, profile) {
   };
 }
 
+function getFullDepthSplitReserve(profile) {
+  if (!profile.maxDepth || !Array.isArray(profile.modes) || !profile.modes.length) return 1;
+  return Math.max(2, ...profile.modes.map(getPartitionModeMaximumFanOut));
+}
+
+function getPartitionModeMaximumFanOut(mode) {
+  if (mode === "verticalA" || mode === "verticalB" || mode === "horizontalA" || mode === "horizontalB") return 3;
+  if (mode === "split" || mode === "vertical4" || mode === "horizontal4") return 4;
+  if (mode === "vertical" || mode === "horizontal") return 2;
+  return 1;
+}
+
 function buildRootPartitionCells(options, profile, layout) {
   const cells = [];
   for (let rowIndex = 0; rowIndex < layout.rows; rowIndex += 1) {
     for (let columnIndex = 0; columnIndex < layout.columns; columnIndex += 1) {
       const pixelLeft = columnIndex * layout.rootWidth;
       const pixelTop = rowIndex * layout.rootHeight;
-      const pixelRight = Math.min(options.width, pixelLeft + layout.rootWidth);
-      const pixelBottom = Math.min(options.height, pixelTop + layout.rootHeight);
+      const pixelRight = pixelLeft + layout.rootWidth;
+      const pixelBottom = pixelTop + layout.rootHeight;
       cells.push(createPartitionCell({
         descriptor: options.descriptor,
         profile,
@@ -343,79 +353,24 @@ function buildRootPartitionCells(options, profile, layout) {
   return cells;
 }
 
-function refinePartitionCells(cells, options, profile, targetCellCount) {
+function refinePartitionCells(cells, options, profile, expansionDepth) {
   if (!profile.maxDepth || !profile.modes.length) return cells;
-  for (let depth = 0; depth < profile.maxDepth && cells.length < targetCellCount; depth += 1) {
-    const candidates = getPartitionSplitCandidates(cells, options, profile, targetCellCount)
-      .filter((candidate) => candidate.cell.depth === depth);
-    if (!candidates.length) continue;
-    const selectedCellIds = new Set(
-      candidates
-        .slice(0, Math.max(1, targetCellCount - cells.length))
-        .map((candidate) => candidate.cell.id)
-    );
-    const nextCells = [];
-    let splitCount = 0;
-    let addedCellCount = 0;
-    for (const cell of cells) {
-      if (!selectedCellIds.has(cell.id)) {
-        nextCells.push(cell);
-        continue;
-      }
+  const depthLimit = Math.min(profile.maxDepth, Math.max(0, Number(expansionDepth) || 0));
+  for (let depth = 0; depth < depthLimit; depth += 1) {
+    const currentDepthCells = cells.filter((cell) => cell.depth === depth);
+    if (currentDepthCells.length !== cells.length) break;
+    if (currentDepthCells.some((cell) => !canSplitPartitionCell(cell, profile))) break;
+    const replacementMap = new Map();
+    for (const cell of currentDepthCells) {
       const mode = choosePartitionMode(cell, options.row, profile);
       const children = splitPartitionCell(cell, mode, profile, options);
-      if (children.length <= 1) {
-        nextCells.push(cell);
-        continue;
-      }
-      const projectedCellCount = cells.length + addedCellCount + children.length - 1;
-      if (projectedCellCount > targetCellCount) {
-        nextCells.push(cell);
-        continue;
-      }
-      nextCells.push(...children);
-      addedCellCount += children.length - 1;
-      splitCount += 1;
+      if (children.length <= 1) continue;
+      replacementMap.set(cell.id, children);
     }
-    cells = nextCells;
-    if (!splitCount) break;
+    if (replacementMap.size !== currentDepthCells.length) break;
+    cells = cells.flatMap((cell) => replacementMap.get(cell.id) || [cell]);
   }
   return cells;
-}
-
-function getPartitionSplitCandidates(cells, options, profile, targetCellCount) {
-  const currentCellCount = cells.length;
-  if (currentCellCount >= targetCellCount) return [];
-  const candidates = [];
-  for (const cell of cells) {
-    const score = getPartitionSplitScore(cell, options.row, profile, targetCellCount, currentCellCount, options);
-    if (score <= 0) continue;
-    candidates.push({ cell, score });
-  }
-  return candidates.sort((left, right) =>
-    right.score - left.score ||
-    left.cell.depth - right.cell.depth ||
-    left.cell.pixelTop - right.cell.pixelTop ||
-    left.cell.pixelLeft - right.cell.pixelLeft
-  );
-}
-
-function getPartitionSplitScore(cell, row, profile, targetCellCount, currentCellCount, options) {
-  if (cell.depth >= profile.maxDepth) return 0;
-  if (!canSplitPartitionCell(cell, profile)) return 0;
-  const frameType = normalizeFrameType(row.frameType);
-  const frameBias = frameType === "I" || frameType === "IDR" ? 0.9 : frameType === "B" ? 0.56 : 0.72;
-  const sizeBias = clamp(Math.log2(1 + Math.max(0, Number(row.size) || 0) / 1024) / 12, 0.18, 0.88);
-  const depthBias = 1 - cell.depth / Math.max(1, profile.maxDepth + 1);
-  const pressure = clamp((targetCellCount - currentCellCount) / Math.max(1, targetCellCount), 0.08, 0.85);
-  const threshold = clamp(0.18 + frameBias * 0.22 + sizeBias * 0.28 + depthBias * 0.2 + pressure * 0.12, 0.2, 0.92);
-  const centerColumn = (cell.pixelLeft + cell.pixelRight) / 2 / Math.max(1, options.width);
-  const centerRow = (cell.pixelTop + cell.pixelBottom) / 2 / Math.max(1, options.height);
-  const spatialBias = getSyntheticSpatialWeightAt(row, centerColumn, centerRow);
-  const noise = deterministicNoise(row, cell.rowIndex + cell.depth * 97, cell.columnIndex + cell.depth * 131);
-  const splitLikelihood = threshold - noise;
-  if (splitLikelihood <= -0.08) return 0;
-  return splitLikelihood + spatialBias * 0.16 + depthBias * 0.04;
 }
 
 function canSplitPartitionCell(cell, profile) {
@@ -577,28 +532,37 @@ function createPartitionCell(options) {
   };
 }
 
-function getTargetPartitionCellCount(rootCellCount, row, profile, maxCells) {
-  const frameType = normalizeFrameType(row.frameType);
-  const multiplierMap = profile.targetMultiplier || { default: 1 };
-  const multiplier = multiplierMap[frameType] || multiplierMap.default || 1;
-  const sizeFactor = clamp(Math.log2(1 + Math.max(0, Number(row.size) || 0) / 2048) / 8, 0.75, 1.45);
-  return Math.max(rootCellCount, Math.min(maxCells || MAX_VIDEO_DISPLAY_CELLS, Math.ceil(rootCellCount * multiplier * sizeFactor)));
+function getTrackPartitionExpansionDepth(rootCellCount, profile, maxCells) {
+  if (!profile.maxDepth || !Array.isArray(profile.modes) || !profile.modes.length) return 0;
+  const maximumFanOut = getFullDepthSplitReserve(profile);
+  const cellLimit = Math.max(1, maxCells || MAX_VIDEO_DISPLAY_CELLS);
+  let expansionDepth = 0;
+  let worstCaseCellCount = Math.max(1, rootCellCount);
+  while (expansionDepth < profile.maxDepth && worstCaseCellCount * maximumFanOut <= cellLimit) {
+    worstCaseCellCount *= maximumFanOut;
+    expansionDepth += 1;
+  }
+  return expansionDepth;
 }
 
 function estimateVideoPartitionCellCount(options) {
   const profile = options.descriptor.partitionProfile || getDefaultPartitionProfile(options.descriptor);
   const rootLayout = getPartitionRootLayout({ ...options, maxCells: MAX_VIDEO_DISPLAY_CELLS }, profile);
-  const rootCellCount = rootLayout.columns * rootLayout.rows;
-  const multiplier = profile.targetMultiplier && profile.targetMultiplier.default || 1;
-  return Math.max(1, Math.min(MAX_VIDEO_DISPLAY_CELLS, Math.ceil(rootCellCount * multiplier)));
+  let cellCount = rootLayout.columns * rootLayout.rows;
+  const maximumFanOut = getFullDepthSplitReserve(profile);
+  const expansionDepth = getTrackPartitionExpansionDepth(cellCount, profile, MAX_VIDEO_DISPLAY_CELLS);
+  for (let depth = 0; depth < expansionDepth; depth += 1) {
+    cellCount *= maximumFanOut;
+  }
+  return Math.max(1, Math.min(MAX_VIDEO_DISPLAY_CELLS, cellCount));
 }
 
 function assignPartitionByteEstimates(cells, options) {
   let totalWeight = 0;
   const frameArea = Math.max(1, options.width * options.height);
   for (const cell of cells) {
-    const centerColumn = (cell.pixelLeft + cell.pixelRight) / 2 / Math.max(1, options.width);
-    const centerRow = (cell.pixelTop + cell.pixelBottom) / 2 / Math.max(1, options.height);
+    const centerColumn = clamp((cell.pixelLeft + cell.pixelRight) / 2 / Math.max(1, options.width), 0, 1);
+    const centerRow = clamp((cell.pixelTop + cell.pixelBottom) / 2 / Math.max(1, options.height), 0, 1);
     const area = Math.max(1, cell.blockWidth * cell.blockHeight);
     const areaWeight = Math.sqrt(area / Math.max(1, options.descriptor.unitWidth * options.descriptor.unitHeight));
     const depthWeight = 1 + cell.depth * 0.17;
@@ -706,10 +670,6 @@ function summarizePartitionCells(cells) {
       .sort((left, right) => right[1] - left[1])
       .map(([mode, count]) => ({ mode, count }))
   };
-}
-
-function normalizeFrameType(frameType) {
-  return String(frameType || "").toUpperCase();
 }
 
 function applyVideoColorScale(cells, colorScale) {
