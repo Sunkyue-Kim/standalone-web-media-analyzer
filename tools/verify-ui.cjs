@@ -7,6 +7,9 @@ const htmlPath = path.join(rootDirectory, "mp4-analyzer.html");
 const sourceHtmlPath = path.join(rootDirectory, "src", "index.html");
 const sourceStylePath = path.join(rootDirectory, "src", "styles.css");
 const sourceUiPath = path.join(rootDirectory, "src", "js", "ui", "analyzer-ui.js");
+const sourceBoxDetailModelPath = path.join(rootDirectory, "src", "js", "ui", "box-detail-model.js");
+const sourceFrameInternalsViewPath = path.join(rootDirectory, "src", "js", "ui", "frame-internals-view.js");
+const sourceJsonViewerPath = path.join(rootDirectory, "src", "js", "ui", "json-viewer.js");
 const samplePath = path.join(rootDirectory, "validation", "generated", "avc_fragmented.mp4");
 const webmSamplePath = path.join(rootDirectory, "validation", "generated", "webm_vp9_opus.webm");
 const audioSamplePath = path.join(rootDirectory, "validation", "generated", "audio_mp3.mp3");
@@ -451,6 +454,9 @@ function verifyNoExecutableStatementsAfterUserInterfaceReturn(sourceUi) {
 async function main() {
   const sourceHtml = fs.readFileSync(sourceHtmlPath, "utf8");
   const sourceUi = fs.readFileSync(sourceUiPath, "utf8");
+  const sourceBoxDetailModel = fs.readFileSync(sourceBoxDetailModelPath, "utf8");
+  const sourceFrameInternalsView = fs.readFileSync(sourceFrameInternalsViewPath, "utf8");
+  const sourceJsonViewer = fs.readFileSync(sourceJsonViewerPath, "utf8");
   verifyResponsiveLayoutCss();
   verifyNoExecutableStatementsAfterUserInterfaceReturn(sourceUi);
 
@@ -511,19 +517,19 @@ async function main() {
   if (/metric-axis-label/.test(sourceUi)) {
     throw new Error("Metric chart must not render axis text inside the stretched SVG.");
   }
-  if (!/renderFrameInternalsTooltipAttributes/.test(sourceUi) || !/handleFrameInternalsTooltipPointerOver/.test(sourceUi)) {
+  if (!/renderFrameInternalsTooltipAttributes/.test(sourceFrameInternalsView) || !/handleFrameInternalsTooltipPointerOver/.test(sourceUi)) {
     throw new Error("Frame internals block details must use the custom tooltip controller.");
   }
   if (!/buildFrameInternalsColorScale/.test(sourceUi) || !/frameInternalsColorScaleCache/.test(sourceUi)) {
     throw new Error("Frame internals must cache a global percentile color scale per video track.");
   }
-  if (!/globalPercentile/.test(sourceUi) || !/--cell-red:/.test(sourceUi)) {
+  if (!/globalPercentile/.test(sourceFrameInternalsView) || !/--cell-red:/.test(sourceFrameInternalsView)) {
     throw new Error("Frame internals block colors must render percentile-based RGB heatmap variables.");
   }
-  if (!/data-inspection-tooltip=/.test(sourceUi)) {
+  if (!/data-inspection-tooltip=/.test(sourceFrameInternalsView)) {
     throw new Error("Frame internals hover targets must carry structured custom tooltip data.");
   }
-  if (/block-cell [^"']+["'][\s\S]{0,200}title=/.test(sourceUi) || /audio-band-row["'][\s\S]{0,200}title=/.test(sourceUi)) {
+  if (/block-cell [^"']+["'][\s\S]{0,200}title=/.test(sourceFrameInternalsView) || /audio-band-row["'][\s\S]{0,200}title=/.test(sourceFrameInternalsView)) {
     throw new Error("Frame internals must not fall back to OS title tooltips for block or band details.");
   }
   if (!/tree-row/.test(sourceUi) || !/data-path=/.test(sourceUi)) {
@@ -532,10 +538,10 @@ async function main() {
   if (!/type="button" class="tree-row/.test(sourceUi)) {
     throw new Error("Box tree rows must be explicit buttons.");
   }
-  if (!/renderJsonViewer/.test(sourceUi) || !/getDerivedBoxFields/.test(sourceUi) || !/getSyntheticBoxChildren/.test(sourceUi)) {
+  if (!/renderJsonViewer/.test(sourceUi) || !/getDerivedBoxFields/.test(sourceBoxDetailModel) || !/getSyntheticBoxChildren/.test(sourceBoxDetailModel)) {
     throw new Error("Box details must use the collapsible JSON viewer and synthetic stsd child model.");
   }
-  if (!/SAMPLE_ENTRY_DERIVED_FIELD_NAMES/.test(sourceUi) || !/JSON_BYTE_PREVIEW_COUNT/.test(sourceUi)) {
+  if (!/SAMPLE_ENTRY_DERIVED_FIELD_NAMES/.test(sourceBoxDetailModel) || !/JSON_BYTE_PREVIEW_COUNT/.test(sourceJsonViewer)) {
     throw new Error("Box details must separate derived sample-entry fields and collapse bytes arrays.");
   }
   if (!/boxTree\.addEventListener\("click", handleBoxTreeClick\)/.test(sourceUi) || !/boxTree\.addEventListener\("pointerup", handleBoxTreePointerUp\)/.test(sourceUi)) {

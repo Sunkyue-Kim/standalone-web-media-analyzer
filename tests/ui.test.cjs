@@ -286,6 +286,165 @@ test("summary codec track counts only include present codec groups", async () =>
   assert.deepEqual(JSON.parse(JSON.stringify(getVisibleSummaryCodecTrackCounts([{ codec: "raw " }]))), []);
 });
 
+test("media row and metrics models keep timing calculations reusable outside UI state", async () => {
+  const loader = await createSourceModuleLoader();
+  const rowModel = await loader.import("src/js/ui/media-row-model.js");
+  const metricsModel = await loader.import("src/js/ui/metrics-model.js");
+  const track = { trackId: 1, handlerType: "vide", timescale: 1000, duration: "3000" };
+  const rows = [
+    { trackId: 1, sampleIndex: 1, dts: 1000, pts: 2000, duration: 500, size: 100, frameType: "I", isSync: true },
+    { trackId: 1, sampleIndex: 2, dts: 1500, pts: 1000, duration: 500, size: 200, frameType: "B", isSync: false },
+    { trackId: 1, sampleIndex: 3, dts: 2000, pts: 1500, duration: 500, size: 300, frameType: "P", isSync: true }
+  ];
+  const getTrack = () => track;
+
+  assert.deepEqual(rows.slice().sort((left, right) => rowModel.compareRowsByPresentationTime(left, right, getTrack)).map((row) => row.sampleIndex), [2, 3, 1]);
+  assert.deepEqual(rows.slice().sort((left, right) => rowModel.compareRowsByDecodeTime(left, right, getTrack)).map((row) => row.sampleIndex), [1, 2, 3]);
+  assert.equal(rowModel.getRowTimeSeconds(rows[0], getTrack), 2);
+  assert.equal(rowModel.getRowDecodeTimeSeconds(rows[0], getTrack), 1);
+  assert.equal(rowModel.getRowDurationSeconds(rows[0], getTrack), 0.5);
+  assert.equal(rowModel.getFirstFiniteNumber(["", null, undefined, "4"], 0), 4);
+
+  const summary = metricsModel.getTrackSummaryMetrics(track, rows);
+  const metrics = metricsModel.buildTrackMetrics(track, rows, 2, { getDefaultSampleFrameType: () => "sample" });
+  assert.equal(summary.averageSampleSize, 200);
+  assert.equal(metrics.movingAveragePoints.length, 2);
+  assert.equal(metrics.summary.medianSampleSize, 200);
+  assert.equal(metrics.frameTypeCounts.get("I"), 1);
+  assert.deepEqual(metrics.topSizeRows.map((row) => row.sampleIndex), [3, 2, 1]);
+});
+
+test("JSON viewer module renders bytes, hex dumps, and empty values", async () => {
+  const loader = await createSourceModuleLoader();
+  const jsonViewer = await loader.import("src/js/ui/json-viewer.js");
+
+  assert.match(jsonViewer.renderJsonViewer({ bytes: [0, 15, 255], hexDump: ["00000000  00 0f ff  |...|"] }), /json-byte-array/);
+  assert.match(jsonViewer.renderJsonViewer({ bytes: [0, 15, 255], hexDump: ["00000000  00 0f ff  |...|"] }), /json-hex-dump/);
+  assert.equal(jsonViewer.isHexDumpField("hexDump", ["00"]), true);
+  assert.equal(jsonViewer.isHexDumpField("hexDump", [0]), false);
+  assert.match(jsonViewer.renderJsonViewer({ value: 9n }), /&quot;9&quot;|9/);
+  assert.match(jsonViewer.renderJsonViewer({}), /json-empty/);
+});
+
+test("box detail model separates actual stsd fields, synthetic children, and derived convenience data", async () => {
+  const loader = await createSourceModuleLoader();
+  const boxDetailModel = await loader.import("src/js/ui/box-detail-model.js");
+  const stsdNode = {
+    type: "stsd",
+    path: "/moov/trak/mdia/minf/stbl/stsd",
+    offset: 100,
+    size: 91,
+    fields: {
+      version: 0,
+      flags: 0,
+      entryCount: 1,
+      entries: [
+        {
+          index: 1,
+          format: "mp4a",
+          size: 75,
+          dataReferenceIndex: 1,
+          channelCount: 2,
+          codecDescriptor: "aac",
+          codecConfig: { codecString: "mp4a.40.2" },
+          esds: { objectTypeIndication: 64 },
+          boxes: [
+            { type: "esds", size: 39, fields: { audioConfig: { codecString: "mp4a.40.2" } } }
+          ]
+        }
+      ]
+    },
+    children: []
+  };
+
+  const actualFields = boxDetailModel.getActualBoxFields(stsdNode);
+  const derivedFields = boxDetailModel.getDerivedBoxFields(stsdNode);
+  const syntheticChildren = boxDetailModel.getBoxNodeChildren(stsdNode);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(actualFields.entries[0].boxes[0])), {
+    index: 1,
+    type: "esds",
+    size: 39,
+    parsedFieldKeys: ["audioConfig"]
+  });
+  assert.equal(actualFields.entries[0].codecConfig, undefined);
+  assert.equal(actualFields.entries[0].esds, undefined);
+  assert.equal(derivedFields.sampleEntries[0].codecConfig.codecString, "mp4a.40.2");
+  assert.equal(derivedFields.sampleEntries[0].esds.objectTypeIndication, 64);
+  assert.equal(syntheticChildren[0].syntheticKind, "sample-entry");
+  assert.equal(syntheticChildren[0].children[0].type, "esds");
+  assert.match(boxDetailModel.formatBoxTypeLabel("stsd"), /stsd \(/);
+  assert.match(boxDetailModel.getBoxTypeDescription("unknown-box"), /No built-in description|사용 가능한 기본 설명/);
+});
+
+test("frame internals view renders reusable video, audio, and tooltip markup", async () => {
+  const loader = await createSourceModuleLoader();
+  const frameInternalsView = await loader.import("src/js/ui/frame-internals-view.js");
+  const videoHtml = frameInternalsView.renderVideoFrameInternals({
+    kind: "video-grid",
+    title: "AVC macroblock grid",
+    codecFamily: "AVC / H.264",
+    frameType: "I",
+    unitName: "macroblock",
+    unitWidth: 16,
+    unitHeight: 16,
+    mediaWidth: 32,
+    mediaHeight: 16,
+    nominalColumns: 2,
+    nominalRows: 1,
+    nominalUnitCount: 2,
+    displayColumns: 2,
+    displayRows: 1,
+    aggregation: 1,
+    sampleSize: 1000,
+    note: "nominal",
+    colorScale: { mode: "global-track-percentile", sampleCount: 2, valueCount: 4 },
+    cells: [
+      {
+        unitColumnStart: 0,
+        unitColumnEnd: 1,
+        unitRowStart: 0,
+        unitRowEnd: 1,
+        pixelLeft: 0,
+        pixelTop: 0,
+        pixelRight: 16,
+        pixelBottom: 16,
+        estimatedBytes: 500,
+        globalPercentile: 0.75,
+        nominalUnits: 1,
+        color: { red: 1, green: 2, blue: 3 },
+        intensity: 0.5
+      }
+    ]
+  }, { frameLabel: "T1 #1" });
+  const audioHtml = frameInternalsView.renderAudioFrameInternals({
+    kind: "audio-bands",
+    title: "AAC",
+    frameType: "AAC",
+    sampleSize: 200,
+    sampleRate: 48000,
+    activeBandwidthHz: 12000,
+    channelCount: 2,
+    note: "estimated",
+    bands: [
+      { label: "Low", range: "0-1 kHz", ratio: 0.5, active: true, intensity: 0.8, estimatedBytes: 100 }
+    ]
+  }, { frameLabel: "T2 #3" });
+  const tooltipHtml = frameInternalsView.renderFrameInternalsTooltip({
+    title: "Cell",
+    rows: [["Bytes", "500 B"]],
+    note: "Estimated"
+  });
+
+  assert.match(videoHtml, /block-cell i/);
+  assert.match(videoHtml, /data-inspection-tooltip=/);
+  assert.match(videoHtml, /--cell-red:1;--cell-green:2;--cell-blue:3;--cell-alpha:0\.500/);
+  assert.match(audioHtml, /audio-band-row/);
+  assert.match(audioHtml, /12\.0 kHz/);
+  assert.match(tooltipHtml, /tooltip-title/);
+  assert.equal(frameInternalsView.formatFrameTypeLabel("unknown"), "unknown");
+});
+
 test("analysis worker client falls back to direct core and preserves progress, scan, and cancel hooks", async () => {
   const loader = await createSourceModuleLoader();
   const { createAnalysisWorkerClient } = await loader.import("src/js/ui/analysis-worker-client.js");
@@ -715,6 +874,11 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   const sourceHtml = fs.readFileSync(path.join(rootDirectory, "src", "index.html"), "utf8");
   const sourceCss = fs.readFileSync(path.join(rootDirectory, "src", "styles.css"), "utf8");
   const sourceUi = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "analyzer-ui.js"), "utf8");
+  const sourceBoxDetailModel = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "box-detail-model.js"), "utf8");
+  const sourceFrameInternalsView = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "frame-internals-view.js"), "utf8");
+  const sourceJsonViewer = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "json-viewer.js"), "utf8");
+  const sourceMediaRowModel = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "media-row-model.js"), "utf8");
+  const sourceMetricsModel = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "metrics-model.js"), "utf8");
   const sourceMediaSource = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "media-source.js"), "utf8");
   const sourceWorker = fs.readFileSync(path.join(rootDirectory, "src", "js", "worker", "analyzer-worker.js"), "utf8");
   const builtHtml = fs.readFileSync(path.join(rootDirectory, "mp4-analyzer.html"), "utf8");
@@ -750,13 +914,23 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceUi, /getPlaybackSynchronizationDebug/);
   assert.match(sourceUi, /synchronizeFragmentSelectionToPlayback/);
   assert.match(sourceUi, /handleFragmentRowPointerActivation/);
-  assert.match(sourceUi, /renderJsonViewer/);
-  assert.match(sourceUi, /renderJsonHexDump/);
-  assert.match(sourceUi, /isHexDumpField/);
-  assert.match(sourceUi, /getSyntheticBoxChildren/);
-  assert.match(sourceUi, /getDerivedBoxFields/);
-  assert.match(sourceUi, /SAMPLE_ENTRY_DERIVED_FIELD_NAMES/);
-  assert.match(sourceUi, /JSON_BYTE_PREVIEW_COUNT/);
+  assert.match(sourceUi, /from "\.\/json-viewer\.js"/);
+  assert.match(sourceUi, /from "\.\/box-detail-model\.js"/);
+  assert.match(sourceBoxDetailModel, /getSyntheticBoxChildren/);
+  assert.match(sourceBoxDetailModel, /getDerivedBoxFields/);
+  assert.match(sourceBoxDetailModel, /SAMPLE_ENTRY_DERIVED_FIELD_NAMES/);
+  assert.doesNotMatch(sourceUi, /function getSyntheticBoxChildren/);
+  assert.doesNotMatch(sourceUi, /SAMPLE_ENTRY_DERIVED_FIELD_NAMES/);
+  assert.match(sourceJsonViewer, /renderJsonViewer/);
+  assert.match(sourceJsonViewer, /renderJsonHexDump/);
+  assert.match(sourceJsonViewer, /isHexDumpField/);
+  assert.match(sourceJsonViewer, /JSON_BYTE_PREVIEW_COUNT/);
+  assert.match(sourceUi, /from "\.\/media-row-model\.js"/);
+  assert.match(sourceUi, /from "\.\/metrics-model\.js"/);
+  assert.match(sourceMediaRowModel, /compareRowsByPresentationTime/);
+  assert.match(sourceMediaRowModel, /getRowDecodeTimeSeconds/);
+  assert.match(sourceMetricsModel, /buildTrackMetrics/);
+  assert.match(sourceMetricsModel, /buildMovingAveragePoints/);
   assert.match(sourceCss, /\.json-view\s*\{[\s\S]*?overflow-x:\s*auto;/);
   assert.match(sourceCss, /\.json-entry\s*\{[\s\S]*?min-width:\s*max\(100%,\s*560px\);/);
   assert.match(sourceCss, /\.json-entry\s*\{[\s\S]*?grid-template-columns:\s*minmax\(124px,\s*180px\)\s*minmax\(240px,\s*1fr\);/);
@@ -767,19 +941,23 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceUi, /buildFrameInternalsColorScale/);
   assert.match(sourceUi, /frameInternalsColorScaleCache/);
   assert.match(sourceUi, /renderFrameInternals/);
-  assert.match(sourceUi, /renderFrameInternalsTooltipAttributes/);
+  assert.match(sourceUi, /from "\.\/frame-internals-view\.js"/);
+  assert.match(sourceFrameInternalsView, /renderFrameInternalsTooltipAttributes/);
+  assert.match(sourceFrameInternalsView, /renderVideoFrameInternals/);
+  assert.match(sourceFrameInternalsView, /renderAudioFrameInternals/);
+  assert.doesNotMatch(sourceUi, /function renderVideoFrameInternals/);
   assert.match(sourceUi, /handleFrameInternalsTooltipPointerOver/);
-  assert.match(sourceUi, /data-inspection-tooltip/);
-  assert.match(sourceUi, /--cell-red:/);
-  assert.match(sourceUi, /globalPercentile/);
+  assert.match(sourceFrameInternalsView, /data-inspection-tooltip/);
+  assert.match(sourceFrameInternalsView, /--cell-red:/);
+  assert.match(sourceFrameInternalsView, /globalPercentile/);
   assert.match(sourceCss, /\.graph-bar\.i\s*\{\s*background:\s*#07844a;/);
   assert.match(sourceCss, /\.graph-bar\.p\s*\{\s*background:\s*#1d4ed8;/);
   assert.match(sourceCss, /\.graph-bar\.b\s*\{\s*background:\s*#7c3aed;/);
   assert.match(sourceCss, /\.pill\.i\s*\{\s*color:\s*#067647;/);
   assert.match(sourceCss, /\.pill\.p\s*\{\s*color:\s*#1d4ed8;/);
   assert.match(sourceCss, /\.pill\.b\s*\{\s*color:\s*#6d28d9;/);
-  assert.doesNotMatch(sourceUi, /block-cell [^"']+["'][\s\S]{0,200}title=/);
-  assert.doesNotMatch(sourceUi, /audio-band-row["'][\s\S]{0,200}title=/);
+  assert.doesNotMatch(sourceFrameInternalsView, /block-cell [^"']+["'][\s\S]{0,200}title=/);
+  assert.doesNotMatch(sourceFrameInternalsView, /audio-band-row["'][\s\S]{0,200}title=/);
   assert.match(sourceUi, /createDataGridLayout/);
   assert.match(sourceUi, /renderDataGridCells/);
   assert.match(sourceUi, /frameTableRecycler\.setRows\(rows\)/);

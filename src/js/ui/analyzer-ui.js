@@ -3,7 +3,6 @@ import {
   GRAPH_ROW_HEIGHT,
   METRIC_CHART_WIDTH,
   METRIC_CHART_HEIGHT,
-  BOX_TYPE_INFO,
   clamp,
   formatBytes,
   formatBitsPerSecond,
@@ -19,7 +18,6 @@ import {
 } from "../core/analyzer-core.js";
 import {
   I18N,
-  BOX_TYPE_I18N,
   getLanguage,
   setLanguage as setI18nLanguage,
   t
@@ -38,6 +36,33 @@ import {
   createMediaPreviewPlan,
   shouldDownloadRemoteOnceForSharedPlayback
 } from "./media-source.js";
+import { renderJsonViewer } from "./json-viewer.js";
+import {
+  compareRowsByDecodeTime as compareRowsByDecodeTimeModel,
+  compareRowsByPresentationTime as compareRowsByPresentationTimeModel,
+  getFirstFiniteNumber,
+  getRowDecodeTimeSeconds as getRowDecodeTimeSecondsModel,
+  getRowDurationSeconds as getRowDurationSecondsModel,
+  getRowTimeSeconds as getRowTimeSecondsModel
+} from "./media-row-model.js";
+import {
+  buildTrackMetrics as buildMetricsForTrackRows,
+  getTrackSummaryMetrics as getTrackSummaryMetricsForRows
+} from "./metrics-model.js";
+import {
+  formatBoxNodeSize,
+  formatBoxTypeLabel,
+  getActualBoxFields,
+  getBoxNodeChildren,
+  getBoxTypeDescription,
+  getDerivedBoxFields
+} from "./box-detail-model.js";
+import {
+  formatFrameTypeLabel,
+  renderAudioFrameInternals,
+  renderFrameInternalsTooltip,
+  renderVideoFrameInternals
+} from "./frame-internals-view.js";
 import { getVisibleSummaryCodecTrackCounts } from "./summary-model.js";
 import {
   canUseSampleCatalogLocation,
@@ -52,9 +77,6 @@ export function startUserInterface(Core, options = {}) {
   if (typeof document === "undefined" || !document.getElementById) return;
 const FRAME_TABLE_HEADER_HEIGHT = 34;
 const FRAME_TABLE_MINIMUM_WIDTH = "1048px";
-const SAMPLE_ENTRY_DERIVED_FIELD_NAMES = new Set(["codecDescriptor", "codecConfig", "esds"]);
-const JSON_BYTE_PREVIEW_COUNT = 16;
-const JSON_BYTE_EXPANDED_LIMIT = 2048;
 const state = {
   analysis: null,
   language: options.initialLanguage || getLanguage(),
@@ -234,14 +256,14 @@ const devToolsApi = {
     const track = getSelectedMetricsTrack();
     if (!track) return null;
     const rows = getRowsForTrack(track.trackId);
-    return buildTrackMetrics(track, rows, getMetricsWindowSize()).summary;
+    return buildMetricsForTrackRows(track, rows, getMetricsWindowSize(), { getDefaultSampleFrameType }).summary;
   },
   getMetricsDebug: () => {
     const track = getSelectedMetricsTrack();
     if (!track) return null;
     const rows = getRowsForTrack(track.trackId);
     const windowSize = getMetricsWindowSize();
-    const metrics = buildTrackMetrics(track, rows, windowSize);
+    const metrics = buildMetricsForTrackRows(track, rows, windowSize, { getDefaultSampleFrameType });
     return {
       trackId: track.trackId,
       windowSize,
@@ -1361,233 +1383,6 @@ function renderSelectedBox() {
     '</section>' + derivedHtml + '</div></div>';
 }
 
-function getBoxNodeChildren(node) {
-  return [...(node && node.children || []), ...getSyntheticBoxChildren(node)];
-}
-
-function getSyntheticBoxChildren(node) {
-  if (!node || node.synthetic || node.type !== "stsd" || !node.fields || !Array.isArray(node.fields.entries)) return [];
-  return node.fields.entries.map((entry) => createSyntheticSampleEntryNode(node, entry));
-}
-
-function createSyntheticSampleEntryNode(parentNode, entry) {
-  const path = parentNode.path + "/entry[" + entry.index + "]:" + entry.format;
-  return {
-    type: entry.format,
-    path,
-    offset: parentNode.offset || "",
-    size: entry.size,
-    headerSize: 0,
-    children: (entry.boxes || []).map((childBox, childIndex) => createSyntheticSampleEntryChildNode(path, parentNode, childBox, childIndex)),
-    fields: createActualSampleEntryFields(entry),
-    warnings: [],
-    synthetic: true,
-    syntheticKind: "sample-entry",
-    sourceBoxPath: parentNode.path,
-    sourceEntry: entry
-  };
-}
-
-function createSyntheticSampleEntryChildNode(sampleEntryPath, parentNode, childBox, childIndex) {
-  return {
-    type: childBox.type,
-    path: sampleEntryPath + "/" + childBox.type + "[" + (childIndex + 1) + "]",
-    offset: parentNode.offset || "",
-    size: childBox.size,
-    headerSize: 8,
-    children: [],
-    fields: childBox.fields || {},
-    warnings: [],
-    synthetic: true,
-    syntheticKind: "sample-entry-child-box",
-    sourceBoxPath: parentNode.path
-  };
-}
-
-function formatBoxNodeSize(node) {
-  const formattedSize = Number.isFinite(Number(node.size)) ? String(node.size) + " (" + formatBytes(Number(node.size)) + ")" : t("value.notAvailable");
-  if (node.synthetic) return formattedSize + " · " + t("boxes.synthetic");
-  return formattedSize + " @ " + String(node.offset || "");
-}
-
-function getActualBoxFields(node) {
-  if (!node || !node.fields) return {};
-  if (node.syntheticKind === "sample-entry" && node.sourceEntry) return createActualSampleEntryFields(node.sourceEntry);
-  if (node.type === "stsd") return createActualStsdFields(node.fields);
-  return node.fields;
-}
-
-function createActualStsdFields(fields) {
-  return {
-    version: fields.version,
-    flags: fields.flags,
-    entryCount: fields.entryCount,
-    entries: Array.isArray(fields.entries) ? fields.entries.map(createActualSampleEntryFields) : []
-  };
-}
-
-function createActualSampleEntryFields(entry) {
-  const actualFields = {};
-  for (const [fieldName, value] of Object.entries(entry || {})) {
-    if (SAMPLE_ENTRY_DERIVED_FIELD_NAMES.has(fieldName)) continue;
-    if (fieldName === "boxes") {
-      actualFields.boxes = (value || []).map((childBox, childIndex) => ({
-        index: childIndex + 1,
-        type: childBox.type,
-        size: childBox.size,
-        parsedFieldKeys: childBox.fields ? Object.keys(childBox.fields) : []
-      }));
-    } else {
-      actualFields[fieldName] = value;
-    }
-  }
-  return actualFields;
-}
-
-function getDerivedBoxFields(node) {
-  if (!node) return null;
-  if (node.syntheticKind === "sample-entry" && node.sourceEntry) {
-    const sampleEntryDerivedFields = createSampleEntryDerivedFields(node.sourceEntry);
-    return sampleEntryDerivedFields ? { sourceBoxPath: node.sourceBoxPath, sampleEntry: sampleEntryDerivedFields } : null;
-  }
-  if (node.type !== "stsd" || !node.fields || !Array.isArray(node.fields.entries)) return null;
-  const sampleEntries = node.fields.entries
-    .map(createSampleEntryDerivedFields)
-    .filter(Boolean);
-  return sampleEntries.length ? { sourceBoxPath: node.path, sampleEntries } : null;
-}
-
-function createSampleEntryDerivedFields(entry) {
-  const derivedFields = { index: entry.index, format: entry.format };
-  let hasDerivedFields = false;
-  for (const fieldName of SAMPLE_ENTRY_DERIVED_FIELD_NAMES) {
-    if (entry && entry[fieldName] !== undefined) {
-      derivedFields[fieldName] = entry[fieldName];
-      hasDerivedFields = true;
-    }
-  }
-  return hasDerivedFields ? derivedFields : null;
-}
-
-function renderJsonViewer(value, options = {}) {
-  const normalizedValue = normalizeJsonValue(value);
-  if (isEmptyJsonValue(normalizedValue)) {
-    return '<div class="json-empty">' + escapeHtml(t("boxes.emptyFields")) + '</div>';
-  }
-  return '<div class="json-view">' + renderJsonValue(normalizedValue, {
-    key: options.rootLabel || "root",
-    depth: 0,
-    isRoot: true,
-    defaultOpenDepth: options.defaultOpenDepth || 1
-  }) + '</div>';
-}
-
-function renderJsonValue(value, context) {
-  if (Array.isArray(value)) return renderJsonArray(value, context);
-  if (value && typeof value === "object") return renderJsonObject(value, context);
-  return renderJsonScalar(value);
-}
-
-function renderJsonObject(value, context) {
-  const entries = Object.entries(value);
-  if (context.isRoot) {
-    return entries.map(([fieldName, fieldValue]) => renderJsonEntry(fieldName, fieldValue, context.depth, context.defaultOpenDepth)).join("");
-  }
-  const openAttribute = context.depth < context.defaultOpenDepth ? " open" : "";
-  return '<details class="json-node json-object"' + openAttribute + '><summary><span class="json-summary-type">{ }</span><span class="json-preview">' +
-    escapeHtml(t("boxes.jsonProperties", { count: entries.length })) + '</span></summary><div class="json-children">' +
-    entries.map(([fieldName, fieldValue]) => renderJsonEntry(fieldName, fieldValue, context.depth + 1, context.defaultOpenDepth)).join("") +
-    '</div></details>';
-}
-
-function renderJsonArray(value, context) {
-  if (isByteArrayField(context.key, value)) return renderJsonByteArray(value);
-  if (isHexDumpField(context.key, value)) return renderJsonHexDump(value);
-  const openAttribute = context.depth < context.defaultOpenDepth && value.length <= 20 ? " open" : "";
-  return '<details class="json-node json-array"' + openAttribute + '><summary><span class="json-summary-type">[ ]</span><span class="json-preview">' +
-    escapeHtml(t("boxes.jsonItems", { count: value.length })) + createJsonArrayPreview(value) + '</span></summary><div class="json-children">' +
-    value.map((item, index) => renderJsonEntry(String(index), item, context.depth + 1, context.defaultOpenDepth)).join("") +
-    '</div></details>';
-}
-
-function renderJsonEntry(fieldName, fieldValue, depth, defaultOpenDepth) {
-  return '<div class="json-entry" style="--json-depth:' + depth + '"><span class="json-key">' + escapeHtml(fieldName) + '</span><div class="json-value">' +
-    renderJsonValue(fieldValue, { key: fieldName, depth, isRoot: false, defaultOpenDepth }) + '</div></div>';
-}
-
-function renderJsonScalar(value) {
-  const type = value === null ? "null" : typeof value;
-  return '<span class="json-scalar ' + escapeHtml(type) + '">' + escapeHtml(formatJsonScalar(value)) + '</span>';
-}
-
-function renderJsonByteArray(value) {
-  const preview = value.slice(0, JSON_BYTE_PREVIEW_COUNT).map(formatByteAsHex).join(" ");
-  const expandedValues = value.slice(0, JSON_BYTE_EXPANDED_LIMIT).map(formatByteAsHex).join(" ");
-  const truncatedHtml = value.length > JSON_BYTE_EXPANDED_LIMIT ? '<div class="json-byte-truncation">' +
-    escapeHtml(t("boxes.bytesTruncated", { shown: JSON_BYTE_EXPANDED_LIMIT, count: value.length })) + '</div>' : "";
-  return '<details class="json-node json-byte-array"><summary><span class="json-summary-type">bytes</span><span class="json-preview">' +
-    escapeHtml(t("boxes.bytesPreview", { count: value.length, preview })) + '</span></summary><code class="json-byte-dump">' +
-    escapeHtml(expandedValues) + '</code>' + truncatedHtml + '</details>';
-}
-
-function renderJsonHexDump(value) {
-  return '<details class="json-node json-hex-dump" open><summary><span class="json-summary-type">hex</span><span class="json-preview">' +
-    escapeHtml(t("boxes.hexRows", { count: value.length })) + '</span></summary><code class="json-byte-dump">' +
-    escapeHtml(value.join("\n")) + '</code></details>';
-}
-
-function normalizeJsonValue(value) {
-  return JSON.parse(JSON.stringify(value === undefined ? null : value, safeJsonReplacer));
-}
-
-function isEmptyJsonValue(value) {
-  if (value === null || value === undefined) return true;
-  if (Array.isArray(value)) return value.length === 0;
-  return typeof value === "object" && Object.keys(value).length === 0;
-}
-
-function isByteArrayField(fieldName, value) {
-  return fieldName === "bytes" && value.every((item) => Number.isInteger(item) && item >= 0 && item <= 255);
-}
-
-function isHexDumpField(fieldName, value) {
-  return fieldName === "hexDump" && value.every((item) => typeof item === "string");
-}
-
-function createJsonArrayPreview(value) {
-  if (!value.length || value.length > 6 || value.some((item) => item && typeof item === "object")) return "";
-  return ' · <span class="json-inline-preview">' + escapeHtml(value.map(formatJsonScalar).join(", ")) + '</span>';
-}
-
-function formatJsonScalar(value) {
-  if (typeof value === "string") return '"' + value + '"';
-  if (value === null) return "null";
-  return String(value);
-}
-
-function formatByteAsHex(value) {
-  return Number(value).toString(16).padStart(2, "0").toUpperCase();
-}
-
-function formatBoxTypeLabel(type) {
-  const info = BOX_TYPE_INFO[type];
-  const localized = getLocalizedBoxInfo(type);
-  return info ? type + " (" + localized.name + ")" : type + " (" + t("boxes.unknownType") + ")";
-}
-
-function getBoxTypeDescription(type) {
-  return getLocalizedBoxInfo(type).description;
-}
-
-function getLocalizedBoxInfo(type) {
-  const info = BOX_TYPE_INFO[type];
-  if (!info) return { name: t("boxes.unknownType"), description: t("boxes.noDescription") };
-  const language = getLanguage();
-  const localized = BOX_TYPE_I18N[language] && BOX_TYPE_I18N[language][type];
-  if (!localized) return info;
-  return { name: localized[0], description: localized[1] };
-}
-
 function renderTracks() {
   const analysis = state.analysis;
   if (!analysis.tracks.length) {
@@ -1695,7 +1490,7 @@ function renderMetrics() {
   }
   const windowSize = getMetricsWindowSize();
   const pointLimit = getMetricsPointLimit();
-  const metrics = buildTrackMetrics(track, rows, windowSize);
+  const metrics = buildMetricsForTrackRows(track, rows, windowSize, { getDefaultSampleFrameType });
   elements.metricsBody.innerHTML = renderMetricsBody(track, metrics, pointLimit);
 }
 
@@ -1727,125 +1522,7 @@ function getMetricsPointLimit() {
 function getTrackSummaryMetrics(track) {
   if (!state.analysis || !track) return null;
   const rows = getRowsForTrack(track.trackId);
-  if (!rows.length) return null;
-  const totalBytes = rows.reduce((sum, row) => sum + (Number(row.size) || 0), 0);
-  const totalDuration = getRowsDurationSeconds(track, rows);
-  if (!totalDuration) return null;
-  return {
-    averageBitrate: totalBytes * 8 / totalDuration,
-    sampleRate: rows.length / totalDuration,
-    averageSampleSize: totalBytes / rows.length
-  };
-}
-
-function buildTrackMetrics(track, rows, windowSize) {
-  const totalBytes = rows.reduce((sum, row) => sum + (Number(row.size) || 0), 0);
-  const totalDuration = getRowsDurationSeconds(track, rows);
-  const sizes = rows.map((row) => Number(row.size) || 0).sort((left, right) => left - right);
-  const frameTypeCounts = new Map();
-  for (const row of rows) {
-    const frameType = row.frameType || getDefaultSampleFrameType(track) || "sample";
-    frameTypeCounts.set(frameType, (frameTypeCounts.get(frameType) || 0) + 1);
-  }
-  const movingAveragePoints = buildMovingAveragePoints(track, rows, windowSize);
-  const bitrateValues = movingAveragePoints.map((point) => point.bitrate).filter(Number.isFinite);
-  const fpsValues = movingAveragePoints.map((point) => point.fps).filter(Number.isFinite);
-  const syncRows = rows.filter((row) => row.isSync);
-  const keyframeIntervals = [];
-  for (let index = 1; index < syncRows.length; index += 1) {
-    keyframeIntervals.push(Math.max(0, getRowTimeSeconds(syncRows[index]) - getRowTimeSeconds(syncRows[index - 1])));
-  }
-  return {
-    rows,
-    movingAveragePoints,
-    summary: {
-      durationSeconds: totalDuration,
-      totalBytes,
-      averageBitrate: totalDuration ? totalBytes * 8 / totalDuration : 0,
-      averageFps: totalDuration ? rows.length / totalDuration : 0,
-      averageSampleSize: rows.length ? totalBytes / rows.length : 0,
-      minSampleSize: sizes.length ? sizes[0] : 0,
-      medianSampleSize: getMedian(sizes),
-      maxSampleSize: sizes.length ? sizes[sizes.length - 1] : 0,
-      syncSamples: syncRows.length,
-      averageKeyframeInterval: keyframeIntervals.length ? keyframeIntervals.reduce((sum, value) => sum + value, 0) / keyframeIntervals.length : 0,
-      peakMovingBitrate: bitrateValues.length ? Math.max.apply(null, bitrateValues) : 0,
-      peakMovingFps: fpsValues.length ? Math.max.apply(null, fpsValues) : 0
-    },
-    frameTypeCounts,
-    topSizeRows: rows.slice().sort((left, right) => (right.size || 0) - (left.size || 0)).slice(0, 10)
-  };
-}
-
-function buildMovingAveragePoints(track, rows, windowSize) {
-  const points = [];
-  if (!rows.length) return points;
-  const boundedWindowSize = Math.max(1, Math.min(Math.floor(Number(windowSize) || 1), rows.length));
-  const sampleMetrics = rows.map((row, index) => ({
-    row,
-    size: Number(row.size) || 0,
-    durationSeconds: getSampleDurationSeconds(row, track, rows, index)
-  }));
-  let windowBytes = 0;
-  let windowDuration = 0;
-  for (let index = 0; index < boundedWindowSize; index += 1) {
-    windowBytes += sampleMetrics[index].size;
-    windowDuration += sampleMetrics[index].durationSeconds;
-  }
-  const windowCount = sampleMetrics.length - boundedWindowSize + 1;
-  for (let startIndex = 0; startIndex < windowCount; startIndex += 1) {
-    const first = sampleMetrics[startIndex];
-    const last = sampleMetrics[startIndex + boundedWindowSize - 1];
-    points.push({
-      time: getWindowCenterTimeSeconds(first, last),
-      bitrate: windowDuration > 0 ? windowBytes * 8 / windowDuration : 0,
-      fps: windowDuration > 0 ? boundedWindowSize / windowDuration : 0,
-      sampleCount: boundedWindowSize,
-      windowStartSampleIndex: first.row.sampleIndex,
-      windowEndSampleIndex: last.row.sampleIndex,
-      row: first.row
-    });
-    const nextIndex = startIndex + boundedWindowSize;
-    if (nextIndex < sampleMetrics.length) {
-      windowBytes += sampleMetrics[nextIndex].size - first.size;
-      windowDuration += sampleMetrics[nextIndex].durationSeconds - first.durationSeconds;
-    }
-  }
-  return points;
-}
-
-function getWindowCenterTimeSeconds(first, last) {
-  const windowStartTime = getRowTimeSeconds(first.row);
-  const windowEndTime = getRowTimeSeconds(last.row) + Math.max(0, last.durationSeconds);
-  if (!Number.isFinite(windowStartTime) || !Number.isFinite(windowEndTime) || windowEndTime <= windowStartTime) {
-    return windowStartTime;
-  }
-  return windowStartTime + (windowEndTime - windowStartTime) / 2;
-}
-
-function getSampleDurationSeconds(row, track, rows, index) {
-  const timescale = Number(track && track.timescale);
-  const duration = Number(row.duration);
-  if (timescale > 0 && duration > 0) return duration / timescale;
-  if (rows && index < rows.length - 1) {
-    const diff = getRowTimeSeconds(rows[index + 1]) - getRowTimeSeconds(row);
-    if (diff > 0) return diff;
-  }
-  return 0;
-}
-
-function getRowsDurationSeconds(track, rows) {
-  const durationSum = rows.reduce((sum, row, index) => sum + getSampleDurationSeconds(row, track, rows, index), 0);
-  if (durationSum > 0) return durationSum;
-  const trackDuration = Number(track && track.duration);
-  const timescale = Number(track && track.timescale);
-  return trackDuration > 0 && timescale > 0 ? trackDuration / timescale : 0;
-}
-
-function getMedian(sortedValues) {
-  if (!sortedValues.length) return 0;
-  const middle = Math.floor(sortedValues.length / 2);
-  return sortedValues.length % 2 ? sortedValues[middle] : (sortedValues[middle - 1] + sortedValues[middle]) / 2;
+  return getTrackSummaryMetricsForRows(track, rows);
 }
 
 function renderMetricsBody(track, metrics, pointLimit) {
@@ -1992,11 +1669,11 @@ function renderFrameInternals() {
     return;
   }
   if (model.kind === "video-grid") {
-    elements.frameInternalsBody.innerHTML = renderVideoFrameInternals(model);
+    elements.frameInternalsBody.innerHTML = renderVideoFrameInternals(model, { frameLabel: formatSelectedFrameLabel() });
     return;
   }
   if (model.kind === "audio-bands") {
-    elements.frameInternalsBody.innerHTML = renderAudioFrameInternals(model);
+    elements.frameInternalsBody.innerHTML = renderAudioFrameInternals(model, { frameLabel: formatSelectedFrameLabel() });
     return;
   }
   elements.frameInternalsBody.innerHTML = '<div class="empty compact">' + escapeHtml(model.note || t("frameInternals.unsupported")) + '</div>';
@@ -2028,131 +1705,6 @@ function getFrameInternalsColorScale(track) {
     );
   }
   return state.frameInternalsColorScaleCache.get(cacheKey);
-}
-
-function renderVideoFrameInternals(model) {
-  const frameClass = getFrameTypeClass(model.frameType);
-  const stats = [
-    [t("frameInternals.codec"), model.codecFamily],
-    [t("frameInternals.frame"), formatSelectedFrameLabel()],
-    [t("frameInternals.unit"), model.unitName + " " + model.unitWidth + "x" + model.unitHeight],
-    [t("frameInternals.mediaSize"), model.mediaWidth + "x" + model.mediaHeight],
-    [t("frameInternals.nominalGrid"), model.nominalColumns + "x" + model.nominalRows + " (" + model.nominalUnitCount + ")"],
-    [t("frameInternals.displayedGrid"), model.displayColumns + "x" + model.displayRows + (model.aggregation > 1 ? " (x" + model.aggregation + ")" : "")],
-    [t("frameInternals.sampleSize"), formatBytes(model.sampleSize)],
-    [t("frameInternals.colorScale"), formatFrameInternalsColorScale(model.colorScale)],
-    [t("frameInternals.accuracy"), t("frameInternals.nominal")]
-  ];
-  return '<div class="frame-internals-layout">' +
-    '<div class="frame-internals-summary">' +
-    '<div class="frame-internals-title-row"><strong>' + escapeHtml(model.title) + '</strong><span class="pill ' + frameClass + '">' + escapeHtml(formatFrameTypeLabel(model.frameType)) + '</span></div>' +
-    '<p class="frame-internals-note">' + escapeHtml(model.note) + '</p>' +
-    renderFrameInternalsStats(stats) +
-    '</div>' +
-    '<div class="block-heatmap-wrap">' +
-    '<div class="block-heatmap" style="--block-columns:' + model.displayColumns + ';--frame-aspect-ratio:' + model.mediaWidth + ' / ' + model.mediaHeight + '">' +
-    model.cells.map((cell) => renderVideoBlockCell(cell, model, frameClass)).join("") +
-    '</div>' +
-    '<p class="frame-internals-note">' + escapeHtml(t("frameInternals.videoEstimateNote")) + '</p>' +
-    '</div>' +
-    '</div>';
-}
-
-function renderVideoBlockCell(cell, model, frameClass) {
-  const title = model.unitName + " x " + (cell.unitColumnStart + 1) + "-" + cell.unitColumnEnd + ", y " + (cell.unitRowStart + 1) + "-" + cell.unitRowEnd;
-  const tooltipRows = [
-    [t("frameInternals.tooltip.pixelRange"), cell.pixelLeft + "," + cell.pixelTop + " - " + cell.pixelRight + "," + cell.pixelBottom],
-    [t("frameInternals.tooltip.estimatedBytes"), formatBytes(cell.estimatedBytes)],
-    [t("frameInternals.tooltip.globalPercentile"), formatMetricNumber((cell.globalPercentile || 0) * 100, 1) + "%"],
-    [t("frameInternals.tooltip.nominalUnits"), cell.nominalUnits],
-    [t("frameInternals.tooltip.accuracy"), t("frameInternals.tooltip.nominalEstimate")]
-  ];
-  return '<div class="block-cell ' + frameClass + '"' +
-    renderFrameInternalsTooltipAttributes({
-      title,
-      rows: tooltipRows,
-      note: t("frameInternals.videoEstimateNote")
-    }) +
-    ' style="' + renderVideoBlockCellStyle(cell) + '"></div>';
-}
-
-function renderVideoBlockCellStyle(cell) {
-  const color = cell.color || { red: 31, green: 122, blue: 140 };
-  const alpha = Number.isFinite(cell.intensity) ? cell.intensity : 0.75;
-  return '--cell-red:' + color.red + ';--cell-green:' + color.green + ';--cell-blue:' + color.blue + ';--cell-alpha:' + alpha.toFixed(3);
-}
-
-function formatFrameInternalsColorScale(colorScale) {
-  if (!colorScale) return t("value.notAvailable");
-  if (colorScale.mode === "global-track-percentile") {
-    return t("frameInternals.globalTrackPercentile", {
-      count: colorScale.sampleCount,
-      values: colorScale.valueCount
-    });
-  }
-  if (colorScale.mode === "selected-frame-percentile") return t("frameInternals.selectedFramePercentile");
-  return t("value.notAvailable");
-}
-
-function renderAudioFrameInternals(model) {
-  const stats = [
-    [t("frameInternals.codec"), model.title],
-    [t("frameInternals.frame"), formatSelectedFrameLabel()],
-    [t("frameInternals.sampleSize"), formatBytes(model.sampleSize)],
-    [t("frameInternals.sampleRate"), model.sampleRate ? formatMetricNumber(model.sampleRate, 0) + " Hz" : t("value.notAvailable")],
-    [t("frameInternals.activeBandwidth"), formatAudioFrequency(model.activeBandwidthHz)],
-    [t("frameInternals.channels"), model.channelCount || t("value.notAvailable")]
-  ];
-  return '<div class="frame-internals-layout">' +
-    '<div class="frame-internals-summary">' +
-    '<div class="frame-internals-title-row"><strong>' + escapeHtml(t("frameInternals.audioBands")) + '</strong><span class="pill aac">' + escapeHtml(formatFrameTypeLabel(model.frameType)) + '</span></div>' +
-    '<p class="frame-internals-note">' + escapeHtml(model.note) + '</p>' +
-    renderFrameInternalsStats(stats) +
-    '</div>' +
-    '<div class="block-heatmap-wrap">' +
-    '<div class="audio-band-plot">' + model.bands.map(renderAudioBandRow).join("") + '</div>' +
-    '<p class="frame-internals-note">' + escapeHtml(t("frameInternals.audioEstimateNote")) + '</p>' +
-    '</div>' +
-    '</div>';
-}
-
-function renderAudioBandRow(band) {
-  const widthPercent = clamp(band.ratio * 100, band.active ? 2 : 0.8, 100);
-  const tooltipRows = [
-    [t("frameInternals.tooltip.frequencyRange"), band.range],
-    [t("frameInternals.tooltip.estimatedBytes"), formatBytes(band.estimatedBytes)],
-    [t("frameInternals.tooltip.relativeShare"), formatMetricNumber(band.ratio * 100, 1) + "%"],
-    [t("frameInternals.tooltip.accuracy"), t("frameInternals.tooltip.nominalEstimate")]
-  ];
-  return '<div class="audio-band-row"' +
-    renderFrameInternalsTooltipAttributes({
-      title: band.label,
-      rows: tooltipRows,
-      note: t("frameInternals.audioEstimateNote")
-    }) +
-    '>' +
-    '<div class="audio-band-label">' + escapeHtml(band.label) + '<br><small>' + escapeHtml(band.range) + '</small></div>' +
-    '<div class="audio-band-bar"><span class="audio-band-fill" style="width:' + widthPercent.toFixed(3) + '%;--band-alpha:' + band.intensity.toFixed(3) + '"></span></div>' +
-    '<div class="audio-band-size">' + escapeHtml(formatBytes(band.estimatedBytes)) + '</div>' +
-    '</div>';
-}
-
-function renderFrameInternalsTooltipAttributes(payload) {
-  const rows = Array.isArray(payload.rows)
-    ? payload.rows.filter((row) => row && row[0] !== undefined && row[1] !== undefined)
-    : [];
-  const normalizedPayload = {
-    title: String(payload.title || ""),
-    rows: rows.map(([label, value]) => [String(label), String(value)]),
-    note: String(payload.note || "")
-  };
-  const accessibleLabel = [
-    normalizedPayload.title,
-    ...normalizedPayload.rows.map(([label, value]) => label + ": " + value),
-    normalizedPayload.note
-  ].filter(Boolean).join(". ");
-  return ' data-inspection-tooltip="' + escapeHtml(JSON.stringify(normalizedPayload)) + '"' +
-    ' aria-label="' + escapeHtml(accessibleLabel) + '"';
 }
 
 function handleFrameInternalsTooltipPointerOver(event) {
@@ -2231,18 +1783,6 @@ function readFrameInternalsTooltipPayload(target) {
   }
 }
 
-function renderFrameInternalsTooltip(payload) {
-  const rows = payload.rows.map((row) => {
-    const label = row && row[0] !== undefined ? String(row[0]) : "";
-    const value = row && row[1] !== undefined ? String(row[1]) : "";
-    if (!label || !value) return "";
-    return '<div class="tooltip-row"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(value) + '</strong></div>';
-  }).join("");
-  return '<div class="tooltip-title">' + escapeHtml(payload.title) + '</div>' +
-    '<div class="tooltip-rows">' + rows + '</div>' +
-    (payload.note ? '<div class="tooltip-note">' + escapeHtml(payload.note) + '</div>' : "");
-}
-
 function positionFrameInternalsTooltip(clientX, clientY, options = {}) {
   if (!elements.frameInternalsTooltip || elements.frameInternalsTooltip.hidden) return;
   const gap = options.anchorMode === "center" ? 10 : 14;
@@ -2260,21 +1800,9 @@ function positionFrameInternalsTooltip(clientX, clientY, options = {}) {
   elements.frameInternalsTooltip.style.top = top.toFixed(1) + "px";
 }
 
-function renderFrameInternalsStats(stats) {
-  return '<div class="frame-internals-stats">' + stats.map(([label, value]) =>
-    '<div class="frame-internals-stat"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(String(value)) + '</strong></div>'
-  ).join("") + '</div>';
-}
-
 function formatSelectedFrameLabel() {
   const row = findFrameRowByKey(state.selectedFrameKey);
   return row ? "T" + row.trackId + " #" + row.sampleIndex : t("value.notAvailable");
-}
-
-function formatAudioFrequency(value) {
-  const numberValue = Number(value);
-  if (!Number.isFinite(numberValue) || numberValue <= 0) return t("value.notAvailable");
-  return numberValue >= 1000 ? formatMetricNumber(numberValue / 1000, 1) + " kHz" : formatMetricNumber(numberValue, 0) + " Hz";
 }
 
 function renderFrameTableLayout(rows) {
@@ -2306,19 +1834,11 @@ function getFrameTableColumns() {
 }
 
 function compareRowsByPresentationTime(left, right) {
-  const leftTime = getRowTimeSeconds(left);
-  const rightTime = getRowTimeSeconds(right);
-  if (leftTime !== rightTime) return leftTime - rightTime;
-  if (left.trackId !== right.trackId) return left.trackId - right.trackId;
-  return left.sampleIndex - right.sampleIndex;
+  return compareRowsByPresentationTimeModel(left, right, getRowTrack);
 }
 
 function compareRowsByDecodeTime(left, right) {
-  const leftTime = getRowDecodeTimeSeconds(left);
-  const rightTime = getRowDecodeTimeSeconds(right);
-  if (leftTime !== rightTime) return leftTime - rightTime;
-  if (left.trackId !== right.trackId) return left.trackId - right.trackId;
-  return left.sampleIndex - right.sampleIndex;
+  return compareRowsByDecodeTimeModel(left, right, getRowTrack);
 }
 
 function getRowTrack(row) {
@@ -2327,33 +1847,15 @@ function getRowTrack(row) {
 }
 
 function getRowTimeSeconds(row) {
-  const track = getRowTrack(row);
-  const timestamp = getFirstFiniteNumber([row.pts, row.dts], null);
-  if (!track || !track.timescale) return timestamp === null ? getFirstFiniteNumber([row.sampleIndex], 0) : timestamp;
-  return (timestamp === null ? 0 : timestamp) / Number(track.timescale);
+  return getRowTimeSecondsModel(row, getRowTrack);
 }
 
 function getRowDurationSeconds(row) {
-  const track = getRowTrack(row);
-  const rowDuration = Number(row.duration);
-  if (!track || !track.timescale || !Number.isFinite(rowDuration) || rowDuration <= 0) return 0;
-  return rowDuration / Number(track.timescale);
+  return getRowDurationSecondsModel(row, getRowTrack);
 }
 
 function getRowDecodeTimeSeconds(row) {
-  const track = getRowTrack(row);
-  const timestamp = getFirstFiniteNumber([row.dts, row.pts], null);
-  if (!track || !track.timescale) return timestamp === null ? getFirstFiniteNumber([row.sampleIndex], 0) : timestamp;
-  return (timestamp === null ? 0 : timestamp) / Number(track.timescale);
-}
-
-function getFirstFiniteNumber(values, fallbackValue) {
-  for (const value of values) {
-    if (value === undefined || value === null || value === "") continue;
-    const numberValue = Number(value);
-    if (Number.isFinite(numberValue)) return numberValue;
-  }
-  return fallbackValue;
+  return getRowDecodeTimeSecondsModel(row, getRowTrack);
 }
 
 function renderGraphAxis() {
@@ -2452,14 +1954,6 @@ function renderGraphRow(row, visualIndex) {
     '<div class="graph-plot"><span class="graph-bar ' + typeClass + '" style="width:' + widthPercent.toFixed(4) + '%"></span></div>' +
     '<div class="graph-size">' + escapeHtml(formatBytes(row.size || 0)) + '</div>' +
     '</div>';
-}
-
-function formatFrameTypeLabel(type) {
-  if (type === "unknown") return t("value.unknown");
-  if (type === "audio") return t("value.audio");
-  if (type === "sample") return t("value.sample");
-  if (String(type).startsWith("mixed") && getLanguage() === "ko") return type.replace("mixed", "혼합");
-  return type;
 }
 
 function formatGraphTime(row) {
