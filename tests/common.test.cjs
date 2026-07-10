@@ -55,6 +55,43 @@ test("BlobRangeReader chunks, caches, returns empty ranges, and cancels", async 
   await assert.rejects(() => reader.readRange(0n, 1n), /cancelled/);
 });
 
+test("binary range reader covers base errors, exact prefixes, and cache eviction", async () => {
+  const loader = await createSourceModuleLoader();
+  const binary = await loader.import("src/js/core/common/binary.js");
+  const cursor = new binary.ByteCursor(new Uint8Array([0x00, 0x00, 0x00, 0x00]));
+  const reader = new binary.BlobRangeReader(new File([new Uint8Array([1, 2, 3, 4])], "small.bin", { type: "application/octet-stream" }));
+  const cachedRangeReaderPrototype = Object.getPrototypeOf(Object.getPrototypeOf(reader));
+
+  assert.equal(cursor.ensure(-1, 1), false);
+  assert.throws(() => cursor.string(2, 8), /Unexpected EOF/);
+  await assert.rejects(() => cachedRangeReaderPrototype.readChunk.call(reader), /readChunk must be implemented/);
+  await assert.rejects(() => cachedRangeReaderPrototype.readExactRangeBytes.call(reader), /readExactRangeBytes must be implemented/);
+  assert.deepEqual(Array.from(await reader.readExactRange(10n, 2n)), []);
+  assert.deepEqual(Array.from(await binary.readResourcePrefix(new File([], "empty.bin"), 64)), []);
+  assert.equal(binary.createRangeReader(new File([new Uint8Array([1])], "local.bin")).constructor.name, "BlobRangeReader");
+  assert.deepEqual(JSON.parse(JSON.stringify(binary.getResourceInfo(null))), {
+    name: "unnamed",
+    size: 0,
+    type: "",
+    source: "local-file",
+    rangeSupported: false
+  });
+
+  reader.cache.set(1, { bytes: new Uint8Array(40 * 1024 * 1024), size: 40 * 1024 * 1024 });
+  reader.cache.set(2, { bytes: new Uint8Array(40 * 1024 * 1024), size: 40 * 1024 * 1024 });
+  reader.cacheBytes = 80 * 1024 * 1024;
+  reader.evict();
+  assert.equal(reader.cache.size, 1);
+  assert.equal(reader.cache.has(1), false);
+
+  reader.smallRangeCache.set(1, { bytes: new Uint8Array(3 * 1024 * 1024), size: 3 * 1024 * 1024 });
+  reader.smallRangeCache.set(2, { bytes: new Uint8Array(3 * 1024 * 1024), size: 3 * 1024 * 1024 });
+  reader.smallRangeCacheBytes = 6 * 1024 * 1024;
+  reader.evictSmallRangeCache();
+  assert.equal(reader.smallRangeCache.size, 1);
+  assert.equal(reader.smallRangeCache.has(1), false);
+});
+
 test("HttpRangeReader reads byte ranges without downloading the full resource", async () => {
   const bytes = new Uint8Array(4 * 1024 * 1024 + 8);
   bytes[4 * 1024 * 1024 - 1] = 8;

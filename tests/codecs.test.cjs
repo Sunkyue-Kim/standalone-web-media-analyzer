@@ -146,10 +146,20 @@ test("AVC, HEVC, and AV1 parsers expose config and classify synthetic sample pay
   assert.equal(avcConfig.nalLengthSize, 4);
   assert.equal(avcConfig.spsCount, 1);
   assert.equal(avc.parseAvcC(new Uint8Array([1, 2, 3])).error, "avcC too short");
+  assert.equal(avc.parseAvcC(new Uint8Array([0x01, 0x42, 0x00, 0x1e, 0xfc, 0xe0, 0x00])).ppsCount, 0);
+  assert.equal(avc.parseAvcC(new Uint8Array([0x01, 0x42, 0x00, 0x1e, 0xff, 0xe1, 0x00, 0x05, 0x67])).spsCount, 0);
   assert.equal(avc.parseAvcSample(new Uint8Array([0x00, 0x00, 0x00, 0x02, 0x65, 0xb0]), 4).frameType, "I");
   assert.equal(avc.parseAvcSample(new Uint8Array([0x00, 0x00, 0x00, 0x02, 0x41, 0xc0]), 4).frameType, "P");
   assert.equal(avc.parseAvcSample(new Uint8Array([0x00, 0x00, 0x00, 0x02, 0x41, 0xa0]), 4).frameType, "B");
+  assert.equal(avc.parseAvcSample(new Uint8Array([
+    0x00, 0x00, 0x00, 0x02, 0x65, 0xb0,
+    0x00, 0x00, 0x00, 0x02, 0x41, 0xc0
+  ]), 4).frameType, "mixed(I/P)");
+  assert.equal(avc.parseAvcSample(new Uint8Array([0x00, 0x00, 0x00, 0x01, 0x65]), 4).frameType, "IDR");
+  assert.equal(avc.parseAvcSample(new Uint8Array([0x01, 0x67]), 1).nalTypes[0], "SPS");
+  assert.equal(avc.parseAvcSample(new Uint8Array([0x00, 0x04, 0x41]), 2).frameType, "unknown");
   assert.equal(avc.nalTypeName(7), "SPS");
+  assert.equal(avc.nalTypeName(31), "31");
 
   const hevcConfigBytes = new Uint8Array(23);
   hevcConfigBytes[0] = 1;
@@ -159,9 +169,34 @@ test("AVC, HEVC, and AV1 parsers expose config and classify synthetic sample pay
   const hevcConfig = hevc.parseHevcC(hevcConfigBytes);
   assert.equal(hevcConfig.nalLengthSize, 4);
   assert.equal(hevcConfig.generalLevelIdc, 93);
+  const hevcConfigWithArrayBytes = new Uint8Array(31);
+  hevcConfigWithArrayBytes[0] = 1;
+  hevcConfigWithArrayBytes[1] = 0x21;
+  hevcConfigWithArrayBytes[12] = 120;
+  hevcConfigWithArrayBytes[21] = 0xc7;
+  hevcConfigWithArrayBytes[22] = 1;
+  hevcConfigWithArrayBytes[23] = 0x80 | 33;
+  hevcConfigWithArrayBytes[25] = 1;
+  hevcConfigWithArrayBytes[27] = 3;
+  hevcConfigWithArrayBytes.set([0xaa, 0xbb, 0xcc], 28);
+  const hevcConfigWithArray = hevc.parseHevcC(hevcConfigWithArrayBytes);
+  assert.equal(hevcConfigWithArray.generalTierFlag, true);
+  assert.equal(hevcConfigWithArray.temporalIdNested, true);
+  assert.equal(hevcConfigWithArray.arrays[0].arrayCompleteness, true);
+  assert.equal(hevcConfigWithArray.arrays[0].nalUnitTypeName, "SPS");
+  assert.equal(hevcConfigWithArray.arrays[0].nalUnits[0].previewHex, "aabbcc");
   assert.equal(hevc.parseHevcC(new Uint8Array([1, 2])).error, "hvcC too short");
   assert.equal(hevc.parseHevcSample(new Uint8Array([0x00, 0x00, 0x00, 0x03, 0x26, 0x01, 0xac]), 4).frameType, "I");
+  assert.equal(hevc.parseHevcSample(new Uint8Array([0x00, 0x00, 0x00, 0x03, 0x02, 0x01, 0x12]), 4).frameType, "B");
+  assert.equal(hevc.parseHevcSample(new Uint8Array([0x00, 0x00, 0x00, 0x03, 0x02, 0x01, 0x24]), 4).frameType, "P");
+  assert.equal(hevc.parseHevcSample(new Uint8Array([
+    0x00, 0x00, 0x00, 0x03, 0x02, 0x01, 0x12,
+    0x00, 0x00, 0x00, 0x03, 0x02, 0x01, 0x24
+  ]), 4).frameType, "mixed(B/P)");
+  assert.equal(hevc.parseHevcSample(new Uint8Array([0x00, 0x00, 0x00, 0x02, 0x26, 0x01]), 4).frameType, "I");
+  assert.equal(hevc.parseHevcSample(new Uint8Array([0x00, 0x00, 0x00, 0x01, 0x26]), 4).frameType, "unknown");
   assert.equal(hevc.hevcNalTypeName(33), "SPS");
+  assert.equal(hevc.hevcNalTypeName(63), "NAL 63");
 
   const av1Config = av1.parseAv1C(new Uint8Array([0x81, 0x08, 0x40, 0x00, 0x0a, 0x00]));
   assert.equal(av1Config.codecString, "av01.0.08M.10");
@@ -174,6 +209,53 @@ test("AVC, HEVC, and AV1 parsers expose config and classify synthetic sample pay
   assert.equal(av1.parseAv1Sample(new Uint8Array([0x32, 0x01, 0x20])).frameType, "P");
   assert.deepEqual(Array.from(av1.parseAv1ObuStream(new Uint8Array([0x1a, 0x01, 0x00])).obus.map((obu) => obu.typeName)), ["Frame Header"]);
   assert.equal(av1.av1ObuTypeName(6), "Frame");
+});
+
+test("AV1 parser covers OBU variants, frame types, and malformed boundaries", async () => {
+  const loader = await createSourceModuleLoader();
+  const av1 = await loader.import("src/js/core/codecs/video/av1.js");
+
+  const highTierMonochromeConfig = av1.parseAv1C(new Uint8Array([
+    0x81,
+    (2 << 5) | 31,
+    0x80 | 0x20 | 0x10 | 0x08 | 0x04 | 0x03,
+    0x10 | 0x0f
+  ]));
+  assert.equal(highTierMonochromeConfig.codecString, "av01.2.31H.12");
+  assert.equal(highTierMonochromeConfig.chromaFormat, "monochrome");
+  assert.equal(highTierMonochromeConfig.chromaSamplePositionName, "reserved");
+  assert.equal(highTierMonochromeConfig.initialPresentationDelayMinusOne, 15);
+  assert.equal(av1.parseAv1C(new Uint8Array([0x81, 0x00, 0x08, 0x00])).chromaFormat, "4:2:2");
+  assert.equal(av1.parseAv1C(new Uint8Array([0x81, 0x00, 0x04, 0x00])).chromaFormat, "4:4:0");
+  assert.equal(av1.parseAv1C(new Uint8Array([0x81, 0x00, 0x0d, 0x00])).chromaSamplePositionName, "vertical");
+  assert.equal(av1.parseAv1C(new Uint8Array([0x81, 0x00, 0x0e, 0x00])).chromaSamplePositionName, "colocated");
+
+  const extensionObu = av1.parseAv1ObuStream(new Uint8Array([
+    0x0e, 0xb0, 0x01, 0xaa
+  ]));
+  assert.equal(extensionObu.obus[0].typeName, "Sequence Header");
+  assert.equal(extensionObu.obus[0].extensionFlag, true);
+  assert.equal(extensionObu.obus[0].temporalId, 5);
+  assert.equal(extensionObu.obus[0].spatialId, 2);
+  assert.equal(extensionObu.obus[0].previewHex, "aa");
+  const metadataWithoutSize = av1.parseAv1ObuStream(new Uint8Array([0x28, 0xbb, 0xcc]));
+  assert.equal(metadataWithoutSize.obus[0].typeName, "Metadata");
+  assert.equal(metadataWithoutSize.obus[0].hasSizeField, false);
+  assert.equal(metadataWithoutSize.obus[0].size, 2);
+  assert.equal(av1.parseAv1ObuStream(new Uint8Array([0x4a, 0x00])).obus[0].typeName, "OBU 9");
+
+  assert.equal(av1.parseAv1Sample(new Uint8Array([0x32, 0x01, 0x80])).frameType, "P");
+  assert.equal(av1.parseAv1Sample(new Uint8Array([0x32, 0x01, 0x40])).frameType, "I");
+  assert.equal(av1.parseAv1Sample(new Uint8Array([0x32, 0x01, 0x60])).frameType, "P");
+  assert.equal(av1.parseAv1Sample(new Uint8Array([0x32, 0x01, 0x00, 0x32, 0x01, 0x20])).frameType, "mixed(I/P)");
+  assert.equal(av1.parseAv1Sample(new Uint8Array([0x12, 0x00]), { defaultFrameType: "P" }).frameType, "P");
+  assert.deepEqual(Array.from(av1.parseAv1Sample(new Uint8Array([]), { defaultFrameType: "I" }).nalTypes), ["AV1"]);
+
+  assert.match(av1.parseAv1ObuStream(new Uint8Array([0x32])).warnings[0], /Truncated AV1 OBU size/);
+  assert.match(av1.parseAv1ObuStream(new Uint8Array([0x32, 0x02, 0x00])).warnings[0], /payload exceeds/);
+  assert.match(av1.parseAv1ObuStream(new Uint8Array([0x0c])).warnings[0], /Truncated AV1 OBU header/);
+  assert.equal(av1.av1ObuTypeName(15), "Padding");
+  assert.equal(av1.av1ObuTypeName(13), "OBU 13");
 });
 
 test("codec registry provides interchangeable descriptors and scanners", async () => {
@@ -218,6 +300,25 @@ test("frame internals model builds partition-ready video maps and audio band est
   assert.equal(colorScale.sampleCount, 4);
   assert.ok(colorScale.valueCount > 4);
   assert.ok(colorScale.max > colorScale.min);
+  const unavailableScale = buildFrameInternalsColorScale(null, globalVideoRows);
+  assert.equal(unavailableScale.mode, "unavailable");
+  assert.equal(unavailableScale.sampleCount, 0);
+  assert.equal(unavailableScale.valueCount, 1);
+  const noDimensionScale = buildFrameInternalsColorScale({ trackId: 1, handlerType: "vide", codec: "raw" }, globalVideoRows);
+  assert.equal(noDimensionScale.mode, "unavailable");
+  const selectedFrameScale = buildFrameInternalsColorScale(videoTrack, [], {
+    fallbackCells: [
+      { estimatedBytes: 256, blockWidth: 16, blockHeight: 16 },
+      { estimatedBytesPerPixel: 4, blockWidth: 16, blockHeight: 16 }
+    ]
+  });
+  assert.equal(selectedFrameScale.mode, "selected-frame-percentile");
+  assert.equal(selectedFrameScale.sampleCount, 1);
+  assert.equal(selectedFrameScale.valueCount, 2);
+  const emptySelectedFrameScale = buildFrameInternalsColorScale(videoTrack, null);
+  assert.equal(emptySelectedFrameScale.mode, "selected-frame-percentile");
+  assert.equal(emptySelectedFrameScale.sampleCount, 0);
+  assert.equal(emptySelectedFrameScale.min, 0);
 
   const videoModel = buildFrameInternalsModel(
     { trackId: 1, sampleIndex: 10, size: 120000, frameType: "I" },
@@ -397,6 +498,15 @@ test("frame internals model builds partition-ready video maps and audio band est
   assert.equal(zeroAudioModel.sampleRate, 0);
   assert.equal(zeroAudioModel.activeBandwidthHz, 20000);
   assert.ok(zeroAudioModel.bands.every((band) => band.ratio === 0));
+  const midBandwidthAudioModel = buildFrameInternalsModel(
+    { trackId: 10, sampleIndex: 1, size: 320, frameType: "", nalTypes: ["MB"] },
+    { trackId: 10, handlerType: "soun", codec: "aac", channelCount: 1, sampleRate: 8000, codecConfig: { inputSampleRate: 16000 } }
+  );
+  assert.equal(midBandwidthAudioModel.title, "aac band budget");
+  assert.equal(midBandwidthAudioModel.frameType, "audio");
+  assert.equal(midBandwidthAudioModel.sampleRate, 16000);
+  assert.equal(midBandwidthAudioModel.activeBandwidthHz, 6000);
+  assert.ok(midBandwidthAudioModel.bands.some((band) => !band.active && band.intensity >= 0.12));
 
   assert.equal(buildFrameInternalsModel(null, null).kind, "empty");
   assert.equal(buildFrameInternalsModel({ size: 1 }, { handlerType: "meta", codec: "text" }).kind, "unsupported");

@@ -92,6 +92,51 @@ test("container registry rejects unsupported files and auto-scan boundary is con
     tracks: [{ trackId: 1, codec: "avc1", codecConfig: { nalLengthSize: 4 } }],
     sampleRows: [{ trackId: 1, offset: "0", size: 100 }]
   }), true);
+  assert.equal(frameScanner.shouldAutoScan({
+    tracks: [{ trackId: 1, codec: "mp4a" }],
+    sampleRows: [{ trackId: 1, offset: "0", size: 100 }]
+  }), false);
+});
+
+test("frame scanner handles read failures, skipped rows, and cancellation", async () => {
+  const loader = await createSourceModuleLoader();
+  const frameScanner = await loader.import("src/js/core/codecs/frame-scanner.js");
+  const progress = [];
+  const failingAnalysis = {
+    reader: {
+      cancelled: false,
+      async readRange() {
+        throw new Error("read failed");
+      }
+    },
+    tracks: [{ trackId: 1, codec: "avc1", codecConfig: { nalLengthSize: 4 } }],
+    sampleRows: [
+      { trackId: 1, sampleIndex: 1, offset: "0", size: 6, frameType: "", nalTypes: [], warnings: [] },
+      { trackId: 1, sampleIndex: 2, offset: "", size: 6, frameType: "unknown", nalTypes: [], warnings: [] },
+      { trackId: 2, sampleIndex: 1, offset: "0", size: 6, frameType: "AAC", nalTypes: [], warnings: [] }
+    ]
+  };
+
+  await frameScanner.scanFrameTypes(failingAnalysis, {
+    onProgress(label, percent) {
+      progress.push([label, percent]);
+    }
+  });
+  assert.equal(failingAnalysis.sampleRows[0].frameType, "unknown");
+  assert.match(failingAnalysis.sampleRows[0].warnings[0], /AVC \/ H\.264 scan failed: read failed/);
+  assert.equal(failingAnalysis.sampleRows[1].frameType, "unknown");
+  assert.deepEqual(progress, [["Scanning video samples", 100]]);
+
+  await assert.rejects(() => frameScanner.scanFrameTypes({
+    reader: {
+      cancelled: true,
+      async readRange() {
+        return new Uint8Array([]);
+      }
+    },
+    tracks: [{ trackId: 1, codec: "avc1", codecConfig: { nalLengthSize: 4 } }],
+    sampleRows: [{ trackId: 1, sampleIndex: 1, offset: "0", size: 1, warnings: [] }]
+  }, {}), /Analysis cancelled/);
 });
 
 test("MP3 container detection accepts ID3, declared MP3 frames, and verified raw frame pairs", async () => {

@@ -179,3 +179,50 @@ test("sample model reports missing init and default audio frame labels", async (
   assert.deepEqual(Array.from(sampleModel.getDefaultSampleTags({ codec: "av01", codecDescriptor: "av1" })), ["AV1"]);
   assert.deepEqual(Array.from(sampleModel.getDefaultSampleTags({ handlerType: "soun", codec: "alac" })), ["alac"]);
 });
+
+test("sample model reports missing codec configs, unsafe offsets, and fragment reference warnings", async () => {
+  const loader = await createSourceModuleLoader();
+  const sampleModel = await loader.import("src/js/core/containers/isobmff/sample-model.js");
+  const warnings = [];
+  const moov = box("moov", {}, [
+    makeTrackTree([
+      box("stsz", { sampleCount: 1, sampleSize: 0, sizes: [100] }),
+      box("stsc", { entries: [{ firstChunk: 1, samplesPerChunk: 1 }] }),
+      box("co64", { offsets: [Symbol("unsafe")] }),
+      box("stts", { entries: [{ sampleCount: 1, sampleDelta: 3000 }] })
+    ], {
+      sampleEntry: {
+        format: "avc1",
+        width: 640,
+        height: 360,
+        codecConfig: null
+      }
+    })
+  ]);
+
+  const tracks = sampleModel.buildTrackModels([moov], warnings);
+  assert.equal(tracks[0].codecConfig, null);
+  assert.match(tracks[0].warnings[0], /sample entry has no avcC configuration box/);
+  assert.equal(sampleModel.buildNormalSamples(tracks, warnings)[0].offset, "");
+  assert.match(warnings.find((warning) => warning.includes("unsafe chunk offset")), /Track 7/);
+
+  const fragmentWarnings = [];
+  const fragmentRows = sampleModel.buildFragmentSamples([
+    moov,
+    box("moof", {}, [
+      box("traf", {}, [
+        box("trun", { sampleCount: 0, samples: [] })
+      ]),
+      box("traf", {}, [
+        box("tfhd", { trackId: 999 }),
+        box("trun", { sampleCount: 0, samples: [] })
+      ])
+    ], { offset: 1000, size: 80 })
+  ], tracks, fragmentWarnings);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(fragmentRows)), []);
+  assert.ok(fragmentWarnings.some((warning) => warning.includes("traf without tfhd")));
+  assert.ok(fragmentWarnings.some((warning) => warning.includes("unknown track 999")));
+  assert.equal(sampleModel.getDefaultSampleFrameType(null), "");
+  assert.deepEqual(Array.from(sampleModel.getDefaultSampleTags(null)), []);
+});

@@ -372,12 +372,18 @@ test("media row and metrics models cover fallback timing and empty metrics", asy
   assert.equal(rowModel.getRowsDurationSeconds(track, [{ trackId: 1, sampleIndex: 1, size: 10 }]), 2.5);
   assert.equal(metricsModel.getTrackSummaryMetrics(null, fallbackRows), null);
   assert.equal(metricsModel.getTrackSummaryMetrics(track, []), null);
+  assert.equal(metricsModel.getTrackSummaryMetrics({ trackId: 2, timescale: 1000, duration: 0 }, [
+    { trackId: 2, sampleIndex: 1, duration: 0, size: 10 }
+  ]), null);
 
+  const emptyPoints = metricsModel.buildMovingAveragePoints(track, [], 4);
   const boundedPoints = metricsModel.buildMovingAveragePoints(track, fallbackRows, 99);
+  const invalidWindowPoints = metricsModel.buildMovingAveragePoints(track, fallbackRows, 0);
   const zeroDurationPoints = metricsModel.buildMovingAveragePoints(track, [
     { trackId: 1, sampleIndex: 1, pts: 1000, size: 10 },
     { trackId: 1, sampleIndex: 2, pts: 1000, size: 20 }
   ], 2);
+  const emptyMetrics = metricsModel.buildTrackMetrics(track, [], "bad");
   const fallbackMetrics = metricsModel.buildTrackMetrics(track, [
     { trackId: 1, sampleIndex: 1, pts: 0, duration: 500, size: 10 },
     { trackId: 1, sampleIndex: 2, pts: 500, duration: 500, size: 20, frameType: "" }
@@ -388,10 +394,21 @@ test("media row and metrics models cover fallback timing and empty metrics", asy
     { trackId: 1, sampleIndex: 3, pts: 1500, duration: 500, size: 30, isSync: true }
   ], 1);
 
+  assert.equal(Array.isArray(emptyPoints), true);
+  assert.equal(emptyPoints.length, 0);
   assert.equal(boundedPoints.length, 1);
+  assert.equal(invalidWindowPoints.length, 3);
   assert.equal(zeroDurationPoints[0].bitrate, 0);
   assert.equal(zeroDurationPoints[0].fps, 0);
   assert.equal(metricsModel.getMedian([]), 0);
+  assert.equal(metricsModel.getMedian([1, 3]), 2);
+  assert.equal(emptyMetrics.summary.averageBitrate, 0);
+  assert.equal(emptyMetrics.summary.averageFps, 0);
+  assert.equal(emptyMetrics.summary.minSampleSize, 0);
+  assert.equal(emptyMetrics.summary.maxSampleSize, 0);
+  assert.equal(emptyMetrics.frameTypeCounts.size, 0);
+  assert.equal(emptyMetrics.movingAveragePoints.length, 0);
+  assert.equal(emptyMetrics.topSizeRows.length, 0);
   assert.equal(fallbackMetrics.frameTypeCounts.get("AAC"), 2);
   assert.equal(fallbackMetrics.summary.averageKeyframeInterval, 0);
   assert.equal(positiveSyncMetrics.summary.averageKeyframeInterval, 1.5);
@@ -698,6 +715,105 @@ test("frame internals view covers empty internals and localized labels", async (
   setLanguage("en");
 });
 
+test("frame internals view renders distributed density statistics and fallback coordinates", async () => {
+  const loader = await createSourceModuleLoader();
+  const frameInternalsView = await loader.import("src/js/ui/frame-internals-view.js");
+  const videoHtml = frameInternalsView.renderVideoFrameInternals({
+    title: "Distributed grid",
+    codecFamily: "AV1",
+    frameType: "P",
+    unitName: "superblock",
+    unitWidth: 64,
+    unitHeight: 64,
+    mediaWidth: 96,
+    mediaHeight: 64,
+    encodedWidth: 96,
+    encodedHeight: 64,
+    displayRotationDegrees: 0,
+    nominalColumns: 2,
+    nominalRows: 1,
+    nominalUnitCount: 2,
+    displayColumns: 2,
+    displayRows: 1,
+    aggregation: 1,
+    partitionBlockCount: 3,
+    maxPartitionDepth: 2,
+    partitionModes: [
+      { mode: "split", count: 2 },
+      { mode: "vertical", count: 1 }
+    ],
+    sampleSize: 2_000_000,
+    note: "distributed",
+    colorScale: { mode: "unsupported" },
+    cells: [
+      {
+        pixelLeft: 5,
+        pixelTop: 7,
+        pixelRight: 32,
+        pixelBottom: 32,
+        displayPixelLeft: "bad",
+        displayPixelTop: undefined,
+        displayPixelRight: undefined,
+        displayPixelBottom: undefined,
+        blockWidth: 32,
+        blockHeight: 32,
+        depth: 2,
+        partitionMode: "split",
+        estimatedBytes: 500,
+        estimatedBytesPerPixel: 0.001,
+        normalizedByteDensity: -1,
+        globalPercentile: 0,
+        nominalUnits: 1,
+        intensity: Number.NaN
+      },
+      {
+        pixelLeft: 32,
+        pixelTop: 0,
+        pixelRight: 64,
+        pixelBottom: 64,
+        blockWidth: 32,
+        blockHeight: 64,
+        depth: 2,
+        partitionMode: "vertical",
+        estimatedBytes: 4_000,
+        estimatedBytesPerPixel: 2,
+        normalizedByteDensity: 3,
+        globalPercentile: 1,
+        nominalUnits: 1,
+        color: { red: 9, green: 8, blue: 7 },
+        intensity: 0.9
+      },
+      {
+        pixelLeft: 64,
+        pixelTop: 0,
+        pixelRight: 96,
+        pixelBottom: 64,
+        blockWidth: 32,
+        blockHeight: 64,
+        depth: 2,
+        partitionMode: "split",
+        estimatedBytes: 8_000,
+        estimatedBytesPerPixel: 4,
+        normalizedByteDensity: 6,
+        globalPercentile: 1,
+        nominalUnits: 1,
+        color: null,
+        intensity: 0.3
+      }
+    ]
+  });
+
+  assert.match(videoHtml, /16\.0 Mbits/);
+  assert.match(videoHtml, /0\.0010 B\/px -/);
+  assert.match(videoHtml, /2\.000 B\/px, 3\.00x/);
+  assert.match(videoHtml, /n\/a/);
+  assert.match(videoHtml, / x="5"/);
+  assert.match(videoHtml, / y="7"/);
+  assert.match(videoHtml, /--cell-alpha:0\.750/);
+  assert.match(videoHtml, /--cell-red:31;--cell-green:122;--cell-blue:140/);
+  assert.match(videoHtml, /--cell-red:9;--cell-green:8;--cell-blue:7;--cell-alpha:0\.900/);
+});
+
 test("analysis worker client falls back to direct core and preserves progress, scan, and cancel hooks", async () => {
   const loader = await createSourceModuleLoader();
   const { createAnalysisWorkerClient } = await loader.import("src/js/ui/analysis-worker-client.js");
@@ -923,6 +1039,12 @@ test("remote loader chooses HTTP range streaming only when verified and falls ba
   assert.equal(streamingPlan.canStream, true);
   assert.equal(streamingPlan.resource.size, 12);
   assert.equal(streamingPlan.resource.rangeSupported, true);
+  const explicitStreamingPlan = await remoteLoader.probeRemoteMediaResource("https://media.test/video.mp4", {
+    name: "explicit-name.mov",
+    type: "video/quicktime"
+  });
+  assert.equal(explicitStreamingPlan.resource.name, "explicit-name.mov");
+  assert.equal(explicitStreamingPlan.resource.type, "video/quicktime");
 
   const fallbackPlan = await remoteLoader.probeRemoteMediaResource("https://media.test/no-range.mp4");
   assert.equal(fallbackPlan.canStream, false);
@@ -932,6 +1054,60 @@ test("remote loader chooses HTTP range streaming only when verified and falls ba
   assert.equal(downloadedFile.size, 3);
   assert.throws(() => remoteLoader.normalizeRemoteMediaUrl("file:///tmp/video.mp4"), /Only http/);
   assert.ok(calls.some((call) => call.range === "bytes=0-0"));
+});
+
+test("remote loader preserves metadata overrides and blob type fallbacks", async () => {
+  const makeHeaders = (values) => ({
+    get(name) {
+      return values[String(name).toLowerCase()] || "";
+    }
+  });
+  const loader = new SourceModuleLoader({
+    rootDirectory: path.resolve(__dirname, ".."),
+    globals: {
+      fetch: async (url, options = {}) => {
+        if (options.method === "HEAD") {
+          return {
+            ok: true,
+            status: 200,
+            headers: makeHeaders({
+              "content-disposition": "attachment; filename=\"head-name.ogg\"",
+              "content-length": "6"
+            })
+          };
+        }
+        if (options.headers && options.headers.Range) {
+          return {
+            status: 416,
+            headers: makeHeaders({}),
+            async arrayBuffer() {
+              return new ArrayBuffer(0);
+            }
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          headers: makeHeaders({}),
+          async blob() {
+            return new Blob([new Uint8Array([1, 2, 3, 4, 5, 6])], { type: "audio/ogg" });
+          }
+        };
+      }
+    }
+  });
+  const remoteLoader = await loader.import("src/js/ui/remote-loader.js");
+
+  const fallbackPlan = await remoteLoader.probeRemoteMediaResource("https://media.test/path/original.ogg");
+  assert.equal(fallbackPlan.canStream, false);
+  assert.equal(fallbackPlan.fallback.name, "head-name.ogg");
+  assert.equal(fallbackPlan.fallback.size, 6);
+  const downloadedFile = await remoteLoader.downloadRemoteMediaFile("https://media.test/path/original.ogg", {
+    name: "metadata-name.ogg"
+  });
+  assert.equal(downloadedFile.name, "metadata-name.ogg");
+  assert.equal(downloadedFile.type, "audio/ogg");
+  assert.equal(downloadedFile.size, 6);
 });
 
 test("remote loader handles streamed downloads, filenames, aborts, and non-OK responses", async () => {
