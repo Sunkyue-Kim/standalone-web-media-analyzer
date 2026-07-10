@@ -991,6 +991,8 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceMetricsModel, /buildMovingAveragePoints/);
   assert.match(sourceUi, /handleMetricChartPointerMove/);
   assert.match(sourceUi, /updateMetricChartOverlay/);
+  assert.match(sourceUi, /updateMetricChartOverlaysAtTime/);
+  assert.match(sourceUi, /updateMetricChartOverlaysAtTime\(nearestPoint \? nearestPoint\.time : NaN\)/);
   assert.match(sourceUi, /updateMetricPlaybackCursors/);
   assert.match(sourceUi, /readMetricChartPoints/);
   assert.match(sourceUi, /hasMetricPlaybackCursorTargets/);

@@ -1762,18 +1762,31 @@ function readMetricChartPoints(plotElement) {
 
 function updateMetricChartOverlay(plotElement, clientX) {
   const points = readMetricChartPoints(plotElement);
-  const overlayElement = plotElement.querySelector(".metric-chart-hover");
-  if (!points.length || !overlayElement) {
+  if (!points.length) {
     hideMetricChartOverlay();
     return;
   }
   const plotRect = plotElement.getBoundingClientRect();
   const relativeX = clamp((clientX - plotRect.left) / Math.max(1, plotRect.width), 0, 1) * 100;
   const nearestPoint = findNearestMetricChartPoint(points, relativeX, "x");
-  for (const otherOverlayElement of elements.metricsBody.querySelectorAll(".metric-chart-hover")) {
-    if (otherOverlayElement !== overlayElement) otherOverlayElement.hidden = true;
+  updateMetricChartOverlaysAtTime(nearestPoint ? nearestPoint.time : NaN);
+}
+
+function updateMetricChartOverlaysAtTime(timeSeconds) {
+  const plotElements = elements.metricsBody ? elements.metricsBody.querySelectorAll(".metric-plot-area[data-metric-chart]") : [];
+  if (!plotElements.length || !Number.isFinite(timeSeconds)) {
+    hideMetricChartOverlay();
+    return;
   }
-  positionMetricChartHoverOverlay(overlayElement, nearestPoint);
+  for (const plotElement of plotElements) {
+    const overlayElement = plotElement.querySelector(".metric-chart-hover");
+    const nearestPoint = findNearestMetricChartPoint(readMetricChartPoints(plotElement), timeSeconds, "time");
+    if (!overlayElement || !nearestPoint) {
+      if (overlayElement) overlayElement.hidden = true;
+      continue;
+    }
+    positionMetricChartHoverOverlay(overlayElement, nearestPoint);
+  }
 }
 
 function updateMetricPlaybackCursors() {
