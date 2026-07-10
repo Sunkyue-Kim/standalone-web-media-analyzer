@@ -11,10 +11,15 @@ import {
   escapeHtml,
   getFrameTypeClass
 } from "./ui-helpers.js";
+import {
+  buildFrameInternalsPathGroups,
+  getFrameInternalsDisplayBounds
+} from "./frame-internals-map.js";
 
 export function renderVideoFrameInternals(model, options = {}) {
   const frameClass = getFrameTypeClass(model.frameType);
   const frameOverlay = normalizeFrameOverlayOptions(options.frameOverlay);
+  const pathGroups = buildFrameInternalsPathGroups(model.cells);
   const viewportClass = [
     "block-map-viewport",
     frameOverlay.enabled ? "frame-overlay-enabled" : "",
@@ -40,9 +45,10 @@ export function renderVideoFrameInternals(model, options = {}) {
     '</div>' +
     '<div class="block-heatmap-wrap">' +
     '<div class="' + viewportClass + '" tabindex="0" role="region" aria-label="' + escapeHtml(t("frameInternals.zoomPlotAria")) + '" style="' + renderVideoBlockMapStyle(model) + '">' +
-    '<svg class="block-map" viewBox="0 0 ' + formatSvgNumber(model.mediaWidth) + ' ' + formatSvgNumber(model.mediaHeight) + '" data-media-width="' + escapeHtml(String(model.mediaWidth)) + '" data-media-height="' + escapeHtml(String(model.mediaHeight)) + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' +
+    '<svg class="block-map" viewBox="0 0 ' + formatSvgNumber(model.mediaWidth) + ' ' + formatSvgNumber(model.mediaHeight) + '" data-media-width="' + escapeHtml(String(model.mediaWidth)) + '" data-media-height="' + escapeHtml(String(model.mediaHeight)) + '" data-block-count="' + escapeHtml(String(model.cells.length)) + '" data-path-count="' + escapeHtml(String(pathGroups.length)) + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' +
       renderFrameOverlayImage(model, frameOverlay) +
-      model.cells.map((cell) => renderVideoBlockCell(cell, model, frameClass)).join("") +
+      pathGroups.map((group) => renderVideoBlockPathGroup(group, frameClass)).join("") +
+      '<rect class="block-hover-outline" visibility="hidden"></rect>' +
     '</svg>' +
     renderFrameOverlayStatus(frameOverlay) +
     '</div>' +
@@ -114,44 +120,35 @@ function formatVideoMediaSize(model) {
   return details.length ? displaySize + " (" + details.join(", ") + ")" : displaySize;
 }
 
-function renderVideoBlockCell(cell, model, frameClass) {
-  const displayBounds = getDisplayCellBounds(cell);
+export function createVideoBlockTooltipPayload(cell, model) {
+  const displayBounds = getFrameInternalsDisplayBounds(cell);
   const title = model.unitName + " " + (cell.blockWidth || 0) + "x" + (cell.blockHeight || 0) + " @ " + cell.pixelLeft + "," + cell.pixelTop;
-  const tooltipRows = [
-    [t("frameInternals.tooltip.encodedPixelRange"), cell.pixelLeft + "," + cell.pixelTop + " - " + cell.pixelRight + "," + cell.pixelBottom],
-    [t("frameInternals.tooltip.displayPixelRange"), formatCellBounds(displayBounds)],
-    [t("frameInternals.tooltip.blockSize"), (cell.blockWidth || 0) + "x" + (cell.blockHeight || 0)],
-    [t("frameInternals.tooltip.partition"), cell.partitionMode || t("value.notAvailable")],
-    [t("frameInternals.tooltip.depth"), cell.depth || 0],
-    [t("frameInternals.tooltip.estimatedBytes"), formatBytes(cell.estimatedBytes)],
-    [t("frameInternals.tooltip.byteDensity"), formatByteDensity(cell.estimatedBytesPerPixel, cell.normalizedByteDensity)],
-    [t("frameInternals.tooltip.globalPercentile"), formatMetricNumber((cell.globalPercentile || 0) * 100, 1) + "%"],
-    [t("frameInternals.tooltip.nominalUnits"), cell.nominalUnits],
-    [t("frameInternals.tooltip.accuracy"), t("frameInternals.tooltip.nominalEstimate")]
-  ];
-  return '<rect class="block-cell ' + frameClass + '"' +
-    renderFrameInternalsTooltipAttributes({
-      title,
-      rows: tooltipRows,
-      note: t("frameInternals.videoEstimateNote")
-    }) +
-    ' x="' + formatSvgNumber(displayBounds.left) + '"' +
-    ' y="' + formatSvgNumber(displayBounds.top) + '"' +
-    ' width="' + formatSvgNumber(Math.max(0, displayBounds.right - displayBounds.left)) + '"' +
-    ' height="' + formatSvgNumber(Math.max(0, displayBounds.bottom - displayBounds.top)) + '"' +
-    ' style="' + renderVideoBlockCellStyle(cell) + '"></rect>';
+  return {
+    title,
+    rows: [
+      [t("frameInternals.tooltip.encodedPixelRange"), cell.pixelLeft + "," + cell.pixelTop + " - " + cell.pixelRight + "," + cell.pixelBottom],
+      [t("frameInternals.tooltip.displayPixelRange"), formatCellBounds(displayBounds)],
+      [t("frameInternals.tooltip.blockSize"), (cell.blockWidth || 0) + "x" + (cell.blockHeight || 0)],
+      [t("frameInternals.tooltip.partition"), cell.partitionMode || t("value.notAvailable")],
+      [t("frameInternals.tooltip.depth"), cell.depth || 0],
+      [t("frameInternals.tooltip.estimatedBytes"), formatBytes(cell.estimatedBytes)],
+      [t("frameInternals.tooltip.byteDensity"), formatByteDensity(cell.estimatedBytesPerPixel, cell.normalizedByteDensity)],
+      [t("frameInternals.tooltip.globalPercentile"), formatMetricNumber((cell.globalPercentile || 0) * 100, 1) + "%"],
+      [t("frameInternals.tooltip.nominalUnits"), cell.nominalUnits],
+      [t("frameInternals.tooltip.accuracy"), t("frameInternals.tooltip.nominalEstimate")]
+    ],
+    note: t("frameInternals.videoEstimateNote")
+  };
 }
 
-function renderVideoBlockCellStyle(cell) {
-  const color = cell.color || { red: 31, green: 122, blue: 140 };
-  const alpha = Number.isFinite(cell.intensity) ? cell.intensity : 0.75;
-  return [
-    '--cell-red:' + color.red,
-    '--cell-green:' + color.green,
-    '--cell-blue:' + color.blue,
-    '--cell-alpha:' + alpha.toFixed(3),
-    '--cell-depth:' + (cell.depth || 0)
-  ].join(";");
+function renderVideoBlockPathGroup(group, frameClass) {
+  return '<path class="block-cell block-cell-path ' + frameClass + '"' +
+    ' d="' + group.pathData + '"' +
+    ' data-cell-count="' + group.cellCount + '"' +
+    ' style="--cell-red:' + group.red +
+      ';--cell-green:' + group.green +
+      ';--cell-blue:' + group.blue +
+      ';--cell-alpha:' + group.alpha.toFixed(3) + '"></path>';
 }
 
 function formatSvgNumber(value) {
@@ -160,15 +157,6 @@ function formatSvgNumber(value) {
   return Math.abs(numberValue - Math.round(numberValue)) < 0.001
     ? String(Math.round(numberValue))
     : numberValue.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
-}
-
-function getDisplayCellBounds(cell) {
-  return {
-    left: getFiniteNumber(cell.displayPixelLeft, cell.pixelLeft),
-    top: getFiniteNumber(cell.displayPixelTop, cell.pixelTop),
-    right: getFiniteNumber(cell.displayPixelRight, cell.pixelRight),
-    bottom: getFiniteNumber(cell.displayPixelBottom, cell.pixelBottom)
-  };
 }
 
 function formatCellBounds(bounds) {
@@ -194,13 +182,6 @@ function formatByteDensity(bytesPerPixel, normalizedByteDensity) {
   return formatMetricNumber(density, density < 0.01 ? 4 : 3) + " B/px" + normalizedText;
 }
 
-function getFiniteNumber(primaryValue, fallbackValue) {
-  const primaryNumber = Number(primaryValue);
-  if (Number.isFinite(primaryNumber)) return primaryNumber;
-  const fallbackNumber = Number(fallbackValue);
-  return Number.isFinite(fallbackNumber) ? fallbackNumber : 0;
-}
-
 function formatFrameInternalsColorScale(colorScale) {
   if (!colorScale) return t("value.notAvailable");
   if (colorScale.mode === "global-track-percentile") {
@@ -216,9 +197,9 @@ function formatFrameInternalsColorScale(colorScale) {
 function renderVideoInternalsMetrics(model) {
   const cells = Array.isArray(model.cells) ? model.cells : [];
   if (!cells.length) return "";
-  const densities = cells.map((cell) => Number(cell.estimatedBytesPerPixel)).filter(isFiniteNonNegative);
-  const estimatedBytes = cells.map((cell) => Number(cell.estimatedBytes)).filter(isFiniteNonNegative);
-  const areas = cells.map((cell) => Math.max(1, Number(cell.blockWidth) * Number(cell.blockHeight) || 1));
+  const densities = sortFiniteMetricValues(cells.map((cell) => Number(cell.estimatedBytesPerPixel)));
+  const estimatedBytes = sortFiniteMetricValues(cells.map((cell) => Number(cell.estimatedBytes)));
+  const areas = sortFiniteMetricValues(cells.map((cell) => Math.max(1, Number(cell.blockWidth) * Number(cell.blockHeight) || 1)));
   const blockSizeGroups = getTopCountGroups(cells.map((cell) => (cell.blockWidth || 0) + "x" + (cell.blockHeight || 0)), 6);
   const depthGroups = getPartitionDepthGroups(model, cells);
   const modeGroups = getTopCountGroups(cells.map((cell) => cell.partitionMode || t("value.unknown")), 8);
@@ -228,11 +209,11 @@ function renderVideoInternalsMetrics(model) {
     [t("frameInternals.stats.blocks"), formatMetricNumber(cells.length, 0)],
     [t("frameInternals.stats.totalBits"), formatBits(sampleBytes * 8)],
     [t("frameInternals.stats.commonBlock"), commonBlock ? commonBlock.label + " (" + commonBlock.count + ")" : t("value.notAvailable")],
-    [t("frameInternals.stats.medianArea"), formatArea(getQuantile(areas, 0.5))],
-    [t("frameInternals.stats.medianDensity"), formatDensityValue(getQuantile(densities, 0.5))],
-    [t("frameInternals.stats.p95Density"), formatDensityValue(getQuantile(densities, 0.95))],
-    [t("frameInternals.stats.maxBlockBits"), formatBits(Math.max(0, ...estimatedBytes) * 8)],
-    [t("frameInternals.stats.p95BlockBits"), formatBits(getQuantile(estimatedBytes, 0.95) * 8)]
+    [t("frameInternals.stats.medianArea"), formatArea(getSortedQuantile(areas, 0.5))],
+    [t("frameInternals.stats.medianDensity"), formatDensityValue(getSortedQuantile(densities, 0.5))],
+    [t("frameInternals.stats.p95Density"), formatDensityValue(getSortedQuantile(densities, 0.95))],
+    [t("frameInternals.stats.maxBlockBits"), formatBits((estimatedBytes.at(-1) || 0) * 8)],
+    [t("frameInternals.stats.p95BlockBits"), formatBits(getSortedQuantile(estimatedBytes, 0.95) * 8)]
   ];
   return renderInternalsMetricsSection([
     renderInternalMetricCards(cards),
@@ -242,7 +223,7 @@ function renderVideoInternalsMetrics(model) {
         value: group.count,
         detail: t("frameInternals.stats.blockCount", { count: group.count })
       }))) +
-      renderInternalsBarChart(t("frameInternals.stats.byteDensityDistribution"), buildHistogramEntries(densities, 6, formatDensityValue)) +
+      renderInternalsBarChart(t("frameInternals.stats.byteDensityDistribution"), buildHistogramEntries(densities, 6, formatDensityValue, { sorted: true })) +
       renderInternalsBarChart(t("frameInternals.stats.partitionModes"), modeGroups.map((group) => ({
         label: group.label,
         value: group.count,
@@ -439,8 +420,8 @@ function getTopCountGroups(values, limit) {
     .slice(0, limit);
 }
 
-function buildHistogramEntries(values, binCount, formatter) {
-  const sortedValues = values.filter(isFiniteNonNegative).sort((left, right) => left - right);
+function buildHistogramEntries(values, binCount, formatter, options = {}) {
+  const sortedValues = options.sorted ? values : sortFiniteMetricValues(values);
   if (!sortedValues.length) return [];
   const minValue = sortedValues[0];
   const maxValue = sortedValues[sortedValues.length - 1];
@@ -471,7 +452,10 @@ function buildHistogramEntries(values, binCount, formatter) {
 }
 
 function getQuantile(values, quantile) {
-  const sortedValues = values.filter(isFiniteNonNegative).sort((left, right) => left - right);
+  return getSortedQuantile(sortFiniteMetricValues(values), quantile);
+}
+
+function getSortedQuantile(sortedValues, quantile) {
   if (!sortedValues.length) return 0;
   const position = (sortedValues.length - 1) * clamp(quantile, 0, 1);
   const lowerIndex = Math.floor(position);
@@ -479,6 +463,10 @@ function getQuantile(values, quantile) {
   if (lowerIndex === upperIndex) return sortedValues[lowerIndex];
   const weight = position - lowerIndex;
   return sortedValues[lowerIndex] * (1 - weight) + sortedValues[upperIndex] * weight;
+}
+
+function sortFiniteMetricValues(values) {
+  return values.filter(isFiniteNonNegative).sort((left, right) => left - right);
 }
 
 function formatBits(value) {

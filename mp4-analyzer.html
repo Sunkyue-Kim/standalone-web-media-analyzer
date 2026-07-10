@@ -1888,9 +1888,8 @@ button:disabled {
   --cell-green: 122;
   --cell-blue: 140;
   --cell-alpha: 0.75;
-  --cell-depth: 0;
   fill: rgba(var(--cell-red), var(--cell-green), var(--cell-blue), var(--cell-alpha));
-  cursor: help;
+  pointer-events: none;
 }
 .block-map .block-cell {
   stroke: rgba(255, 255, 255, 0.56);
@@ -1902,9 +1901,12 @@ button:disabled {
   fill: rgba(var(--cell-red), var(--cell-green), var(--cell-blue), calc(var(--cell-alpha) * 0.46));
   stroke: rgba(255, 255, 255, 0.76);
 }
-.block-map .block-cell:hover {
-  stroke: rgba(24, 34, 48, 0.5);
+.block-hover-outline {
+  fill: none;
+  stroke: rgba(15, 23, 42, 0.88);
   stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
 }
 .block-cell.i {
   --cell-red: 142;
@@ -9965,10 +9967,225 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     }
   });
 
+  // local-source:C:\Users\user\Documents\Codex\2026-07-08\js-html-mp4-html-mp4-i\src\js\ui\frame-internals-map.js
+  function buildFrameInternalsPathGroups(cells, options = {}) {
+    const heatmapBucketCount = normalizePositiveInteger(
+      options.heatmapBucketCount,
+      DEFAULT_HEATMAP_BUCKET_COUNT
+    );
+    const groupsByBucket = /* @__PURE__ */ new Map();
+    for (const cell of Array.isArray(cells) ? cells : []) {
+      const bounds = getFrameInternalsDisplayBounds(cell);
+      if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) continue;
+      const heatmapBucketIndex = getHeatmapBucketIndex(cell, heatmapBucketCount);
+      let group = groupsByBucket.get(heatmapBucketIndex);
+      if (!group) {
+        group = {
+          heatmapBucketIndex,
+          pathSegments: [],
+          redTotal: 0,
+          greenTotal: 0,
+          blueTotal: 0,
+          alphaTotal: 0,
+          cellCount: 0
+        };
+        groupsByBucket.set(heatmapBucketIndex, group);
+      }
+      const color = getCellColor(cell);
+      group.pathSegments.push(renderRectanglePath(bounds));
+      group.redTotal += color.red;
+      group.greenTotal += color.green;
+      group.blueTotal += color.blue;
+      group.alphaTotal += getCellAlpha(cell);
+      group.cellCount += 1;
+    }
+    return Array.from(groupsByBucket.values()).sort((left, right) => left.heatmapBucketIndex - right.heatmapBucketIndex).map((group) => ({
+      heatmapBucketIndex: group.heatmapBucketIndex,
+      pathData: group.pathSegments.join(""),
+      red: Math.round(group.redTotal / group.cellCount),
+      green: Math.round(group.greenTotal / group.cellCount),
+      blue: Math.round(group.blueTotal / group.cellCount),
+      alpha: group.alphaTotal / group.cellCount,
+      cellCount: group.cellCount
+    }));
+  }
+  function createFrameInternalsSpatialIndex(model, options = {}) {
+    const cells = Array.isArray(model && model.cells) ? model.cells : [];
+    const mediaWidth = Math.max(1, Number(model && model.mediaWidth) || 1);
+    const mediaHeight = Math.max(1, Number(model && model.mediaHeight) || 1);
+    const spatialBucketCounts = getSpatialBucketCounts(
+      cells.length,
+      mediaWidth,
+      mediaHeight,
+      options.maximumBucketCount
+    );
+    const buckets = Array.from(
+      { length: spatialBucketCounts.columns * spatialBucketCounts.rows },
+      () => []
+    );
+    cells.forEach((cell, cellIndex) => {
+      const bounds = getFrameInternalsDisplayBounds(cell);
+      const firstColumn = getSpatialBucketCoordinate(
+        bounds.left,
+        mediaWidth,
+        spatialBucketCounts.columns
+      );
+      const lastColumn = getSpatialBucketCoordinate(
+        Math.max(bounds.left, bounds.right - Number.EPSILON),
+        mediaWidth,
+        spatialBucketCounts.columns
+      );
+      const firstRow = getSpatialBucketCoordinate(
+        bounds.top,
+        mediaHeight,
+        spatialBucketCounts.rows
+      );
+      const lastRow = getSpatialBucketCoordinate(
+        Math.max(bounds.top, bounds.bottom - Number.EPSILON),
+        mediaHeight,
+        spatialBucketCounts.rows
+      );
+      for (let bucketRow = firstRow; bucketRow <= lastRow; bucketRow += 1) {
+        for (let bucketColumn = firstColumn; bucketColumn <= lastColumn; bucketColumn += 1) {
+          buckets[bucketRow * spatialBucketCounts.columns + bucketColumn].push(cellIndex);
+        }
+      }
+    });
+    return {
+      cells,
+      mediaWidth,
+      mediaHeight,
+      bucketColumnCount: spatialBucketCounts.columns,
+      bucketRowCount: spatialBucketCounts.rows,
+      buckets
+    };
+  }
+  function findFrameInternalsCell(spatialIndex, mapCoordinateX, mapCoordinateY) {
+    if (!spatialIndex || !Array.isArray(spatialIndex.cells)) return null;
+    const coordinateX = Number(mapCoordinateX);
+    const coordinateY = Number(mapCoordinateY);
+    if (!Number.isFinite(coordinateX) || !Number.isFinite(coordinateY) || coordinateX < 0 || coordinateY < 0 || coordinateX > spatialIndex.mediaWidth || coordinateY > spatialIndex.mediaHeight) {
+      return null;
+    }
+    const bucketColumn = getSpatialBucketCoordinate(
+      coordinateX,
+      spatialIndex.mediaWidth,
+      spatialIndex.bucketColumnCount
+    );
+    const bucketRow = getSpatialBucketCoordinate(
+      coordinateY,
+      spatialIndex.mediaHeight,
+      spatialIndex.bucketRowCount
+    );
+    const candidateIndexes = spatialIndex.buckets[bucketRow * spatialIndex.bucketColumnCount + bucketColumn] || [];
+    for (const candidateIndex of candidateIndexes) {
+      const cell = spatialIndex.cells[candidateIndex];
+      const bounds = getFrameInternalsDisplayBounds(cell);
+      if (coordinateX >= bounds.left && coordinateX <= bounds.right && coordinateY >= bounds.top && coordinateY <= bounds.bottom) {
+        return cell;
+      }
+    }
+    return null;
+  }
+  function getFrameInternalsDisplayBounds(cell) {
+    return {
+      left: getFiniteNumber(cell && cell.displayPixelLeft, cell && cell.pixelLeft),
+      top: getFiniteNumber(cell && cell.displayPixelTop, cell && cell.pixelTop),
+      right: getFiniteNumber(cell && cell.displayPixelRight, cell && cell.pixelRight),
+      bottom: getFiniteNumber(cell && cell.displayPixelBottom, cell && cell.pixelBottom)
+    };
+  }
+  function getHeatmapBucketIndex(cell, heatmapBucketCount) {
+    const rawGlobalPercentile = cell && cell.globalPercentile;
+    const globalPercentile = Number(rawGlobalPercentile);
+    const normalizedPercentile = isPresentFiniteValue(rawGlobalPercentile, globalPercentile) ? clamp4(globalPercentile, 0, 1) : clamp4((getCellAlpha(cell) - 0.72) / 0.28, 0, 1);
+    return Math.min(
+      heatmapBucketCount - 1,
+      Math.floor(normalizedPercentile * heatmapBucketCount)
+    );
+  }
+  function getCellColor(cell) {
+    const color = cell && cell.color;
+    return {
+      red: clampColorChannel(color && color.red, 31),
+      green: clampColorChannel(color && color.green, 122),
+      blue: clampColorChannel(color && color.blue, 140)
+    };
+  }
+  function getCellAlpha(cell) {
+    const rawIntensity = cell && cell.intensity;
+    const intensity = Number(rawIntensity);
+    return isPresentFiniteValue(rawIntensity, intensity) ? clamp4(intensity, 0, 1) : 0.75;
+  }
+  function clampColorChannel(value, fallbackValue) {
+    if (value === null || value === void 0 || value === "") return fallbackValue;
+    const numberValue = Number(value);
+    return Math.round(clamp4(Number.isFinite(numberValue) ? numberValue : fallbackValue, 0, 255));
+  }
+  function renderRectanglePath(bounds) {
+    return "M" + formatSvgNumber(bounds.left) + " " + formatSvgNumber(bounds.top) + "H" + formatSvgNumber(bounds.right) + "V" + formatSvgNumber(bounds.bottom) + "H" + formatSvgNumber(bounds.left) + "Z";
+  }
+  function formatSvgNumber(value) {
+    const numberValue = Number(value);
+    if (!Number.isFinite(numberValue)) return "0";
+    return Math.abs(numberValue - Math.round(numberValue)) < 1e-3 ? String(Math.round(numberValue)) : numberValue.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+  }
+  function getSpatialBucketCounts(cellCount, mediaWidth, mediaHeight, maximumBucketCount) {
+    const maximumCount = Math.max(
+      MINIMUM_SPATIAL_BUCKET_COUNT,
+      normalizePositiveInteger(maximumBucketCount, MAXIMUM_SPATIAL_BUCKET_COUNT)
+    );
+    const aspectRatio = mediaWidth / mediaHeight;
+    const targetBucketCount = clamp4(
+      Math.ceil(Math.sqrt(Math.max(1, cellCount))),
+      MINIMUM_SPATIAL_BUCKET_COUNT,
+      maximumCount
+    );
+    return {
+      columns: Math.max(
+        MINIMUM_SPATIAL_BUCKET_COUNT,
+        Math.min(maximumCount, Math.round(targetBucketCount * Math.sqrt(aspectRatio)))
+      ),
+      rows: Math.max(
+        MINIMUM_SPATIAL_BUCKET_COUNT,
+        Math.min(maximumCount, Math.round(targetBucketCount / Math.sqrt(aspectRatio)))
+      )
+    };
+  }
+  function getSpatialBucketCoordinate(value, mediaLength, bucketCount) {
+    const normalizedValue = clamp4(Number(value) / Math.max(1, mediaLength), 0, 1);
+    return Math.min(bucketCount - 1, Math.floor(normalizedValue * bucketCount));
+  }
+  function getFiniteNumber(primaryValue, fallbackValue) {
+    const primaryNumber = Number(primaryValue);
+    if (isPresentFiniteValue(primaryValue, primaryNumber)) return primaryNumber;
+    const fallbackNumber = Number(fallbackValue);
+    return isPresentFiniteValue(fallbackValue, fallbackNumber) ? fallbackNumber : 0;
+  }
+  function isPresentFiniteValue(rawValue, numberValue) {
+    return rawValue !== null && rawValue !== void 0 && rawValue !== "" && Number.isFinite(numberValue);
+  }
+  function normalizePositiveInteger(value, fallbackValue) {
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) && numberValue > 0 ? Math.max(1, Math.round(numberValue)) : fallbackValue;
+  }
+  function clamp4(value, minimum, maximum) {
+    return Math.min(maximum, Math.max(minimum, value));
+  }
+  var DEFAULT_HEATMAP_BUCKET_COUNT, MINIMUM_SPATIAL_BUCKET_COUNT, MAXIMUM_SPATIAL_BUCKET_COUNT;
+  var init_frame_internals_map = __esm({
+    "local-source:C:\\Users\\user\\Documents\\Codex\\2026-07-08\\js-html-mp4-html-mp4-i\\src\\js\\ui\\frame-internals-map.js"() {
+      DEFAULT_HEATMAP_BUCKET_COUNT = 32;
+      MINIMUM_SPATIAL_BUCKET_COUNT = 8;
+      MAXIMUM_SPATIAL_BUCKET_COUNT = 64;
+    }
+  });
+
   // local-source:C:\Users\user\Documents\Codex\2026-07-08\js-html-mp4-html-mp4-i\src\js\ui\frame-internals-view.js
   function renderVideoFrameInternals(model, options = {}) {
     const frameClass = getFrameTypeClass(model.frameType);
     const frameOverlay = normalizeFrameOverlayOptions(options.frameOverlay);
+    const pathGroups = buildFrameInternalsPathGroups(model.cells);
     const viewportClass = [
       "block-map-viewport",
       frameOverlay.enabled ? "frame-overlay-enabled" : "",
@@ -9986,7 +10203,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       [t("frameInternals.colorScale"), formatFrameInternalsColorScale(model.colorScale)],
       [t("frameInternals.accuracy"), t("frameInternals.nominal")]
     ];
-    return '<div class="frame-internals-layout"><div class="frame-internals-summary"><div class="frame-internals-title-row"><strong>' + escapeHtml2(model.title) + '</strong><span class="pill ' + frameClass + '">' + escapeHtml2(formatFrameTypeLabel(model.frameType)) + '</span></div><p class="frame-internals-note">' + escapeHtml2(model.note) + "</p>" + renderFrameInternalsStats(stats) + '</div><div class="block-heatmap-wrap"><div class="' + viewportClass + '" tabindex="0" role="region" aria-label="' + escapeHtml2(t("frameInternals.zoomPlotAria")) + '" style="' + renderVideoBlockMapStyle(model) + '"><svg class="block-map" viewBox="0 0 ' + formatSvgNumber(model.mediaWidth) + " " + formatSvgNumber(model.mediaHeight) + '" data-media-width="' + escapeHtml2(String(model.mediaWidth)) + '" data-media-height="' + escapeHtml2(String(model.mediaHeight)) + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' + renderFrameOverlayImage(model, frameOverlay) + model.cells.map((cell) => renderVideoBlockCell(cell, model, frameClass)).join("") + "</svg>" + renderFrameOverlayStatus(frameOverlay) + '</div><p class="frame-internals-note">' + escapeHtml2(t("frameInternals.videoEstimateNote")) + "</p></div></div>" + renderVideoInternalsMetrics(model);
+    return '<div class="frame-internals-layout"><div class="frame-internals-summary"><div class="frame-internals-title-row"><strong>' + escapeHtml2(model.title) + '</strong><span class="pill ' + frameClass + '">' + escapeHtml2(formatFrameTypeLabel(model.frameType)) + '</span></div><p class="frame-internals-note">' + escapeHtml2(model.note) + "</p>" + renderFrameInternalsStats(stats) + '</div><div class="block-heatmap-wrap"><div class="' + viewportClass + '" tabindex="0" role="region" aria-label="' + escapeHtml2(t("frameInternals.zoomPlotAria")) + '" style="' + renderVideoBlockMapStyle(model) + '"><svg class="block-map" viewBox="0 0 ' + formatSvgNumber2(model.mediaWidth) + " " + formatSvgNumber2(model.mediaHeight) + '" data-media-width="' + escapeHtml2(String(model.mediaWidth)) + '" data-media-height="' + escapeHtml2(String(model.mediaHeight)) + '" data-block-count="' + escapeHtml2(String(model.cells.length)) + '" data-path-count="' + escapeHtml2(String(pathGroups.length)) + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' + renderFrameOverlayImage(model, frameOverlay) + pathGroups.map((group) => renderVideoBlockPathGroup(group, frameClass)).join("") + '<rect class="block-hover-outline" visibility="hidden"></rect></svg>' + renderFrameOverlayStatus(frameOverlay) + '</div><p class="frame-internals-note">' + escapeHtml2(t("frameInternals.videoEstimateNote")) + "</p></div></div>" + renderVideoInternalsMetrics(model);
   }
   function normalizeFrameOverlayOptions(frameOverlay) {
     return {
@@ -9997,7 +10214,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
   }
   function renderFrameOverlayImage(model, frameOverlay) {
     if (!frameOverlay.enabled || !frameOverlay.imageUrl) return "";
-    return '<image class="block-frame-overlay" href="' + escapeHtml2(frameOverlay.imageUrl) + '" x="0" y="0" width="' + formatSvgNumber(model.mediaWidth) + '" height="' + formatSvgNumber(model.mediaHeight) + '" preserveAspectRatio="xMidYMid meet"></image>';
+    return '<image class="block-frame-overlay" href="' + escapeHtml2(frameOverlay.imageUrl) + '" x="0" y="0" width="' + formatSvgNumber2(model.mediaWidth) + '" height="' + formatSvgNumber2(model.mediaHeight) + '" preserveAspectRatio="xMidYMid meet"></image>';
   }
   function renderFrameOverlayStatus(frameOverlay) {
     if (!frameOverlay.enabled || frameOverlay.imageUrl) return "";
@@ -10037,50 +10254,33 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     }
     return details.length ? displaySize + " (" + details.join(", ") + ")" : displaySize;
   }
-  function renderVideoBlockCell(cell, model, frameClass) {
-    const displayBounds = getDisplayCellBounds(cell);
+  function createVideoBlockTooltipPayload(cell, model) {
+    const displayBounds = getFrameInternalsDisplayBounds(cell);
     const title = model.unitName + " " + (cell.blockWidth || 0) + "x" + (cell.blockHeight || 0) + " @ " + cell.pixelLeft + "," + cell.pixelTop;
-    const tooltipRows = [
-      [t("frameInternals.tooltip.encodedPixelRange"), cell.pixelLeft + "," + cell.pixelTop + " - " + cell.pixelRight + "," + cell.pixelBottom],
-      [t("frameInternals.tooltip.displayPixelRange"), formatCellBounds(displayBounds)],
-      [t("frameInternals.tooltip.blockSize"), (cell.blockWidth || 0) + "x" + (cell.blockHeight || 0)],
-      [t("frameInternals.tooltip.partition"), cell.partitionMode || t("value.notAvailable")],
-      [t("frameInternals.tooltip.depth"), cell.depth || 0],
-      [t("frameInternals.tooltip.estimatedBytes"), formatBytes(cell.estimatedBytes)],
-      [t("frameInternals.tooltip.byteDensity"), formatByteDensity(cell.estimatedBytesPerPixel, cell.normalizedByteDensity)],
-      [t("frameInternals.tooltip.globalPercentile"), formatMetricNumber((cell.globalPercentile || 0) * 100, 1) + "%"],
-      [t("frameInternals.tooltip.nominalUnits"), cell.nominalUnits],
-      [t("frameInternals.tooltip.accuracy"), t("frameInternals.tooltip.nominalEstimate")]
-    ];
-    return '<rect class="block-cell ' + frameClass + '"' + renderFrameInternalsTooltipAttributes({
+    return {
       title,
-      rows: tooltipRows,
+      rows: [
+        [t("frameInternals.tooltip.encodedPixelRange"), cell.pixelLeft + "," + cell.pixelTop + " - " + cell.pixelRight + "," + cell.pixelBottom],
+        [t("frameInternals.tooltip.displayPixelRange"), formatCellBounds(displayBounds)],
+        [t("frameInternals.tooltip.blockSize"), (cell.blockWidth || 0) + "x" + (cell.blockHeight || 0)],
+        [t("frameInternals.tooltip.partition"), cell.partitionMode || t("value.notAvailable")],
+        [t("frameInternals.tooltip.depth"), cell.depth || 0],
+        [t("frameInternals.tooltip.estimatedBytes"), formatBytes(cell.estimatedBytes)],
+        [t("frameInternals.tooltip.byteDensity"), formatByteDensity(cell.estimatedBytesPerPixel, cell.normalizedByteDensity)],
+        [t("frameInternals.tooltip.globalPercentile"), formatMetricNumber((cell.globalPercentile || 0) * 100, 1) + "%"],
+        [t("frameInternals.tooltip.nominalUnits"), cell.nominalUnits],
+        [t("frameInternals.tooltip.accuracy"), t("frameInternals.tooltip.nominalEstimate")]
+      ],
       note: t("frameInternals.videoEstimateNote")
-    }) + ' x="' + formatSvgNumber(displayBounds.left) + '" y="' + formatSvgNumber(displayBounds.top) + '" width="' + formatSvgNumber(Math.max(0, displayBounds.right - displayBounds.left)) + '" height="' + formatSvgNumber(Math.max(0, displayBounds.bottom - displayBounds.top)) + '" style="' + renderVideoBlockCellStyle(cell) + '"></rect>';
+    };
   }
-  function renderVideoBlockCellStyle(cell) {
-    const color = cell.color || { red: 31, green: 122, blue: 140 };
-    const alpha = Number.isFinite(cell.intensity) ? cell.intensity : 0.75;
-    return [
-      "--cell-red:" + color.red,
-      "--cell-green:" + color.green,
-      "--cell-blue:" + color.blue,
-      "--cell-alpha:" + alpha.toFixed(3),
-      "--cell-depth:" + (cell.depth || 0)
-    ].join(";");
+  function renderVideoBlockPathGroup(group, frameClass) {
+    return '<path class="block-cell block-cell-path ' + frameClass + '" d="' + group.pathData + '" data-cell-count="' + group.cellCount + '" style="--cell-red:' + group.red + ";--cell-green:" + group.green + ";--cell-blue:" + group.blue + ";--cell-alpha:" + group.alpha.toFixed(3) + '"></path>';
   }
-  function formatSvgNumber(value) {
+  function formatSvgNumber2(value) {
     const numberValue = Number(value);
     if (!Number.isFinite(numberValue)) return "0";
     return Math.abs(numberValue - Math.round(numberValue)) < 1e-3 ? String(Math.round(numberValue)) : numberValue.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
-  }
-  function getDisplayCellBounds(cell) {
-    return {
-      left: getFiniteNumber(cell.displayPixelLeft, cell.pixelLeft),
-      top: getFiniteNumber(cell.displayPixelTop, cell.pixelTop),
-      right: getFiniteNumber(cell.displayPixelRight, cell.pixelRight),
-      bottom: getFiniteNumber(cell.displayPixelBottom, cell.pixelBottom)
-    };
   }
   function formatCellBounds(bounds) {
     return formatCellCoordinate(bounds.left) + "," + formatCellCoordinate(bounds.top) + " - " + formatCellCoordinate(bounds.right) + "," + formatCellCoordinate(bounds.bottom);
@@ -10097,12 +10297,6 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     const normalizedText = Number.isFinite(normalized) && normalized >= 0 ? ", " + formatMetricNumber(normalized, 2) + "x" : "";
     return formatMetricNumber(density, density < 0.01 ? 4 : 3) + " B/px" + normalizedText;
   }
-  function getFiniteNumber(primaryValue, fallbackValue) {
-    const primaryNumber = Number(primaryValue);
-    if (Number.isFinite(primaryNumber)) return primaryNumber;
-    const fallbackNumber = Number(fallbackValue);
-    return Number.isFinite(fallbackNumber) ? fallbackNumber : 0;
-  }
   function formatFrameInternalsColorScale(colorScale) {
     if (!colorScale) return t("value.notAvailable");
     if (colorScale.mode === "global-track-percentile") {
@@ -10117,9 +10311,9 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
   function renderVideoInternalsMetrics(model) {
     const cells = Array.isArray(model.cells) ? model.cells : [];
     if (!cells.length) return "";
-    const densities = cells.map((cell) => Number(cell.estimatedBytesPerPixel)).filter(isFiniteNonNegative);
-    const estimatedBytes = cells.map((cell) => Number(cell.estimatedBytes)).filter(isFiniteNonNegative);
-    const areas = cells.map((cell) => Math.max(1, Number(cell.blockWidth) * Number(cell.blockHeight) || 1));
+    const densities = sortFiniteMetricValues(cells.map((cell) => Number(cell.estimatedBytesPerPixel)));
+    const estimatedBytes = sortFiniteMetricValues(cells.map((cell) => Number(cell.estimatedBytes)));
+    const areas = sortFiniteMetricValues(cells.map((cell) => Math.max(1, Number(cell.blockWidth) * Number(cell.blockHeight) || 1)));
     const blockSizeGroups = getTopCountGroups(cells.map((cell) => (cell.blockWidth || 0) + "x" + (cell.blockHeight || 0)), 6);
     const depthGroups = getPartitionDepthGroups(model, cells);
     const modeGroups = getTopCountGroups(cells.map((cell) => cell.partitionMode || t("value.unknown")), 8);
@@ -10129,11 +10323,11 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       [t("frameInternals.stats.blocks"), formatMetricNumber(cells.length, 0)],
       [t("frameInternals.stats.totalBits"), formatBits(sampleBytes * 8)],
       [t("frameInternals.stats.commonBlock"), commonBlock ? commonBlock.label + " (" + commonBlock.count + ")" : t("value.notAvailable")],
-      [t("frameInternals.stats.medianArea"), formatArea(getQuantile2(areas, 0.5))],
-      [t("frameInternals.stats.medianDensity"), formatDensityValue(getQuantile2(densities, 0.5))],
-      [t("frameInternals.stats.p95Density"), formatDensityValue(getQuantile2(densities, 0.95))],
-      [t("frameInternals.stats.maxBlockBits"), formatBits(Math.max(0, ...estimatedBytes) * 8)],
-      [t("frameInternals.stats.p95BlockBits"), formatBits(getQuantile2(estimatedBytes, 0.95) * 8)]
+      [t("frameInternals.stats.medianArea"), formatArea(getSortedQuantile(areas, 0.5))],
+      [t("frameInternals.stats.medianDensity"), formatDensityValue(getSortedQuantile(densities, 0.5))],
+      [t("frameInternals.stats.p95Density"), formatDensityValue(getSortedQuantile(densities, 0.95))],
+      [t("frameInternals.stats.maxBlockBits"), formatBits((estimatedBytes.at(-1) || 0) * 8)],
+      [t("frameInternals.stats.p95BlockBits"), formatBits(getSortedQuantile(estimatedBytes, 0.95) * 8)]
     ];
     return renderInternalsMetricsSection([
       renderInternalMetricCards(cards),
@@ -10141,7 +10335,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
         label: group.label,
         value: group.count,
         detail: t("frameInternals.stats.blockCount", { count: group.count })
-      }))) + renderInternalsBarChart(t("frameInternals.stats.byteDensityDistribution"), buildHistogramEntries(densities, 6, formatDensityValue)) + renderInternalsBarChart(t("frameInternals.stats.partitionModes"), modeGroups.map((group) => ({
+      }))) + renderInternalsBarChart(t("frameInternals.stats.byteDensityDistribution"), buildHistogramEntries(densities, 6, formatDensityValue, { sorted: true })) + renderInternalsBarChart(t("frameInternals.stats.partitionModes"), modeGroups.map((group) => ({
         label: group.label,
         value: group.count,
         detail: t("frameInternals.stats.blockCount", { count: group.count })
@@ -10277,8 +10471,8 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     }
     return Array.from(counts.entries()).map(([label, count]) => ({ label, count, value: count })).sort((left, right) => right.count - left.count || left.label.localeCompare(right.label)).slice(0, limit);
   }
-  function buildHistogramEntries(values, binCount, formatter) {
-    const sortedValues = values.filter(isFiniteNonNegative).sort((left, right) => left - right);
+  function buildHistogramEntries(values, binCount, formatter, options = {}) {
+    const sortedValues = options.sorted ? values : sortFiniteMetricValues(values);
     if (!sortedValues.length) return [];
     const minValue = sortedValues[0];
     const maxValue = sortedValues[sortedValues.length - 1];
@@ -10306,7 +10500,9 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     }));
   }
   function getQuantile2(values, quantile) {
-    const sortedValues = values.filter(isFiniteNonNegative).sort((left, right) => left - right);
+    return getSortedQuantile(sortFiniteMetricValues(values), quantile);
+  }
+  function getSortedQuantile(sortedValues, quantile) {
     if (!sortedValues.length) return 0;
     const position = (sortedValues.length - 1) * clamp2(quantile, 0, 1);
     const lowerIndex = Math.floor(position);
@@ -10314,6 +10510,9 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     if (lowerIndex === upperIndex) return sortedValues[lowerIndex];
     const weight = position - lowerIndex;
     return sortedValues[lowerIndex] * (1 - weight) + sortedValues[upperIndex] * weight;
+  }
+  function sortFiniteMetricValues(values) {
+    return values.filter(isFiniteNonNegative).sort((left, right) => left - right);
   }
   function formatBits(value) {
     const bits = Math.max(0, Number(value) || 0);
@@ -10352,6 +10551,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       init_analyzer_core();
       init_catalogs();
       init_ui_helpers();
+      init_frame_internals_map();
     }
   });
 
@@ -10439,11 +10639,15 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       boxTreeActivationCount: 0,
       lastBoxTreeActivation: null,
       frameInternalsTooltipTarget: null,
+      frameInternalsTooltipCellId: "",
       frameInternalsMapDrag: null,
       frameInternalsMapGesture: null,
       frameInternalsMapPointers: /* @__PURE__ */ new Map(),
       frameInternalsMapView: createDefaultFrameInternalsMapView(),
       frameInternalsColorScaleCache: /* @__PURE__ */ new Map(),
+      frameInternalsModelKey: "",
+      frameInternalsModel: null,
+      frameInternalsSpatialIndex: null,
       frameInternalsFrameOverlayEnabled: false,
       frameInternalsFrameOverlay: {
         frameKey: "",
@@ -11357,6 +11561,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
         const analysis = await analysisWorkerClient.scanFrameTypes(state.analysis, { onProgress: setProgress });
         state.analysis = analysis;
         state.frameInternalsColorScaleCache = /* @__PURE__ */ new Map();
+        clearFrameInternalsModelCache();
         setProgress("Frame type scan complete", 100);
         renderFrames();
         renderTracks();
@@ -11386,6 +11591,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       state.lastPlaybackSynchronizationFragmentIndex = 0;
       state.fragmentRows = [];
       state.frameInternalsColorScaleCache = /* @__PURE__ */ new Map();
+      clearFrameInternalsModelCache();
       state.frameInternalsMapView = createDefaultFrameInternalsMapView();
       clearFrameInternalsFrameOverlay();
       state.transientWarnings = options2.initialWarnings ? options2.initialWarnings.slice() : [];
@@ -12080,11 +12286,12 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       if (!synchronizedRow) {
         if (state.selectedFrameKey && !rows.some((row) => getFrameRowKey(row) === state.selectedFrameKey)) state.selectedFrameKey = "";
         scheduleFrameRender();
+        renderFrameInternals();
       }
-      renderFrameInternals();
     }
     function renderFrameInternals() {
       if (!elements.frameInternalsBody) return;
+      if (state.analysis && state.activeTab !== "frames") return;
       resetFrameInternalsMapInteractionState();
       hideFrameInternalsTooltip();
       const model = buildSelectedFrameInternalsModel();
@@ -12108,12 +12315,27 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       elements.frameInternalsBody.innerHTML = '<div class="empty compact">' + escapeHtml2(model.note || t("frameInternals.unsupported")) + "</div>";
     }
     function buildSelectedFrameInternalsModel() {
-      if (!state.analysis || !state.selectedFrameKey) return buildFrameInternalsModel(null, null);
+      if (!state.analysis || !state.selectedFrameKey) {
+        clearFrameInternalsModelCache();
+        return buildFrameInternalsModel(null, null);
+      }
+      if (state.frameInternalsModelKey === state.selectedFrameKey && state.frameInternalsModel) {
+        return state.frameInternalsModel;
+      }
       const row = findFrameRowByKey(state.selectedFrameKey);
       const track = row ? getRowTrack(row) : null;
-      return buildFrameInternalsModel(row, track, {
+      const model = buildFrameInternalsModel(row, track, {
         colorScale: getFrameInternalsColorScale(track)
       });
+      state.frameInternalsModelKey = state.selectedFrameKey;
+      state.frameInternalsModel = model;
+      state.frameInternalsSpatialIndex = model.kind === "video-grid" ? createFrameInternalsSpatialIndex(model) : null;
+      return model;
+    }
+    function clearFrameInternalsModelCache() {
+      state.frameInternalsModelKey = "";
+      state.frameInternalsModel = null;
+      state.frameInternalsSpatialIndex = null;
     }
     function getFrameInternalsColorScale(track) {
       if (!track || track.handlerType !== "vide" || !state.analysis) return null;
@@ -12213,10 +12435,55 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           unavailable: true
         };
       }
-      if (frameKey === state.selectedFrameKey) renderFrameInternals();
+      if (frameKey === state.selectedFrameKey && !updateFrameInternalsFrameOverlayDom()) {
+        renderFrameInternals();
+      }
+    }
+    function updateFrameInternalsFrameOverlayDom() {
+      const model = state.frameInternalsModel;
+      const viewport = elements.frameInternalsBody.querySelector(".block-map-viewport");
+      const svg = viewport && viewport.querySelector("svg.block-map");
+      if (!model || model.kind !== "video-grid" || !viewport || !svg) return false;
+      const frameOverlay = getFrameInternalsFrameOverlayRenderOptions();
+      let overlayImage = svg.querySelector(".block-frame-overlay");
+      if (frameOverlay.enabled && frameOverlay.imageUrl) {
+        if (!overlayImage) {
+          overlayImage = document.createElementNS("http://www.w3.org/2000/svg", "image");
+          overlayImage.setAttribute("class", "block-frame-overlay");
+          svg.insertBefore(overlayImage, svg.firstChild);
+        }
+        overlayImage.setAttribute("href", frameOverlay.imageUrl);
+        overlayImage.setAttribute("x", "0");
+        overlayImage.setAttribute("y", "0");
+        overlayImage.setAttribute("width", String(model.mediaWidth));
+        overlayImage.setAttribute("height", String(model.mediaHeight));
+        overlayImage.setAttribute("preserveAspectRatio", "xMidYMid meet");
+      } else if (overlayImage) {
+        overlayImage.remove();
+      }
+      viewport.classList.toggle("frame-overlay-enabled", frameOverlay.enabled);
+      viewport.classList.toggle("has-frame-image", Boolean(frameOverlay.imageUrl));
+      updateFrameInternalsFrameOverlayStatus(viewport, frameOverlay);
+      return true;
+    }
+    function updateFrameInternalsFrameOverlayStatus(viewport, frameOverlay) {
+      let status = viewport.querySelector(".frame-overlay-status");
+      if (!frameOverlay.enabled || frameOverlay.imageUrl) {
+        if (status) status.remove();
+        return;
+      }
+      if (!status) {
+        status = document.createElement("div");
+        status.className = "frame-overlay-status";
+        viewport.appendChild(status);
+      }
+      status.textContent = t(
+        frameOverlay.unavailable ? "frameInternals.frameOverlayUnavailable" : "frameInternals.frameOverlayPending"
+      );
     }
     function handleFrameInternalsTooltipPointerOver(event) {
       if (state.frameInternalsMapDrag || state.frameInternalsMapGesture) return;
+      if (showVideoFrameInternalsTooltipAtPointer(event)) return;
       const target = getFrameInternalsTooltipTarget(event.target);
       if (!target) return;
       showFrameInternalsTooltip(target, event.clientX, event.clientY);
@@ -12226,6 +12493,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
         hideFrameInternalsTooltip();
         return;
       }
+      if (showVideoFrameInternalsTooltipAtPointer(event)) return;
       const target = getFrameInternalsTooltipTarget(event.target);
       if (!target) {
         hideFrameInternalsTooltip();
@@ -12250,6 +12518,62 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       if (!target) return;
       const rect = target.getBoundingClientRect();
       showFrameInternalsTooltip(target, rect.left + rect.width / 2, rect.bottom, { anchorMode: "center" });
+    }
+    function showVideoFrameInternalsTooltipAtPointer(event) {
+      const viewport = getFrameInternalsMapViewport(event.target);
+      const model = state.frameInternalsModel;
+      const spatialIndex = state.frameInternalsSpatialIndex;
+      if (!viewport || !model || model.kind !== "video-grid" || !spatialIndex) return false;
+      const mapPoint = getFrameInternalsMapClientPoint(
+        viewport,
+        event.clientX,
+        event.clientY
+      );
+      const cell = findFrameInternalsCell(
+        spatialIndex,
+        mapPoint.mapX * model.mediaWidth,
+        mapPoint.mapY * model.mediaHeight
+      );
+      if (!cell) {
+        hideFrameInternalsTooltip();
+        return true;
+      }
+      const cellIdentity = getFrameInternalsCellIdentity(cell);
+      if (state.frameInternalsTooltipTarget !== viewport || state.frameInternalsTooltipCellId !== cellIdentity) {
+        state.frameInternalsTooltipTarget = viewport;
+        state.frameInternalsTooltipCellId = cellIdentity;
+        elements.frameInternalsTooltip.innerHTML = renderFrameInternalsTooltip(
+          createVideoBlockTooltipPayload(cell, model)
+        );
+        elements.frameInternalsTooltip.hidden = false;
+        updateFrameInternalsHoverOutline(viewport, cell);
+      }
+      positionFrameInternalsTooltip(event.clientX, event.clientY, { anchorMode: "pointer" });
+      return true;
+    }
+    function getFrameInternalsCellIdentity(cell) {
+      if (cell && cell.id) return String(cell.id);
+      return [
+        cell && cell.displayPixelLeft,
+        cell && cell.displayPixelTop,
+        cell && cell.displayPixelRight,
+        cell && cell.displayPixelBottom,
+        cell && cell.depth
+      ].join(":");
+    }
+    function updateFrameInternalsHoverOutline(viewport, cell) {
+      const outline = viewport.querySelector(".block-hover-outline");
+      if (!outline) return;
+      const bounds = getFrameInternalsDisplayBounds(cell);
+      outline.setAttribute("x", formatFrameInternalsViewBoxNumber(bounds.left));
+      outline.setAttribute("y", formatFrameInternalsViewBoxNumber(bounds.top));
+      outline.setAttribute("width", formatFrameInternalsViewBoxNumber(Math.max(0, bounds.right - bounds.left)));
+      outline.setAttribute("height", formatFrameInternalsViewBoxNumber(Math.max(0, bounds.bottom - bounds.top)));
+      outline.setAttribute("visibility", "visible");
+    }
+    function hideFrameInternalsHoverOutline() {
+      const outline = elements.frameInternalsBody.querySelector(".block-hover-outline");
+      if (outline) outline.setAttribute("visibility", "hidden");
     }
     function handleFrameInternalsMapKeyDown(event) {
       const viewport = getFrameInternalsMapViewport(event.target);
@@ -12633,12 +12957,15 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
         return;
       }
       state.frameInternalsTooltipTarget = target;
+      state.frameInternalsTooltipCellId = "";
       elements.frameInternalsTooltip.innerHTML = renderFrameInternalsTooltip(payload);
       elements.frameInternalsTooltip.hidden = false;
       positionFrameInternalsTooltip(clientX, clientY, options2);
     }
     function hideFrameInternalsTooltip() {
       state.frameInternalsTooltipTarget = null;
+      state.frameInternalsTooltipCellId = "";
+      hideFrameInternalsHoverOutline();
       if (!elements.frameInternalsTooltip) return;
       elements.frameInternalsTooltip.hidden = true;
       elements.frameInternalsTooltip.innerHTML = "";
@@ -13031,6 +13358,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       init_metrics_model();
       init_box_detail_model();
       init_frame_internals_view();
+      init_frame_internals_map();
       init_summary_model();
       init_ui_helpers();
     }

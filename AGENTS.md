@@ -69,6 +69,7 @@ These instructions are project-specific context for LLM coding agents. They capt
 - The optional source-frame overlay is a visual background captured from the preview element. Do not use decoded pixels to infer block structure or byte allocation.
 - Source-frame overlay must remain optional and gracefully unavailable when browser CORS/canvas-taint rules prevent reading remote media pixels.
 - Preserve zoom/pan state across selected frames so users can inspect the same region over time.
+- Do not create one DOM/SVG element or serialized tooltip payload per block for large heatmaps. Keep vector cells batched into a bounded number of paths and resolve hover details through the spatial index.
 
 ## Metrics View
 

@@ -662,13 +662,36 @@ test("frame internals view renders reusable video, audio, and tooltip markup", a
     rows: [["Bytes", "500 B"]],
     note: "Estimated"
   });
+  const videoTooltipHtml = frameInternalsView.renderFrameInternalsTooltip(
+    frameInternalsView.createVideoBlockTooltipPayload({
+      pixelLeft: 0,
+      pixelTop: 0,
+      pixelRight: 16,
+      pixelBottom: 16,
+      displayPixelLeft: 0,
+      displayPixelTop: 16,
+      displayPixelRight: 16,
+      displayPixelBottom: 32,
+      blockWidth: 16,
+      blockHeight: 16,
+      depth: 1,
+      partitionMode: "vertical",
+      estimatedBytes: 500,
+      estimatedBytesPerPixel: 1.953125,
+      normalizedByteDensity: 2,
+      globalPercentile: 0.75,
+      nominalUnits: 1
+    }, {
+      unitName: "macroblock"
+    })
+  );
 
-  assert.match(videoHtml, /block-cell i/);
+  assert.match(videoHtml, /block-cell block-cell-path i/);
   assert.match(videoHtml, /block-map-viewport/);
   assert.match(videoHtml, /<svg class="block-map" viewBox="0 0 16 32"/);
   assert.match(videoHtml, /data-media-width="16"/);
   assert.match(videoHtml, /data-media-height="32"/);
-  assert.match(videoHtml, /<rect class="block-cell i"/);
+  assert.match(videoHtml, /<path class="block-cell block-cell-path i"/);
   assert.match(videoHtml, /has-frame-image/);
   assert.match(videoHtml, /<image class="block-frame-overlay" href="data:image\/jpeg;base64,AA=="/);
   assert.match(videoHtml, /role="region"/);
@@ -677,21 +700,19 @@ test("frame internals view renders reusable video, audio, and tooltip markup", a
   assert.match(videoHtml, /--frame-map-width:140px/);
   assert.match(videoHtml, /--frame-map-height:280px/);
   assert.doesNotMatch(videoHtml, /--frame-map-scale/);
-  assert.match(videoHtml, / x="0"/);
-  assert.match(videoHtml, / y="16"/);
-  assert.match(videoHtml, / width="16"/);
-  assert.match(videoHtml, / height="16"/);
+  assert.match(videoHtml, /d="M0 16H16V32H0Z"/);
   assert.match(videoHtml, /16x32 \(rotated -90 deg, encoded 32x16\)/);
-  assert.match(videoHtml, /Coded pixel range/);
-  assert.match(videoHtml, /Display pixel range/);
-  assert.match(videoHtml, /Byte density/);
+  assert.match(videoTooltipHtml, /Coded pixel range/);
+  assert.match(videoTooltipHtml, /Display pixel range/);
+  assert.match(videoTooltipHtml, /Byte density/);
   assert.match(videoHtml, /Internal statistics/);
   assert.match(videoHtml, /Total bits/);
   assert.match(videoHtml, /Block size distribution/);
   assert.match(videoHtml, /Byte density distribution/);
   assert.match(videoHtml, /Depth 0/);
   assert.match(videoHtml, /Depth 1/);
-  assert.match(videoHtml, /data-inspection-tooltip=/);
+  assert.doesNotMatch(videoHtml, /data-inspection-tooltip=/);
+  assert.match(audioHtml, /data-inspection-tooltip=/);
   assert.match(videoHtml, /--cell-red:1;--cell-green:2;--cell-blue:3;--cell-alpha:0\.500/);
   assert.match(pendingOverlayHtml, /Frame overlay pending/);
   assert.match(audioHtml, /audio-band-row/);
@@ -857,16 +878,150 @@ test("frame internals view renders distributed density statistics and fallback c
       }
     ]
   });
+  const distributedTooltipHtml = frameInternalsView.renderFrameInternalsTooltip(
+    frameInternalsView.createVideoBlockTooltipPayload({
+      pixelLeft: 32,
+      pixelTop: 0,
+      pixelRight: 64,
+      pixelBottom: 64,
+      blockWidth: 32,
+      blockHeight: 64,
+      depth: 2,
+      partitionMode: "vertical",
+      estimatedBytes: 4_000,
+      estimatedBytesPerPixel: 2,
+      normalizedByteDensity: 3,
+      globalPercentile: 1,
+      nominalUnits: 1
+    }, {
+      unitName: "superblock"
+    })
+  );
 
   assert.match(videoHtml, /16\.0 Mbits/);
   assert.match(videoHtml, /0\.0010 B\/px -/);
-  assert.match(videoHtml, /2\.000 B\/px, 3\.00x/);
+  assert.match(distributedTooltipHtml, /2\.000 B\/px, 3\.00x/);
   assert.match(videoHtml, /n\/a/);
-  assert.match(videoHtml, / x="5"/);
-  assert.match(videoHtml, / y="7"/);
+  assert.match(videoHtml, /d="M5 7H32V32H5Z"/);
   assert.match(videoHtml, /--cell-alpha:0\.750/);
   assert.match(videoHtml, /--cell-red:31;--cell-green:122;--cell-blue:140/);
-  assert.match(videoHtml, /--cell-red:9;--cell-green:8;--cell-blue:7;--cell-alpha:0\.900/);
+  assert.match(videoHtml, /--cell-red:20;--cell-green:65;--cell-blue:74;--cell-alpha:0\.600/);
+});
+
+test("frame internals batches large heatmaps and spatially resolves hover cells", async () => {
+  const loader = await createSourceModuleLoader();
+  const frameInternalsView = await loader.import("src/js/ui/frame-internals-view.js");
+  const frameInternalsMap = await loader.import("src/js/ui/frame-internals-map.js");
+  const columnCount = 90;
+  const rowCount = 100;
+  const blockSize = 16;
+  const cells = Array.from({ length: columnCount * rowCount }, (_, cellIndex) => {
+    const columnIndex = cellIndex % columnCount;
+    const rowIndex = Math.floor(cellIndex / columnCount);
+    const globalPercentile = (cellIndex % 32) / 31;
+    return {
+      id: "cell-" + cellIndex,
+      pixelLeft: columnIndex * blockSize,
+      pixelTop: rowIndex * blockSize,
+      pixelRight: (columnIndex + 1) * blockSize,
+      pixelBottom: (rowIndex + 1) * blockSize,
+      displayPixelLeft: columnIndex * blockSize,
+      displayPixelTop: rowIndex * blockSize,
+      displayPixelRight: (columnIndex + 1) * blockSize,
+      displayPixelBottom: (rowIndex + 1) * blockSize,
+      blockWidth: blockSize,
+      blockHeight: blockSize,
+      depth: 2,
+      partitionMode: "split",
+      estimatedBytes: 100 + cellIndex,
+      estimatedBytesPerPixel: (100 + cellIndex) / (blockSize * blockSize),
+      normalizedByteDensity: 1,
+      globalPercentile,
+      nominalUnits: 1,
+      color: {
+        red: Math.round(40 + globalPercentile * 180),
+        green: Math.round(210 - globalPercentile * 120),
+        blue: Math.round(180 - globalPercentile * 80)
+      },
+      intensity: 0.72 + globalPercentile * 0.28
+    };
+  });
+  const model = {
+    kind: "video-grid",
+    title: "Large heatmap",
+    codecFamily: "AVC / H.264",
+    frameType: "P",
+    unitName: "macroblock",
+    unitWidth: blockSize,
+    unitHeight: blockSize,
+    mediaWidth: columnCount * blockSize,
+    mediaHeight: rowCount * blockSize,
+    encodedWidth: columnCount * blockSize,
+    encodedHeight: rowCount * blockSize,
+    displayRotationDegrees: 0,
+    nominalColumns: columnCount,
+    nominalRows: rowCount,
+    nominalUnitCount: cells.length,
+    displayColumns: columnCount,
+    displayRows: rowCount,
+    aggregation: 1,
+    partitionBlockCount: cells.length,
+    maxPartitionDepth: 2,
+    partitionDepths: [{ depth: 0, count: cells.length }, { depth: 2, count: cells.length }],
+    partitionModes: [{ mode: "split", count: cells.length }],
+    sampleSize: 900000,
+    note: "performance fixture",
+    colorScale: { mode: "global-track-percentile", sampleCount: 1, valueCount: cells.length },
+    cells
+  };
+
+  const pathGroups = frameInternalsMap.buildFrameInternalsPathGroups(cells);
+  const fallbackPathGroups = frameInternalsMap.buildFrameInternalsPathGroups([{
+    pixelLeft: 5,
+    pixelTop: 6,
+    pixelRight: 15,
+    pixelBottom: 16,
+    displayPixelLeft: null,
+    displayPixelTop: null,
+    displayPixelRight: null,
+    displayPixelBottom: null,
+    globalPercentile: null,
+    intensity: null,
+    color: null
+  }]);
+  const spatialIndex = frameInternalsMap.createFrameInternalsSpatialIndex(model);
+  const gapSpatialIndex = frameInternalsMap.createFrameInternalsSpatialIndex({
+    mediaWidth: 20,
+    mediaHeight: 20,
+    cells: [{
+      pixelLeft: 0,
+      pixelTop: 0,
+      pixelRight: 10,
+      pixelBottom: 10
+    }]
+  });
+  const targetCell = cells[4512];
+  const targetBounds = frameInternalsMap.getFrameInternalsDisplayBounds(targetCell);
+  const foundCell = frameInternalsMap.findFrameInternalsCell(
+    spatialIndex,
+    (targetBounds.left + targetBounds.right) / 2,
+    (targetBounds.top + targetBounds.bottom) / 2
+  );
+  const videoHtml = frameInternalsView.renderVideoFrameInternals(model);
+  const renderedPathCount = (videoHtml.match(/<path class="block-cell block-cell-path/g) || []).length;
+
+  assert.ok(pathGroups.length <= 32);
+  assert.equal(pathGroups.reduce((total, group) => total + group.cellCount, 0), cells.length);
+  assert.equal(fallbackPathGroups[0].pathData, "M5 6H15V16H5Z");
+  assert.equal(fallbackPathGroups[0].alpha, 0.75);
+  assert.equal(foundCell.id, targetCell.id);
+  assert.equal(frameInternalsMap.findFrameInternalsCell(spatialIndex, -1, 10), null);
+  assert.equal(frameInternalsMap.findFrameInternalsCell(gapSpatialIndex, 15, 15), null);
+  assert.equal(renderedPathCount, pathGroups.length);
+  assert.match(videoHtml, /data-block-count="9000"/);
+  assert.match(videoHtml, /data-path-count="32"/);
+  assert.doesNotMatch(videoHtml, /data-inspection-tooltip=/);
+  assert.ok(videoHtml.length < 800000, "batched heatmap markup should remain bounded");
 });
 
 test("analysis worker client falls back to direct core and preserves progress, scan, and cancel hooks", async () => {
@@ -1360,6 +1515,7 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   const sourceUi = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "analyzer-ui.js"), "utf8");
   const sourceBoxDetailModel = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "box-detail-model.js"), "utf8");
   const sourceFrameInternalsView = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "frame-internals-view.js"), "utf8");
+  const sourceFrameInternalsMap = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "frame-internals-map.js"), "utf8");
   const sourceJsonViewer = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "json-viewer.js"), "utf8");
   const sourceMediaRowModel = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "media-row-model.js"), "utf8");
   const sourceMetricsModel = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "metrics-model.js"), "utf8");
@@ -1465,9 +1621,14 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceUi, /buildFrameInternalsModel/);
   assert.match(sourceUi, /buildFrameInternalsColorScale/);
   assert.match(sourceUi, /frameInternalsColorScaleCache/);
+  assert.match(sourceUi, /frameInternalsModelKey/);
+  assert.match(sourceUi, /createFrameInternalsSpatialIndex/);
+  assert.match(sourceUi, /findFrameInternalsCell/);
   assert.match(sourceUi, /captureFrameInternalsFrameOverlay/);
+  assert.match(sourceUi, /updateFrameInternalsFrameOverlayDom/);
   assert.match(sourceUi, /frameInternalsFrameOverlayEnabled/);
   assert.match(sourceUi, /renderFrameInternals/);
+  assert.match(sourceUi, /state\.analysis && state\.activeTab !== "frames"/);
   assert.match(sourceUi, /from "\.\/frame-internals-view\.js"/);
   assert.match(sourceFrameInternalsView, /renderFrameInternalsTooltipAttributes/);
   assert.match(sourceFrameInternalsView, /renderVideoFrameInternals/);
@@ -1491,11 +1652,16 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceFrameInternalsView, /data-inspection-tooltip/);
   assert.match(sourceFrameInternalsView, /<svg class="block-map"/);
   assert.match(sourceFrameInternalsView, /block-frame-overlay/);
-  assert.match(sourceFrameInternalsView, /<rect class="block-cell/);
+  assert.match(sourceFrameInternalsView, /<path class="block-cell block-cell-path/);
+  assert.match(sourceFrameInternalsView, /data-path-count/);
   assert.match(sourceFrameInternalsView, /--cell-red:/);
   assert.match(sourceFrameInternalsView, /globalPercentile/);
   assert.match(sourceFrameInternalsView, /partitionModes/);
   assert.match(sourceFrameInternalsView, /partitionDepths/);
+  assert.match(sourceFrameInternalsMap, /DEFAULT_HEATMAP_BUCKET_COUNT = 32/);
+  assert.match(sourceFrameInternalsMap, /buildFrameInternalsPathGroups/);
+  assert.match(sourceFrameInternalsMap, /createFrameInternalsSpatialIndex/);
+  assert.match(sourceFrameInternalsMap, /findFrameInternalsCell/);
   assert.match(sourceCss, /\.block-map-viewport\s*\{[\s\S]*?position:\s*relative;[\s\S]*?width:\s*100%;/);
   assert.match(sourceCss, /\.block-map-viewport\s*\{[\s\S]*?display:\s*flex;/);
   assert.match(sourceCss, /\.block-map-viewport\s*\{[\s\S]*?height:\s*var\(--frame-map-height/);
@@ -1508,6 +1674,7 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.doesNotMatch(sourceCss, /\.block-map-viewport\.zoomed/);
   assert.match(sourceCss, /\.block-map\s*\{[\s\S]*?width:\s*100%;[\s\S]*?height:\s*100%;/);
   assert.match(sourceCss, /\.block-map \.block-cell\s*\{[\s\S]*?vector-effect:\s*non-scaling-stroke;/);
+  assert.match(sourceCss, /\.block-hover-outline\s*\{[\s\S]*?pointer-events:\s*none;/);
   assert.match(sourceCss, /\.block-map-viewport\.has-frame-image \.block-cell\s*\{[\s\S]*?calc\(var\(--cell-alpha\) \* 0\.46\)/);
   assert.match(sourceCss, /\.block-frame-overlay\s*\{[\s\S]*?pointer-events:\s*none;/);
   assert.match(sourceCss, /\.frame-internals-metrics\s*\{[\s\S]*?display:\s*grid;/);

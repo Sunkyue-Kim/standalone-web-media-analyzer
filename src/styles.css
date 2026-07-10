@@ -2086,9 +2086,8 @@
       --cell-green: 122;
       --cell-blue: 140;
       --cell-alpha: 0.75;
-      --cell-depth: 0;
       fill: rgba(var(--cell-red), var(--cell-green), var(--cell-blue), var(--cell-alpha));
-      cursor: help;
+      pointer-events: none;
     }
 
     .block-map .block-cell {
@@ -2103,9 +2102,12 @@
       stroke: rgba(255, 255, 255, 0.76);
     }
 
-    .block-map .block-cell:hover {
-      stroke: rgba(24, 34, 48, 0.5);
+    .block-hover-outline {
+      fill: none;
+      stroke: rgba(15, 23, 42, 0.88);
       stroke-width: 2;
+      vector-effect: non-scaling-stroke;
+      pointer-events: none;
     }
 
     .block-cell.i { --cell-red: 142; --cell-green: 216; --cell-blue: 173; }

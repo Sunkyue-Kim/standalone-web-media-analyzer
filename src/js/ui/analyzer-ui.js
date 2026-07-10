@@ -58,11 +58,17 @@ import {
   getDerivedBoxFields
 } from "./box-detail-model.js";
 import {
+  createVideoBlockTooltipPayload,
   formatFrameTypeLabel,
   renderAudioFrameInternals,
   renderFrameInternalsTooltip,
   renderVideoFrameInternals
 } from "./frame-internals-view.js";
+import {
+  createFrameInternalsSpatialIndex,
+  findFrameInternalsCell,
+  getFrameInternalsDisplayBounds
+} from "./frame-internals-map.js";
 import { getVisibleSummaryCodecTrackCounts } from "./summary-model.js";
 import {
   canUseSampleCatalogLocation,
@@ -108,11 +114,15 @@ const state = {
   boxTreeActivationCount: 0,
   lastBoxTreeActivation: null,
   frameInternalsTooltipTarget: null,
+  frameInternalsTooltipCellId: "",
   frameInternalsMapDrag: null,
   frameInternalsMapGesture: null,
   frameInternalsMapPointers: new Map(),
   frameInternalsMapView: createDefaultFrameInternalsMapView(),
   frameInternalsColorScaleCache: new Map(),
+  frameInternalsModelKey: "",
+  frameInternalsModel: null,
+  frameInternalsSpatialIndex: null,
   frameInternalsFrameOverlayEnabled: false,
   frameInternalsFrameOverlay: {
     frameKey: "",
@@ -1127,6 +1137,7 @@ async function scanCurrentAnalysis() {
     const analysis = await analysisWorkerClient.scanFrameTypes(state.analysis, { onProgress: setProgress });
     state.analysis = analysis;
     state.frameInternalsColorScaleCache = new Map();
+    clearFrameInternalsModelCache();
     setProgress("Frame type scan complete", 100);
     renderFrames();
     renderTracks();
@@ -1158,6 +1169,7 @@ function resetView(file, options = {}) {
   state.lastPlaybackSynchronizationFragmentIndex = 0;
   state.fragmentRows = [];
   state.frameInternalsColorScaleCache = new Map();
+  clearFrameInternalsModelCache();
   state.frameInternalsMapView = createDefaultFrameInternalsMapView();
   clearFrameInternalsFrameOverlay();
   state.transientWarnings = options.initialWarnings ? options.initialWarnings.slice() : [];
@@ -1959,12 +1971,13 @@ function renderFrames() {
   if (!synchronizedRow) {
     if (state.selectedFrameKey && !rows.some((row) => getFrameRowKey(row) === state.selectedFrameKey)) state.selectedFrameKey = "";
     scheduleFrameRender();
+    renderFrameInternals();
   }
-  renderFrameInternals();
 }
 
 function renderFrameInternals() {
   if (!elements.frameInternalsBody) return;
+  if (state.analysis && state.activeTab !== "frames") return;
   resetFrameInternalsMapInteractionState();
   hideFrameInternalsTooltip();
   const model = buildSelectedFrameInternalsModel();
@@ -1989,12 +2002,33 @@ function renderFrameInternals() {
 }
 
 function buildSelectedFrameInternalsModel() {
-  if (!state.analysis || !state.selectedFrameKey) return buildFrameInternalsModel(null, null);
+  if (!state.analysis || !state.selectedFrameKey) {
+    clearFrameInternalsModelCache();
+    return buildFrameInternalsModel(null, null);
+  }
+  if (
+    state.frameInternalsModelKey === state.selectedFrameKey &&
+    state.frameInternalsModel
+  ) {
+    return state.frameInternalsModel;
+  }
   const row = findFrameRowByKey(state.selectedFrameKey);
   const track = row ? getRowTrack(row) : null;
-  return buildFrameInternalsModel(row, track, {
+  const model = buildFrameInternalsModel(row, track, {
     colorScale: getFrameInternalsColorScale(track)
   });
+  state.frameInternalsModelKey = state.selectedFrameKey;
+  state.frameInternalsModel = model;
+  state.frameInternalsSpatialIndex = model.kind === "video-grid"
+    ? createFrameInternalsSpatialIndex(model)
+    : null;
+  return model;
+}
+
+function clearFrameInternalsModelCache() {
+  state.frameInternalsModelKey = "";
+  state.frameInternalsModel = null;
+  state.frameInternalsSpatialIndex = null;
 }
 
 function getFrameInternalsColorScale(track) {
@@ -2105,11 +2139,63 @@ function captureFrameInternalsFrameOverlay() {
       unavailable: true
     };
   }
-  if (frameKey === state.selectedFrameKey) renderFrameInternals();
+  if (
+    frameKey === state.selectedFrameKey &&
+    !updateFrameInternalsFrameOverlayDom()
+  ) {
+    renderFrameInternals();
+  }
+}
+
+function updateFrameInternalsFrameOverlayDom() {
+  const model = state.frameInternalsModel;
+  const viewport = elements.frameInternalsBody.querySelector(".block-map-viewport");
+  const svg = viewport && viewport.querySelector("svg.block-map");
+  if (!model || model.kind !== "video-grid" || !viewport || !svg) return false;
+  const frameOverlay = getFrameInternalsFrameOverlayRenderOptions();
+  let overlayImage = svg.querySelector(".block-frame-overlay");
+  if (frameOverlay.enabled && frameOverlay.imageUrl) {
+    if (!overlayImage) {
+      overlayImage = document.createElementNS("http://www.w3.org/2000/svg", "image");
+      overlayImage.setAttribute("class", "block-frame-overlay");
+      svg.insertBefore(overlayImage, svg.firstChild);
+    }
+    overlayImage.setAttribute("href", frameOverlay.imageUrl);
+    overlayImage.setAttribute("x", "0");
+    overlayImage.setAttribute("y", "0");
+    overlayImage.setAttribute("width", String(model.mediaWidth));
+    overlayImage.setAttribute("height", String(model.mediaHeight));
+    overlayImage.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  } else if (overlayImage) {
+    overlayImage.remove();
+  }
+  viewport.classList.toggle("frame-overlay-enabled", frameOverlay.enabled);
+  viewport.classList.toggle("has-frame-image", Boolean(frameOverlay.imageUrl));
+  updateFrameInternalsFrameOverlayStatus(viewport, frameOverlay);
+  return true;
+}
+
+function updateFrameInternalsFrameOverlayStatus(viewport, frameOverlay) {
+  let status = viewport.querySelector(".frame-overlay-status");
+  if (!frameOverlay.enabled || frameOverlay.imageUrl) {
+    if (status) status.remove();
+    return;
+  }
+  if (!status) {
+    status = document.createElement("div");
+    status.className = "frame-overlay-status";
+    viewport.appendChild(status);
+  }
+  status.textContent = t(
+    frameOverlay.unavailable
+      ? "frameInternals.frameOverlayUnavailable"
+      : "frameInternals.frameOverlayPending"
+  );
 }
 
 function handleFrameInternalsTooltipPointerOver(event) {
   if (state.frameInternalsMapDrag || state.frameInternalsMapGesture) return;
+  if (showVideoFrameInternalsTooltipAtPointer(event)) return;
   const target = getFrameInternalsTooltipTarget(event.target);
   if (!target) return;
   showFrameInternalsTooltip(target, event.clientX, event.clientY);
@@ -2120,6 +2206,7 @@ function handleFrameInternalsTooltipPointerMove(event) {
     hideFrameInternalsTooltip();
     return;
   }
+  if (showVideoFrameInternalsTooltipAtPointer(event)) return;
   const target = getFrameInternalsTooltipTarget(event.target);
   if (!target) {
     hideFrameInternalsTooltip();
@@ -2146,6 +2233,69 @@ function handleFrameInternalsTooltipFocusIn(event) {
   if (!target) return;
   const rect = target.getBoundingClientRect();
   showFrameInternalsTooltip(target, rect.left + rect.width / 2, rect.bottom, { anchorMode: "center" });
+}
+
+function showVideoFrameInternalsTooltipAtPointer(event) {
+  const viewport = getFrameInternalsMapViewport(event.target);
+  const model = state.frameInternalsModel;
+  const spatialIndex = state.frameInternalsSpatialIndex;
+  if (!viewport || !model || model.kind !== "video-grid" || !spatialIndex) return false;
+  const mapPoint = getFrameInternalsMapClientPoint(
+    viewport,
+    event.clientX,
+    event.clientY
+  );
+  const cell = findFrameInternalsCell(
+    spatialIndex,
+    mapPoint.mapX * model.mediaWidth,
+    mapPoint.mapY * model.mediaHeight
+  );
+  if (!cell) {
+    hideFrameInternalsTooltip();
+    return true;
+  }
+  const cellIdentity = getFrameInternalsCellIdentity(cell);
+  if (
+    state.frameInternalsTooltipTarget !== viewport ||
+    state.frameInternalsTooltipCellId !== cellIdentity
+  ) {
+    state.frameInternalsTooltipTarget = viewport;
+    state.frameInternalsTooltipCellId = cellIdentity;
+    elements.frameInternalsTooltip.innerHTML = renderFrameInternalsTooltip(
+      createVideoBlockTooltipPayload(cell, model)
+    );
+    elements.frameInternalsTooltip.hidden = false;
+    updateFrameInternalsHoverOutline(viewport, cell);
+  }
+  positionFrameInternalsTooltip(event.clientX, event.clientY, { anchorMode: "pointer" });
+  return true;
+}
+
+function getFrameInternalsCellIdentity(cell) {
+  if (cell && cell.id) return String(cell.id);
+  return [
+    cell && cell.displayPixelLeft,
+    cell && cell.displayPixelTop,
+    cell && cell.displayPixelRight,
+    cell && cell.displayPixelBottom,
+    cell && cell.depth
+  ].join(":");
+}
+
+function updateFrameInternalsHoverOutline(viewport, cell) {
+  const outline = viewport.querySelector(".block-hover-outline");
+  if (!outline) return;
+  const bounds = getFrameInternalsDisplayBounds(cell);
+  outline.setAttribute("x", formatFrameInternalsViewBoxNumber(bounds.left));
+  outline.setAttribute("y", formatFrameInternalsViewBoxNumber(bounds.top));
+  outline.setAttribute("width", formatFrameInternalsViewBoxNumber(Math.max(0, bounds.right - bounds.left)));
+  outline.setAttribute("height", formatFrameInternalsViewBoxNumber(Math.max(0, bounds.bottom - bounds.top)));
+  outline.setAttribute("visibility", "visible");
+}
+
+function hideFrameInternalsHoverOutline() {
+  const outline = elements.frameInternalsBody.querySelector(".block-hover-outline");
+  if (outline) outline.setAttribute("visibility", "hidden");
 }
 
 function handleFrameInternalsMapKeyDown(event) {
@@ -2571,6 +2721,7 @@ function showFrameInternalsTooltip(target, clientX, clientY, options = {}) {
     return;
   }
   state.frameInternalsTooltipTarget = target;
+  state.frameInternalsTooltipCellId = "";
   elements.frameInternalsTooltip.innerHTML = renderFrameInternalsTooltip(payload);
   elements.frameInternalsTooltip.hidden = false;
   positionFrameInternalsTooltip(clientX, clientY, options);
@@ -2578,6 +2729,8 @@ function showFrameInternalsTooltip(target, clientX, clientY, options = {}) {
 
 function hideFrameInternalsTooltip() {
   state.frameInternalsTooltipTarget = null;
+  state.frameInternalsTooltipCellId = "";
+  hideFrameInternalsHoverOutline();
   if (!elements.frameInternalsTooltip) return;
   elements.frameInternalsTooltip.hidden = true;
   elements.frameInternalsTooltip.innerHTML = "";
