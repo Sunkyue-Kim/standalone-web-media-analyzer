@@ -70,6 +70,8 @@ These instructions are project-specific context for LLM coding agents. They capt
 - Source-frame overlay must remain optional and gracefully unavailable when browser CORS/canvas-taint rules prevent reading remote media pixels.
 - Preserve zoom/pan state across selected frames so users can inspect the same region over time.
 - Do not create one DOM/SVG element or serialized tooltip payload per block for large heatmaps. Keep vector cells batched into a bounded number of paths and resolve hover details through the spatial index.
+- The frame-internals cell budget is currently 100,000. Preserve intrinsic coding-unit roots before spending the remaining budget on estimated partition expansion, and keep performance tests representative before raising it again.
+- Playback-synchronized frame updates must not interrupt an active heatmap drag or pinch. Keep pointer capture and interaction state on the stable frame-internals container rather than on SVG content replaced by frame rendering.
 
 ## Metrics View
 

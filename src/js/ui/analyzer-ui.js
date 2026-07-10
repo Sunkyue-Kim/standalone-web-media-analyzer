@@ -1161,6 +1161,7 @@ function setBusy(isBusy) {
 
 function resetView(file, options = {}) {
   stopPlaybackSynchronizationLoop();
+  resetFrameInternalsMapInteractionState();
   state.analysis = null;
   state.selectedBox = null;
   state.selectedFrameKey = "";
@@ -1978,7 +1979,6 @@ function renderFrames() {
 function renderFrameInternals() {
   if (!elements.frameInternalsBody) return;
   if (state.analysis && state.activeTab !== "frames") return;
-  resetFrameInternalsMapInteractionState();
   hideFrameInternalsTooltip();
   const model = buildSelectedFrameInternalsModel();
   if (model.kind === "empty") {
@@ -2334,25 +2334,25 @@ function handleFrameInternalsMapPointerDown(event) {
   const viewport = getFrameInternalsMapViewport(event.target);
   if (!viewport) return;
   if (event.button !== undefined && event.button !== 0) return;
+  const interactionSurface = getFrameInternalsMapInteractionSurface();
+  if (!interactionSurface) return;
   state.frameInternalsMapPointers.set(event.pointerId, {
     pointerId: event.pointerId,
-    viewport,
     clientX: event.clientX,
     clientY: event.clientY
   });
-  if (typeof viewport.setPointerCapture === "function") {
+  if (typeof interactionSurface.setPointerCapture === "function") {
     try {
-      viewport.setPointerCapture(event.pointerId);
+      interactionSurface.setPointerCapture(event.pointerId);
     } catch (_) {
       // Pointer capture can fail if the browser has already released the pointer.
     }
   }
-  if (getFrameInternalsMapPointersForViewport(viewport).length >= 2) {
+  if (getFrameInternalsMapPointers().length >= 2) {
     startFrameInternalsMapPinch(viewport);
   } else if (getFrameInternalsMapTransform(viewport).scale > FRAME_INTERNALS_MAP_MINIMUM_SCALE) {
     const currentTransform = getFrameInternalsMapTransform(viewport);
     state.frameInternalsMapDrag = {
-      viewport,
       pointerId: event.pointerId,
       startClientX: event.clientX,
       startClientY: event.clientY,
@@ -2371,19 +2371,20 @@ function handleFrameInternalsMapPointerMove(event) {
     storedPointer.clientX = event.clientX;
     storedPointer.clientY = event.clientY;
   }
-  if (state.frameInternalsMapGesture && updateFrameInternalsMapPinch(event)) {
+  const viewport = getCurrentFrameInternalsMapViewport();
+  if (state.frameInternalsMapGesture && updateFrameInternalsMapPinch(event, viewport)) {
     hideFrameInternalsTooltip();
     event.preventDefault();
     return;
   }
   const dragState = state.frameInternalsMapDrag;
-  if (!dragState || dragState.pointerId !== event.pointerId) return;
+  if (!dragState || dragState.pointerId !== event.pointerId || !viewport) return;
   const deltaX = event.clientX - dragState.startClientX;
   const deltaY = event.clientY - dragState.startClientY;
-  const currentTransform = getFrameInternalsMapTransform(dragState.viewport);
-  const svgRect = getFrameInternalsMapSvgRect(dragState.viewport);
-  const viewBoxMetrics = getFrameInternalsMapViewBoxMetrics(dragState.viewport, currentTransform);
-  setFrameInternalsMapTransform(dragState.viewport, {
+  const currentTransform = getFrameInternalsMapTransform(viewport);
+  const svgRect = getFrameInternalsMapSvgRect(viewport);
+  const viewBoxMetrics = getFrameInternalsMapViewBoxMetrics(viewport, currentTransform);
+  setFrameInternalsMapTransform(viewport, {
     scale: currentTransform.scale,
     centerX: dragState.startCenterX - deltaX / Math.max(1, svgRect.width) * viewBoxMetrics.widthRatio,
     centerY: dragState.startCenterY - deltaY / Math.max(1, svgRect.height) * viewBoxMetrics.heightRatio
@@ -2393,22 +2394,24 @@ function handleFrameInternalsMapPointerMove(event) {
 }
 
 function handleFrameInternalsMapPointerUp(event) {
-  const storedPointer = state.frameInternalsMapPointers.get(event.pointerId);
   state.frameInternalsMapPointers.delete(event.pointerId);
+  const viewport = getCurrentFrameInternalsMapViewport();
   const dragState = state.frameInternalsMapDrag;
   if (dragState && dragState.pointerId === event.pointerId) {
-    dragState.viewport.classList.remove("dragging");
+    if (viewport) viewport.classList.remove("dragging");
     state.frameInternalsMapDrag = null;
   }
   if (state.frameInternalsMapGesture && frameInternalsMapGestureUsesPointer(event.pointerId)) {
-    const viewport = state.frameInternalsMapGesture.viewport;
     state.frameInternalsMapGesture = null;
-    const remainingPointers = getFrameInternalsMapPointersForViewport(viewport);
-    if (remainingPointers.length === 1 && getFrameInternalsMapTransform(viewport).scale > FRAME_INTERNALS_MAP_MINIMUM_SCALE) {
+    const remainingPointers = getFrameInternalsMapPointers();
+    if (
+      viewport &&
+      remainingPointers.length === 1 &&
+      getFrameInternalsMapTransform(viewport).scale > FRAME_INTERNALS_MAP_MINIMUM_SCALE
+    ) {
       const remainingPointer = remainingPointers[0];
       const currentTransform = getFrameInternalsMapTransform(viewport);
       state.frameInternalsMapDrag = {
-        viewport,
         pointerId: remainingPointer.pointerId,
         startClientX: remainingPointer.clientX,
         startClientY: remainingPointer.clientY,
@@ -2418,10 +2421,10 @@ function handleFrameInternalsMapPointerUp(event) {
       viewport.classList.add("dragging");
     }
   }
-  const releaseViewport = storedPointer?.viewport || dragState?.viewport || state.frameInternalsMapGesture?.viewport;
-  if (releaseViewport && typeof releaseViewport.releasePointerCapture === "function") {
+  const interactionSurface = getFrameInternalsMapInteractionSurface();
+  if (interactionSurface && typeof interactionSurface.releasePointerCapture === "function") {
     try {
-      releaseViewport.releasePointerCapture(event.pointerId);
+      interactionSurface.releasePointerCapture(event.pointerId);
     } catch (_) {
       // Pointer capture may already be gone after pointercancel.
     }
@@ -2433,6 +2436,14 @@ function getFrameInternalsMapViewport(eventTarget) {
   const viewport = eventTarget.closest(".block-map-viewport");
   if (!viewport || !elements.frameInternalsBody.contains(viewport)) return null;
   return viewport;
+}
+
+function getCurrentFrameInternalsMapViewport() {
+  return elements.frameInternalsBody?.querySelector(".block-map-viewport") || null;
+}
+
+function getFrameInternalsMapInteractionSurface() {
+  return elements.frameInternalsBody || null;
 }
 
 function getFrameInternalsWheelScale(event) {
@@ -2523,9 +2534,10 @@ function applyFrameInternalsMapViewBox(viewport, transform) {
 }
 
 function restoreFrameInternalsMapViewport() {
-  const viewport = elements.frameInternalsBody.querySelector(".block-map-viewport");
+  const viewport = getCurrentFrameInternalsMapViewport();
   if (!viewport) return;
   setFrameInternalsMapTransform(viewport, state.frameInternalsMapView || createDefaultFrameInternalsMapView());
+  viewport.classList.toggle("dragging", Boolean(state.frameInternalsMapDrag));
 }
 
 function getFrameInternalsMapClientPoint(viewport, clientX, clientY, transform = getFrameInternalsMapTransform(viewport)) {
@@ -2626,12 +2638,12 @@ function createDefaultFrameInternalsMapView() {
   };
 }
 
-function getFrameInternalsMapPointersForViewport(viewport) {
-  return Array.from(state.frameInternalsMapPointers.values()).filter((pointer) => pointer.viewport === viewport);
+function getFrameInternalsMapPointers() {
+  return Array.from(state.frameInternalsMapPointers.values());
 }
 
 function startFrameInternalsMapPinch(viewport) {
-  const pointers = getFrameInternalsMapPointersForViewport(viewport).slice(0, 2);
+  const pointers = getFrameInternalsMapPointers().slice(0, 2);
   if (pointers.length < 2) return;
   const currentTransform = getFrameInternalsMapTransform(viewport);
   const center = getFrameInternalsMapPointerCenter(pointers[0], pointers[1], viewport);
@@ -2639,7 +2651,6 @@ function startFrameInternalsMapPinch(viewport) {
   state.frameInternalsMapDrag = null;
   viewport.classList.remove("dragging");
   state.frameInternalsMapGesture = {
-    viewport,
     firstPointerId: pointers[0].pointerId,
     secondPointerId: pointers[1].pointerId,
     startDistance: Math.max(1, getFrameInternalsMapPointerDistance(pointers[0], pointers[1])),
@@ -2649,29 +2660,29 @@ function startFrameInternalsMapPinch(viewport) {
   };
 }
 
-function updateFrameInternalsMapPinch(event) {
+function updateFrameInternalsMapPinch(event, viewport) {
   const gesture = state.frameInternalsMapGesture;
-  if (!gesture) return false;
+  if (!gesture || !viewport) return false;
   const firstPointer = state.frameInternalsMapPointers.get(gesture.firstPointerId);
   const secondPointer = state.frameInternalsMapPointers.get(gesture.secondPointerId);
   if (!firstPointer || !secondPointer) return false;
   const distance = Math.max(1, getFrameInternalsMapPointerDistance(firstPointer, secondPointer));
   const nextScale = gesture.startScale * distance / gesture.startDistance;
-  const center = getFrameInternalsMapPointerCenter(firstPointer, secondPointer, gesture.viewport);
+  const center = getFrameInternalsMapPointerCenter(firstPointer, secondPointer, viewport);
   const normalizedScale = clamp(
     nextScale,
     FRAME_INTERNALS_MAP_MINIMUM_SCALE,
     FRAME_INTERNALS_MAP_MAXIMUM_SCALE
   );
-  const nextMetrics = getFrameInternalsMapViewBoxMetrics(gesture.viewport, {
+  const nextMetrics = getFrameInternalsMapViewBoxMetrics(viewport, {
     scale: normalizedScale,
-    centerX: getFrameInternalsMapTransform(gesture.viewport).centerX,
-    centerY: getFrameInternalsMapTransform(gesture.viewport).centerY
+    centerX: getFrameInternalsMapTransform(viewport).centerX,
+    centerY: getFrameInternalsMapTransform(viewport).centerY
   });
-  const svgRect = getFrameInternalsMapSvgRect(gesture.viewport);
+  const svgRect = getFrameInternalsMapSvgRect(viewport);
   const relativeX = clamp((center.clientX - svgRect.left) / Math.max(1, svgRect.width), 0, 1);
   const relativeY = clamp((center.clientY - svgRect.top) / Math.max(1, svgRect.height), 0, 1);
-  setFrameInternalsMapTransform(gesture.viewport, {
+  setFrameInternalsMapTransform(viewport, {
     scale: nextScale,
     centerX: gesture.startMapX - (relativeX - 0.5) * nextMetrics.widthRatio,
     centerY: gesture.startMapY - (relativeY - 0.5) * nextMetrics.heightRatio
@@ -2701,6 +2712,18 @@ function getFrameInternalsMapPointerCenter(firstPointer, secondPointer, viewport
 }
 
 function resetFrameInternalsMapInteractionState() {
+  const viewport = getCurrentFrameInternalsMapViewport();
+  if (viewport) viewport.classList.remove("dragging");
+  const interactionSurface = getFrameInternalsMapInteractionSurface();
+  if (interactionSurface && typeof interactionSurface.releasePointerCapture === "function") {
+    for (const pointerId of state.frameInternalsMapPointers.keys()) {
+      try {
+        interactionSurface.releasePointerCapture(pointerId);
+      } catch (_) {
+        // A reset can run after the browser has already released capture.
+      }
+    }
+  }
   state.frameInternalsMapDrag = null;
   state.frameInternalsMapGesture = null;
   state.frameInternalsMapPointers.clear();

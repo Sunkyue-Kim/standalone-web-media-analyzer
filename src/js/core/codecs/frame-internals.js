@@ -1,4 +1,4 @@
-const MAX_VIDEO_DISPLAY_CELLS = 9000;
+const MAX_VIDEO_DISPLAY_CELLS = 100000;
 const MAX_GLOBAL_DISTRIBUTION_VALUES = 120000;
 
 const HEAT_COLOR_STOPS = [
@@ -351,8 +351,7 @@ function getPartitionRootLayout(options, profile) {
   const rawRows = Math.max(1, Math.ceil(options.height / baseHeight));
   const rootCount = rawColumns * rawRows;
   const maxCells = Math.max(1, options.maxCells || MAX_VIDEO_DISPLAY_CELLS);
-  const splitReserve = getFullDepthSplitReserve(profile);
-  const aggregation = Math.max(1, Math.ceil(Math.sqrt(rootCount * splitReserve / maxCells)));
+  const aggregation = Math.max(1, Math.ceil(Math.sqrt(rootCount / maxCells)));
   const rootWidth = baseWidth * aggregation;
   const rootHeight = baseHeight * aggregation;
   return {

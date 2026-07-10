@@ -342,9 +342,12 @@ test("frame internals model builds partition-ready video maps and audio band est
   assert.equal(videoModel.partitionDepths.at(-1).depth, videoModel.maxPartitionDepth);
   assert.equal(videoModel.partitionDepths.at(-1).count, videoModel.cells.length);
   assert.ok(videoModel.partitionModes.some((entry) => entry.mode === "split"));
-  assert.ok(videoModel.cells.length <= 9000);
+  assert.ok(videoModel.cells.length > 9000);
+  assert.ok(videoModel.cells.length <= 100000);
   assert.equal(Math.round(sum(videoModel.cells.map((cell) => cell.estimatedBytes))), 120000);
-  assert.ok(videoModel.cells.every((cell) => cell.pixelLeft < 1920 && cell.pixelTop < 1080));
+  assert.ok(videoModel.cells.every((cell) =>
+    cell.pixelLeft < videoModel.intrinsicWidth && cell.pixelTop < videoModel.intrinsicHeight
+  ));
   assert.ok(videoModel.cells.some((cell) => cell.pixelRight > 1920 || cell.pixelBottom > 1080));
   assert.ok(videoModel.cells.every((cell) => cell.displayPixelRight <= 1920 && cell.displayPixelBottom <= 1088));
   assert.ok(videoModel.cells.some((cell) => cell.displayPixelBottom > 1080));
@@ -362,6 +365,23 @@ test("frame internals model builds partition-ready video maps and audio band est
   assert.equal(videoModel.colorScale.mode, "global-track-percentile");
   assert.ok(videoModel.cells.some((cell) => cell.globalPercentile > 0.5));
   assert.ok(videoModel.cells.every((cell) => Number.isFinite(cell.color.red) && Number.isFinite(cell.color.green) && Number.isFinite(cell.color.blue)));
+
+  const ultraHighDefinitionVideoModel = buildFrameInternalsModel(
+    { trackId: 11, sampleIndex: 1, size: 480000, frameType: "I" },
+    {
+      trackId: 11,
+      handlerType: "vide",
+      codec: "avc1",
+      codecDescriptor: "avc",
+      width: 3840,
+      height: 2160
+    }
+  );
+  assert.equal(ultraHighDefinitionVideoModel.displayColumns, 240);
+  assert.equal(ultraHighDefinitionVideoModel.displayRows, 135);
+  assert.equal(ultraHighDefinitionVideoModel.aggregation, 1);
+  assert.equal(ultraHighDefinitionVideoModel.partitionBlockCount, 32400);
+  assert.ok(ultraHighDefinitionVideoModel.partitionBlockCount <= 100000);
 
   const smallVideoModel = buildFrameInternalsModel(
     { trackId: 1, sampleIndex: 1, size: 9000, frameType: "P" },
@@ -403,7 +423,9 @@ test("frame internals model builds partition-ready video maps and audio band est
   assert.equal(rotatedVideoModel.nominalColumns, 30);
   assert.equal(rotatedVideoModel.nominalRows, 17);
   assertSingleExpandedDepth(assert, rotatedVideoModel);
-  assert.ok(rotatedVideoModel.cells.every((cell) => cell.pixelLeft < 1920 && cell.pixelTop < 1080));
+  assert.ok(rotatedVideoModel.cells.every((cell) =>
+    cell.pixelLeft < rotatedVideoModel.intrinsicWidth && cell.pixelTop < rotatedVideoModel.intrinsicHeight
+  ));
   assert.ok(rotatedVideoModel.cells.some((cell) => cell.pixelBottom > 1080));
   assert.ok(rotatedVideoModel.cells.every((cell) => cell.displayPixelRight <= 1088 && cell.displayPixelBottom <= 1920));
   assert.ok(rotatedVideoModel.cells.some((cell) => cell.pixelRight !== cell.displayPixelRight || cell.pixelBottom !== cell.displayPixelBottom));

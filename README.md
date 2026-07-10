@@ -205,8 +205,8 @@ Validation samples live under `validation/generated/` and are exposed by the Git
 Current coverage snapshot from `npm run test:coverage`:
 
 - Tests: 65 passed, 0 failed
-- All files: 97.51% line coverage, 80.64% branch coverage, 97.14% function coverage
-- Strong coverage areas: binary readers, HTTP range readers and range failures, remote URL fallback/progress/abort handling, shared media-source preview/download policy, browser worker client message flow, bitstream helpers, formatting edge cases, AAC/MP3/Opus parser branches, MP3 ID3v2/ID3v1/Info frame handling, nominal frame internals models, batched vector heatmap rendering and spatial hover lookup, codec registry, i18n, data grid/recycler helpers, UI box-detail/json-viewer/frame-internals/media-row/metrics model boundaries, ISO BMFF sample modeling, ISO BMFF rare/private box parsing, WebM Xiph/fixed/EBML lacing, source-map build wiring, and bundled sample container integration
+- All files: 97.49% line coverage, 80.70% branch coverage, 97.14% function coverage
+- Strong coverage areas: binary readers, HTTP range readers and range failures, remote URL fallback/progress/abort handling, shared media-source preview/download policy, browser worker client message flow, bitstream helpers, formatting edge cases, AAC/MP3/Opus parser branches, MP3 ID3v2/ID3v1/Info frame handling, nominal frame internals models, 100,000-cell batched vector heatmap rendering, stable frame-internals interaction wiring, spatial hover lookup, codec registry, i18n, data grid/recycler helpers, UI box-detail/json-viewer/frame-internals/media-row/metrics model boundaries, ISO BMFF sample modeling, ISO BMFF rare/private box parsing, WebM Xiph/fixed/EBML lacing, source-map build wiring, and bundled sample container integration
 - Lower branch coverage remains mainly in browser-worker runtime branches and malformed/edge container branches such as oversized/invalid MP4 boxes, Ogg page edge cases, uncommon WebM element variants, and recycler/remote UI fallback paths that require live browser event timing
 
 ## Contribution Policy

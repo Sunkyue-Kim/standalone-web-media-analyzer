@@ -7250,8 +7250,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     const rawRows = Math.max(1, Math.ceil(options.height / baseHeight));
     const rootCount = rawColumns * rawRows;
     const maxCells = Math.max(1, options.maxCells || MAX_VIDEO_DISPLAY_CELLS);
-    const splitReserve = getFullDepthSplitReserve(profile);
-    const aggregation = Math.max(1, Math.ceil(Math.sqrt(rootCount * splitReserve / maxCells)));
+    const aggregation = Math.max(1, Math.ceil(Math.sqrt(rootCount / maxCells)));
     const rootWidth = baseWidth * aggregation;
     const rootHeight = baseHeight * aggregation;
     return {
@@ -7815,7 +7814,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
   var MAX_VIDEO_DISPLAY_CELLS, MAX_GLOBAL_DISTRIBUTION_VALUES, HEAT_COLOR_STOPS, VIDEO_CODING_UNITS, AUDIO_BANDS;
   var init_frame_internals = __esm({
     "local-source:C:\\Users\\user\\Documents\\Codex\\2026-07-08\\js-html-mp4-html-mp4-i\\src\\js\\core\\codecs\\frame-internals.js"() {
-      MAX_VIDEO_DISPLAY_CELLS = 9e3;
+      MAX_VIDEO_DISPLAY_CELLS = 1e5;
       MAX_GLOBAL_DISTRIBUTION_VALUES = 12e4;
       HEAT_COLOR_STOPS = [
         { percentile: 0, red: 226, green: 245, blue: 241 },
@@ -11583,6 +11582,7 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     }
     function resetView(file, options2 = {}) {
       stopPlaybackSynchronizationLoop();
+      resetFrameInternalsMapInteractionState();
       state.analysis = null;
       state.selectedBox = null;
       state.selectedFrameKey = "";
@@ -12292,7 +12292,6 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
     function renderFrameInternals() {
       if (!elements.frameInternalsBody) return;
       if (state.analysis && state.activeTab !== "frames") return;
-      resetFrameInternalsMapInteractionState();
       hideFrameInternalsTooltip();
       const model = buildSelectedFrameInternalsModel();
       if (model.kind === "empty") {
@@ -12609,24 +12608,24 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       const viewport = getFrameInternalsMapViewport(event.target);
       if (!viewport) return;
       if (event.button !== void 0 && event.button !== 0) return;
+      const interactionSurface = getFrameInternalsMapInteractionSurface();
+      if (!interactionSurface) return;
       state.frameInternalsMapPointers.set(event.pointerId, {
         pointerId: event.pointerId,
-        viewport,
         clientX: event.clientX,
         clientY: event.clientY
       });
-      if (typeof viewport.setPointerCapture === "function") {
+      if (typeof interactionSurface.setPointerCapture === "function") {
         try {
-          viewport.setPointerCapture(event.pointerId);
+          interactionSurface.setPointerCapture(event.pointerId);
         } catch (_) {
         }
       }
-      if (getFrameInternalsMapPointersForViewport(viewport).length >= 2) {
+      if (getFrameInternalsMapPointers().length >= 2) {
         startFrameInternalsMapPinch(viewport);
       } else if (getFrameInternalsMapTransform(viewport).scale > FRAME_INTERNALS_MAP_MINIMUM_SCALE) {
         const currentTransform = getFrameInternalsMapTransform(viewport);
         state.frameInternalsMapDrag = {
-          viewport,
           pointerId: event.pointerId,
           startClientX: event.clientX,
           startClientY: event.clientY,
@@ -12644,19 +12643,20 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
         storedPointer.clientX = event.clientX;
         storedPointer.clientY = event.clientY;
       }
-      if (state.frameInternalsMapGesture && updateFrameInternalsMapPinch(event)) {
+      const viewport = getCurrentFrameInternalsMapViewport();
+      if (state.frameInternalsMapGesture && updateFrameInternalsMapPinch(event, viewport)) {
         hideFrameInternalsTooltip();
         event.preventDefault();
         return;
       }
       const dragState = state.frameInternalsMapDrag;
-      if (!dragState || dragState.pointerId !== event.pointerId) return;
+      if (!dragState || dragState.pointerId !== event.pointerId || !viewport) return;
       const deltaX = event.clientX - dragState.startClientX;
       const deltaY = event.clientY - dragState.startClientY;
-      const currentTransform = getFrameInternalsMapTransform(dragState.viewport);
-      const svgRect = getFrameInternalsMapSvgRect(dragState.viewport);
-      const viewBoxMetrics = getFrameInternalsMapViewBoxMetrics(dragState.viewport, currentTransform);
-      setFrameInternalsMapTransform(dragState.viewport, {
+      const currentTransform = getFrameInternalsMapTransform(viewport);
+      const svgRect = getFrameInternalsMapSvgRect(viewport);
+      const viewBoxMetrics = getFrameInternalsMapViewBoxMetrics(viewport, currentTransform);
+      setFrameInternalsMapTransform(viewport, {
         scale: currentTransform.scale,
         centerX: dragState.startCenterX - deltaX / Math.max(1, svgRect.width) * viewBoxMetrics.widthRatio,
         centerY: dragState.startCenterY - deltaY / Math.max(1, svgRect.height) * viewBoxMetrics.heightRatio
@@ -12665,22 +12665,20 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       event.preventDefault();
     }
     function handleFrameInternalsMapPointerUp(event) {
-      const storedPointer = state.frameInternalsMapPointers.get(event.pointerId);
       state.frameInternalsMapPointers.delete(event.pointerId);
+      const viewport = getCurrentFrameInternalsMapViewport();
       const dragState = state.frameInternalsMapDrag;
       if (dragState && dragState.pointerId === event.pointerId) {
-        dragState.viewport.classList.remove("dragging");
+        if (viewport) viewport.classList.remove("dragging");
         state.frameInternalsMapDrag = null;
       }
       if (state.frameInternalsMapGesture && frameInternalsMapGestureUsesPointer(event.pointerId)) {
-        const viewport = state.frameInternalsMapGesture.viewport;
         state.frameInternalsMapGesture = null;
-        const remainingPointers = getFrameInternalsMapPointersForViewport(viewport);
-        if (remainingPointers.length === 1 && getFrameInternalsMapTransform(viewport).scale > FRAME_INTERNALS_MAP_MINIMUM_SCALE) {
+        const remainingPointers = getFrameInternalsMapPointers();
+        if (viewport && remainingPointers.length === 1 && getFrameInternalsMapTransform(viewport).scale > FRAME_INTERNALS_MAP_MINIMUM_SCALE) {
           const remainingPointer = remainingPointers[0];
           const currentTransform = getFrameInternalsMapTransform(viewport);
           state.frameInternalsMapDrag = {
-            viewport,
             pointerId: remainingPointer.pointerId,
             startClientX: remainingPointer.clientX,
             startClientY: remainingPointer.clientY,
@@ -12690,10 +12688,10 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
           viewport.classList.add("dragging");
         }
       }
-      const releaseViewport = storedPointer?.viewport || dragState?.viewport || state.frameInternalsMapGesture?.viewport;
-      if (releaseViewport && typeof releaseViewport.releasePointerCapture === "function") {
+      const interactionSurface = getFrameInternalsMapInteractionSurface();
+      if (interactionSurface && typeof interactionSurface.releasePointerCapture === "function") {
         try {
-          releaseViewport.releasePointerCapture(event.pointerId);
+          interactionSurface.releasePointerCapture(event.pointerId);
         } catch (_) {
         }
       }
@@ -12703,6 +12701,12 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       const viewport = eventTarget.closest(".block-map-viewport");
       if (!viewport || !elements.frameInternalsBody.contains(viewport)) return null;
       return viewport;
+    }
+    function getCurrentFrameInternalsMapViewport() {
+      return elements.frameInternalsBody?.querySelector(".block-map-viewport") || null;
+    }
+    function getFrameInternalsMapInteractionSurface() {
+      return elements.frameInternalsBody || null;
     }
     function getFrameInternalsWheelScale(event) {
       const modeFactor = event.deltaMode === 1 ? 18 : event.deltaMode === 2 ? 240 : 1;
@@ -12785,9 +12789,10 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       ].join(" "));
     }
     function restoreFrameInternalsMapViewport() {
-      const viewport = elements.frameInternalsBody.querySelector(".block-map-viewport");
+      const viewport = getCurrentFrameInternalsMapViewport();
       if (!viewport) return;
       setFrameInternalsMapTransform(viewport, state.frameInternalsMapView || createDefaultFrameInternalsMapView());
+      viewport.classList.toggle("dragging", Boolean(state.frameInternalsMapDrag));
     }
     function getFrameInternalsMapClientPoint(viewport, clientX, clientY, transform = getFrameInternalsMapTransform(viewport)) {
       const svgRect = getFrameInternalsMapSvgRect(viewport);
@@ -12870,11 +12875,11 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
         centerY: 0.5
       };
     }
-    function getFrameInternalsMapPointersForViewport(viewport) {
-      return Array.from(state.frameInternalsMapPointers.values()).filter((pointer) => pointer.viewport === viewport);
+    function getFrameInternalsMapPointers() {
+      return Array.from(state.frameInternalsMapPointers.values());
     }
     function startFrameInternalsMapPinch(viewport) {
-      const pointers = getFrameInternalsMapPointersForViewport(viewport).slice(0, 2);
+      const pointers = getFrameInternalsMapPointers().slice(0, 2);
       if (pointers.length < 2) return;
       const currentTransform = getFrameInternalsMapTransform(viewport);
       const center = getFrameInternalsMapPointerCenter(pointers[0], pointers[1], viewport);
@@ -12882,7 +12887,6 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       state.frameInternalsMapDrag = null;
       viewport.classList.remove("dragging");
       state.frameInternalsMapGesture = {
-        viewport,
         firstPointerId: pointers[0].pointerId,
         secondPointerId: pointers[1].pointerId,
         startDistance: Math.max(1, getFrameInternalsMapPointerDistance(pointers[0], pointers[1])),
@@ -12891,29 +12895,29 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
         startScale: currentTransform.scale
       };
     }
-    function updateFrameInternalsMapPinch(event) {
+    function updateFrameInternalsMapPinch(event, viewport) {
       const gesture = state.frameInternalsMapGesture;
-      if (!gesture) return false;
+      if (!gesture || !viewport) return false;
       const firstPointer = state.frameInternalsMapPointers.get(gesture.firstPointerId);
       const secondPointer = state.frameInternalsMapPointers.get(gesture.secondPointerId);
       if (!firstPointer || !secondPointer) return false;
       const distance = Math.max(1, getFrameInternalsMapPointerDistance(firstPointer, secondPointer));
       const nextScale = gesture.startScale * distance / gesture.startDistance;
-      const center = getFrameInternalsMapPointerCenter(firstPointer, secondPointer, gesture.viewport);
+      const center = getFrameInternalsMapPointerCenter(firstPointer, secondPointer, viewport);
       const normalizedScale = clamp2(
         nextScale,
         FRAME_INTERNALS_MAP_MINIMUM_SCALE,
         FRAME_INTERNALS_MAP_MAXIMUM_SCALE
       );
-      const nextMetrics = getFrameInternalsMapViewBoxMetrics(gesture.viewport, {
+      const nextMetrics = getFrameInternalsMapViewBoxMetrics(viewport, {
         scale: normalizedScale,
-        centerX: getFrameInternalsMapTransform(gesture.viewport).centerX,
-        centerY: getFrameInternalsMapTransform(gesture.viewport).centerY
+        centerX: getFrameInternalsMapTransform(viewport).centerX,
+        centerY: getFrameInternalsMapTransform(viewport).centerY
       });
-      const svgRect = getFrameInternalsMapSvgRect(gesture.viewport);
+      const svgRect = getFrameInternalsMapSvgRect(viewport);
       const relativeX = clamp2((center.clientX - svgRect.left) / Math.max(1, svgRect.width), 0, 1);
       const relativeY = clamp2((center.clientY - svgRect.top) / Math.max(1, svgRect.height), 0, 1);
-      setFrameInternalsMapTransform(gesture.viewport, {
+      setFrameInternalsMapTransform(viewport, {
         scale: nextScale,
         centerX: gesture.startMapX - (relativeX - 0.5) * nextMetrics.widthRatio,
         centerY: gesture.startMapY - (relativeY - 0.5) * nextMetrics.heightRatio
@@ -12939,6 +12943,17 @@ if (typeof window !== "undefined") window.MP4AnalyzerWorkerSource = "(() => {\n 
       };
     }
     function resetFrameInternalsMapInteractionState() {
+      const viewport = getCurrentFrameInternalsMapViewport();
+      if (viewport) viewport.classList.remove("dragging");
+      const interactionSurface = getFrameInternalsMapInteractionSurface();
+      if (interactionSurface && typeof interactionSurface.releasePointerCapture === "function") {
+        for (const pointerId of state.frameInternalsMapPointers.keys()) {
+          try {
+            interactionSurface.releasePointerCapture(pointerId);
+          } catch (_) {
+          }
+        }
+      }
       state.frameInternalsMapDrag = null;
       state.frameInternalsMapGesture = null;
       state.frameInternalsMapPointers.clear();

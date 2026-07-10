@@ -912,8 +912,8 @@ test("frame internals batches large heatmaps and spatially resolves hover cells"
   const loader = await createSourceModuleLoader();
   const frameInternalsView = await loader.import("src/js/ui/frame-internals-view.js");
   const frameInternalsMap = await loader.import("src/js/ui/frame-internals-map.js");
-  const columnCount = 90;
-  const rowCount = 100;
+  const columnCount = 400;
+  const rowCount = 250;
   const blockSize = 16;
   const cells = Array.from({ length: columnCount * rowCount }, (_, cellIndex) => {
     const columnIndex = cellIndex % columnCount;
@@ -969,7 +969,7 @@ test("frame internals batches large heatmaps and spatially resolves hover cells"
     maxPartitionDepth: 2,
     partitionDepths: [{ depth: 0, count: cells.length }, { depth: 2, count: cells.length }],
     partitionModes: [{ mode: "split", count: cells.length }],
-    sampleSize: 900000,
+    sampleSize: 10000000,
     note: "performance fixture",
     colorScale: { mode: "global-track-percentile", sampleCount: 1, valueCount: cells.length },
     cells
@@ -1018,10 +1018,10 @@ test("frame internals batches large heatmaps and spatially resolves hover cells"
   assert.equal(frameInternalsMap.findFrameInternalsCell(spatialIndex, -1, 10), null);
   assert.equal(frameInternalsMap.findFrameInternalsCell(gapSpatialIndex, 15, 15), null);
   assert.equal(renderedPathCount, pathGroups.length);
-  assert.match(videoHtml, /data-block-count="9000"/);
+  assert.match(videoHtml, /data-block-count="100000"/);
   assert.match(videoHtml, /data-path-count="32"/);
   assert.doesNotMatch(videoHtml, /data-inspection-tooltip=/);
-  assert.ok(videoHtml.length < 800000, "batched heatmap markup should remain bounded");
+  assert.ok(videoHtml.length < 12000000, "batched heatmap markup should remain bounded");
 });
 
 test("analysis worker client falls back to direct core and preserves progress, scan, and cancel hooks", async () => {
@@ -1525,6 +1525,10 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   const builtMinifiedHtml = fs.readFileSync(path.join(rootDirectory, "index.html"), "utf8");
   const chunkedHtmlPath = path.join(rootDirectory, "chunked", "index.html");
   const jsonValueCssBlock = sourceCss.match(/\.json-value\s*\{[^}]*\}/)?.[0] || "";
+  const renderFrameInternalsSource = sourceUi.slice(
+    sourceUi.indexOf("function renderFrameInternals()"),
+    sourceUi.indexOf("function buildSelectedFrameInternalsModel()")
+  );
 
   for (const id of [
     "fileInput", "languageSelect", "sampleField", "sampleSelect", "openButton", "openUrlButton",
@@ -1637,6 +1641,12 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceUi, /handleFrameInternalsTooltipPointerOver/);
   assert.match(sourceUi, /handleFrameInternalsMapWheel/);
   assert.match(sourceUi, /handleFrameInternalsMapPointerDown/);
+  assert.match(sourceUi, /function getFrameInternalsMapInteractionSurface\(\)/);
+  assert.match(sourceUi, /interactionSurface\.setPointerCapture\(event\.pointerId\)/);
+  assert.match(sourceUi, /function getCurrentFrameInternalsMapViewport\(\)/);
+  assert.match(sourceUi, /updateFrameInternalsMapPinch\(event, viewport\)/);
+  assert.match(sourceUi, /viewport\.classList\.toggle\("dragging", Boolean\(state\.frameInternalsMapDrag\)\)/);
+  assert.doesNotMatch(renderFrameInternalsSource, /resetFrameInternalsMapInteractionState/);
   assert.match(sourceUi, /startFrameInternalsMapPinch/);
   assert.match(sourceUi, /updateFrameInternalsMapPinch/);
   assert.match(sourceUi, /zoomFrameInternalsMapViewport/);
