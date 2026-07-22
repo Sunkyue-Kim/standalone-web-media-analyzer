@@ -431,8 +431,10 @@ function transformIntrinsicRectangleToDisplay(cell, dimensions, intrinsicBounds)
 
 function rotateIntrinsicPointToDisplay(x, y, rotation, pixelAspectRatio, squarePixelWidth, squarePixelHeight) {
   const squarePixelX = x * pixelAspectRatio;
-  if (rotation === 90) return { x: squarePixelHeight - y, y: squarePixelX };
-  if (rotation === -90) return { x: y, y: squarePixelWidth - squarePixelX };
+  // ISO BMFF/FFprobe rotation is counter-clockwise in Cartesian coordinates;
+  // browser display coordinates have a downward-positive Y axis, so the screen-space branches are reversed.
+  if (rotation === 90) return { x: y, y: squarePixelWidth - squarePixelX };
+  if (rotation === -90) return { x: squarePixelHeight - y, y: squarePixelX };
   if (Math.abs(rotation) === 180) return { x: squarePixelWidth - squarePixelX, y: squarePixelHeight - y };
   return { x: squarePixelX, y };
 }

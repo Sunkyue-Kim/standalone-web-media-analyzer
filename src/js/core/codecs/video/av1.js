@@ -420,6 +420,18 @@ function createAv1RootBlocks(width, height, superblockSize) {
   return { roots, columns, rows };
 }
 
+function createAv1UnavailableFrameInternals(sampleBytes, reason, warnings = []) {
+  return {
+    kind: "unavailable",
+    complete: false,
+    sampleBits: sampleBytes.byteLength * 8,
+    attributedBits: null,
+    overheadBits: null,
+    reason,
+    warnings
+  };
+}
+
 function parseAv1FrameInternals(sampleBytes, codecConfig, track = {}) {
   let sampleObus;
   let configurationObus;
@@ -430,82 +442,60 @@ function parseAv1FrameInternals(sampleBytes, codecConfig, track = {}) {
       ? getAv1ObuPayloads(configurationBytes)
       : [];
   } catch (error) {
-    return {
-      kind: "unavailable",
-      complete: false,
-      reason: error.message,
-      warnings: []
-    };
+    return createAv1UnavailableFrameInternals(sampleBytes, error.message);
   }
   const sequenceHeaderObu = sampleObus.find((obu) => obu.type === 1) || configurationObus.find((obu) => obu.type === 1);
   if (!sequenceHeaderObu) {
-    return {
-      kind: "unavailable",
-      complete: false,
-      reason: "AV1 sequence header OBU is unavailable.",
-      warnings: []
-    };
+    return createAv1UnavailableFrameInternals(sampleBytes, "AV1 sequence header OBU is unavailable.");
   }
   let sequenceHeader;
   try {
     sequenceHeader = parseAv1SequenceHeader(sequenceHeaderObu.payload);
   } catch (error) {
-    return {
-      kind: "unavailable",
-      complete: false,
-      reason: "AV1 sequence header is truncated: " + error.message,
-      warnings: []
-    };
+    return createAv1UnavailableFrameInternals(
+      sampleBytes,
+      "AV1 sequence header is truncated: " + error.message
+    );
   }
   const frameObu = sampleObus.find((obu) => obu.type === 3 || obu.type === 6 || obu.type === 7);
   if (!frameObu) {
-    return {
-      kind: "unavailable",
-      complete: false,
-      reason: "The AV1 sample does not contain a frame header or frame OBU.",
-      warnings: []
-    };
+    return createAv1UnavailableFrameInternals(
+      sampleBytes,
+      "The AV1 sample does not contain a frame header or frame OBU."
+    );
   }
   if (!sequenceHeader.reducedStillPictureHeader) {
     try {
       const frameHeaderReader = new BitReader(frameObu.payload);
       if (frameHeaderReader.readBit()) {
-        return {
-          kind: "unavailable",
-          complete: false,
-          reason: "show_existing_frame carries no coded block tree in this sample.",
-          warnings: []
-        };
+        return createAv1UnavailableFrameInternals(
+          sampleBytes,
+          "show_existing_frame carries no coded block tree in this sample."
+        );
       }
     } catch (error) {
-      return {
-        kind: "unavailable",
-        complete: false,
-        reason: "AV1 frame header is truncated: " + error.message,
-        warnings: []
-      };
+      return createAv1UnavailableFrameInternals(
+        sampleBytes,
+        "AV1 frame header is truncated: " + error.message
+      );
     }
   }
   let frameSizeOverrideFlag;
   try {
     frameSizeOverrideFlag = parseAv1FrameSizeOverrideFlag(frameObu.payload, sequenceHeader);
   } catch (error) {
-    return {
-      kind: "unavailable",
-      complete: false,
-      reason: "AV1 frame size flags are truncated: " + error.message,
-      warnings: []
-    };
+    return createAv1UnavailableFrameInternals(
+      sampleBytes,
+      "AV1 frame size flags are truncated: " + error.message
+    );
   }
   if (frameSizeOverrideFlag || sequenceHeader.enableSuperres) {
-    return {
-      kind: "unavailable",
-      complete: false,
-      reason: frameSizeOverrideFlag
+    return createAv1UnavailableFrameInternals(
+      sampleBytes,
+      frameSizeOverrideFlag
         ? "The AV1 frame overrides the sequence dimensions; exact frame-size traversal is not implemented."
-        : "AV1 super-resolution can change the coded block grid; exact super-resolution traversal is not implemented.",
-      warnings: []
-    };
+        : "AV1 super-resolution can change the coded block grid; exact super-resolution traversal is not implemented."
+    );
   }
   const width = sequenceHeader.maximumFrameWidth;
   const height = sequenceHeader.maximumFrameHeight;
@@ -513,12 +503,7 @@ function parseAv1FrameInternals(sampleBytes, codecConfig, track = {}) {
   try {
     rootLayout = createAv1RootBlocks(width, height, sequenceHeader.superblockSize);
   } catch (error) {
-    return {
-      kind: "unavailable",
-      complete: false,
-      reason: error.message,
-      warnings: []
-    };
+    return createAv1UnavailableFrameInternals(sampleBytes, error.message);
   }
   return {
     kind: "av1-frame-internals",

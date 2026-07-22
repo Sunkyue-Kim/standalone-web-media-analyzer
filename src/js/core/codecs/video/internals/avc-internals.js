@@ -1,5 +1,5 @@
 /*
- * Native AVC syntax inspection implemented directly from ITU-T H.264 (08/2024).
+ * Native AVC syntax inspection implemented directly from ITU-T H.264 (06/2026).
  * This is an entropy-syntax walker, not a decoder: it does not reconstruct pixels.
  * Normative CABAC/CAVLC table data below is identified by its H.264 table number.
  * Syntax sources: clauses 7.3.2.1, 7.3.2.2, 7.3.3, 7.3.5, 9.2, and 9.3.
@@ -89,6 +89,19 @@ class RbspBitReader {
   readSE() {
     const codeNum = this.readUE();
     return codeNum & 1 ? (codeNum + 1) / 2 : -(codeNum / 2);
+  }
+
+  readTE(maximumValue) {
+    if (!Number.isInteger(maximumValue) || maximumValue < 0) {
+      throw new AvcSyntaxError("invalid-truncated-exp-golomb-range", "Invalid AVC truncated Exp-Golomb range.");
+    }
+    if (maximumValue === 0) return 0;
+    if (maximumValue === 1) return 1 - this.readBit();
+    const value = this.readUE();
+    if (value > maximumValue) {
+      throw new AvcSyntaxError("truncated-exp-golomb-out-of-range", "AVC truncated Exp-Golomb value exceeds its range.");
+    }
+    return value;
   }
 
   alignToByte(expectedBit = null) {
@@ -513,7 +526,9 @@ function parseSliceHeader(nalUnit, parameterSets) {
 
   let redundantPicCnt = 0;
   if (pictureParameterSet.redundantPicCntPresentFlag) redundantPicCnt = bitReader.readUE();
-  if (sliceType === SLICE_TYPE_B) bitReader.readBit();
+  const directSpatialMvPredFlag = sliceType === SLICE_TYPE_B
+    ? Boolean(bitReader.readBit())
+    : false;
 
   let numRefIdxL0ActiveMinus1 = pictureParameterSet.numRefIdxL0DefaultActiveMinus1;
   let numRefIdxL1ActiveMinus1 = pictureParameterSet.numRefIdxL1DefaultActiveMinus1;
@@ -522,6 +537,12 @@ function parseSliceHeader(nalUnit, parameterSets) {
       numRefIdxL0ActiveMinus1 = bitReader.readUE();
       if (sliceType === SLICE_TYPE_B) numRefIdxL1ActiveMinus1 = bitReader.readUE();
     }
+  }
+  if (numRefIdxL0ActiveMinus1 > 31 || numRefIdxL1ActiveMinus1 > 31) {
+    throw new AvcSyntaxError(
+      "too-many-active-references",
+      "AVC active reference-picture count exceeds the supported normative bound."
+    );
   }
 
   if (sliceType !== SLICE_TYPE_I && sliceType !== SLICE_TYPE_SI) {
@@ -590,6 +611,9 @@ function parseSliceHeader(nalUnit, parameterSets) {
     idrPicId,
     picOrderCntLsb,
     redundantPicCnt,
+    directSpatialMvPredFlag,
+    numRefIdxL0ActiveMinus1,
+    numRefIdxL1ActiveMinus1,
     cabacInitIdc,
     sliceQpDelta,
     headerBitOffset: bitReader.bitOffset
@@ -768,7 +792,7 @@ function parseAvcFrameInternals(sampleBytes, codecConfig, track = null, options 
       const endMacroblockAddress = sliceIndex + 1 < slices.length
         ? slices[sliceIndex + 1].header.firstMbInSlice
         : macroblockCount;
-      sliceResults.push(decodeIntraSlice(
+      sliceResults.push(decodeSlice(
         slices[sliceIndex],
         sliceIndex,
         endMacroblockAddress,
@@ -782,7 +806,7 @@ function parseAvcFrameInternals(sampleBytes, codecConfig, track = null, options 
     if (attributedBits > sampleBits) {
       throw new AvcSyntaxError("invalid-bit-accounting", "AVC attributed syntax exceeds the encoded sample size.");
     }
-    const partitions = state.macroblocks.flatMap((macroblock) => macroblock.children);
+    const partitions = state.macroblocks.flatMap((macroblock) => flattenMacroblockDescendants(macroblock));
     const structureRecordCount = state.macroblocks.length + partitions.length;
     const decodedStructureRecordCount = state.macroblocks.length + state.structureBudget.decodedPartitionCount;
     const structureTruncated = structureRecordCount < decodedStructureRecordCount;
@@ -791,7 +815,7 @@ function parseAvcFrameInternals(sampleBytes, codecConfig, track = null, options 
       complete: true,
       granularity: "partition-tree",
       codec: "AVC / H.264",
-      frameType: "I",
+      frameType: summarizeSliceTypes(slices),
       entropyCodingMode: slices[0].header.pictureParameterSet.entropyCodingModeFlag ? "CABAC" : "CAVLC",
       accountingKind: slices[0].header.pictureParameterSet.entropyCodingModeFlag
         ? "cabac-renormalization-cursor-delta"
@@ -982,10 +1006,14 @@ function validateSupportedPicture(slices) {
   const firstHeader = slices[0].header;
   const sequenceParameterSet = firstHeader.sequenceParameterSet;
   const pictureParameterSet = firstHeader.pictureParameterSet;
-  if (slices.some(({ header }) => header.sliceType !== SLICE_TYPE_I)) {
+  if (slices.some(({ header }) => (
+    header.sliceType !== SLICE_TYPE_I &&
+    header.sliceType !== SLICE_TYPE_P &&
+    header.sliceType !== SLICE_TYPE_B
+  ))) {
     throw new AvcSyntaxError(
-      "inter-slice-syntax-unsupported",
-      "Exact AVC internals currently require an I slice; P/B/SP/SI macroblock syntax is unavailable."
+      "slice-type-syntax-unsupported",
+      "Exact AVC internals currently support I, P, and B slices; SP/SI macroblock syntax is unavailable."
     );
   }
   if (sequenceParameterSet.mbAdaptiveFrameFieldFlag) {
@@ -1140,6 +1168,60 @@ const CABAC_I_CONTEXT_HEAD_HEX =
   "31f22c032d062c2221361352fd4bff170122012b0036fe37003d01400044f75c";
 const CABAC_I_CONTEXT_TAIL_HEX = "fd46f85df65ae27f";
 
+// H.264 Tables 9-12 through 9-33: signed (m,n) context-init pairs for P/B slices.
+// Each entry is selected by cabac_init_idc and covers contexts 0..435 plus 1012..1015.
+const CABAC_PB_CONTEXT_HEAD_HEX = [
+  "14f10236034a14f10236034ae47fe968fa35ff36073317211702150001090031db760539f34ef541013e0c31fc4911321240092b1d001a43" +
+    "105a0968d27fec680143f34ef541013efa56ef5ffa3d092dfd45fa51f56006370743fb560258003afd4cf65e05360445fd510058f943fb4a" +
+    "fc4afb50f948013a0029003f003f003ff75304560061f9480d29033e002dfc4efd60e57ee462e765e943e452ec5ef053ea6eeb5bee66f35d" +
+    "e37ff95cfb59f960f36cfd2eff41ff39f75dfd4af75cf857e97e0536063c063b0645ff300044fc45f858fe55fa4eff4bf94d02360532fd44" +
+    "0132062afc51013ffc4600430239fe4c0b230440013d0b2312190c180d1d0d24f65df949fe490d2e0931f964093502350535fe3d00380038" +
+    "f33ffb3cff3e0439fa4504390e2704330d440340013d093f07321027052c04340b30fb3cff3b003b1621052c0e2bff4e003c09450b1c0228" +
+    "032c0031002e022c0233002f0427023e062e00360336023a043f063306390735063406370b2d0e240835ff520737fd4e0f2e161fff541907" +
+    "1ef91c031c04200022ff1e061e0620091f131a1b1a1e25141c2211460143053b0943101e12201223161d181f1726122b14290b3f093b0940" +
+    "ff5efe59f76cfa4cfe2c002d0034fd40fe3bfc46fc4bf852ef66f74d0318002a00300037fa3bf947f453f557e277013afd1dff240126022b" +
+    "fa37003a0040fd4af65a0046fc1d051f072a013bfe3afd48fd51f561003a08050a0e0e120d1b0228003afd46fa4ff8550000f36af06af657" +
+    "eb72ee6ef262ea6eeb6aee67eb6be96ce670f660f45ffb5bf75dea5efb560943fc50f655ff46073c093a053d0c320f32123111360a29072e" +
+    "ff33073108340929062f02370d290a2c063205350d31043f0640fe45fe3b06460a2c091f0c2b03350e220a26fd340d281120072c07260d32" +
+    "0a391a2b0e0b0b0e090b120b150917fe20f120f122eb27e92adf29e12ee426f4151d2de835d330e641d52bed27f61e09121a141b0039f252" +
+    "fb4bed61dd7d1b001c001ffc1b0622081e0a1816211316201a1f15291a2c172f10410e47083c063f1141151817141a171b201c171c181728" +
+    "18201c1d172a13391635163d0b560c280b330e3bfc4ff947fb45f746f842f644ed49f445f046f143ec3eed46f042ea41ec3f09fe1af721f7" +
+    "27f929fe2d0331092d1b243bfa42f923f92af82dfb30f438fa3cfb3ef842f84c",
+  "14f10236034a14f10236034ae47fe968fa35ff360733161922001000fe090429e3760241fa47f34f05340932fd460a361a22131628003902" +
+    "29241a45d37ff165fc4cfa47f34f05340645f35a0034082bfe45fb52f660023b024bfd57fd640138fd4afa55003bfd51f956fb5fff42ff4d" +
+    "0146fe56fb48003d0029003f003f003ff75304560061f9480d29033e0d0f07330250d97fee5bef60e651dd62e866e961e577e863eb6eee66" +
+    "dc7f0050fb59f95efc5c00270041f154dd7ffe49f468f75be17f033707380737083dfd350044f94af758f367f35bf759f25cf84cf457e96e" +
+    "e869f64eec70ef63b27fba7fce7fd27ffc42fb4efc47f848023bff37f946fa4bf859de77fd4b20141e16d47f0036fb3d003aff3cfd3df843" +
+    "e754f24afb4105340239003df745f5461237fc47003a073d092912190920052b092f002c0033022e1326fc420f260c2a09220059042d0a1c" +
+    "0a1f21f534d5120f1c0023ea26e7220027ee20f466a2000038f121fc1d0a25fb33e327f734de45c643c12cfb200737e3200100001b2421e7" +
+    "22e224e426e426e522ee23f022f220f825fa23001e0a1c121a191d29004b0248084d0e23121f1123151e112d142a122d1b1a103607421038" +
+    "0b490a43f674e970f147f93d0035fb42f54df750f754f657de7feb65fd27fb35f93df54bf14def5be76be76fe47af54cf62cf634f639f73a" +
+    "f048f945fc45fb4af7560242f72201200b1f0534fe37fe430049f859033407040a08110810130325ff3dfb49ff46fc4e0000eb7ee97cec6e" +
+    "e67ee77cef69e579e575ef66e675e574df7af65ff264f85fef6fe472fa59fe50fc52f755f851ff48054001430938004501450745f945fa43" +
+    "f04dfe40023dfa43fd400239fd41fd42003e0933ff42fe47fe4bff46f7480e3c1025002f12230b250c290a2902300c290d29003b03321328" +
+    "0342123213fa12fa0e001af41ff021e721ea25e427e22ae22fd62ddc31de29ef200945b93fc142c04db636d934dd29f6240028ff1e0e1c1a" +
+    "17250c370b4125df27dc28db26e22edf2ae228e831e326f428f626fd2efb1f141d1e192c0c300b311a2d161617161b1521141a1c1e181b22" +
+    "122a192712320c4615360e470b53192015311536fb55fa51f64df951ef50ee49fc4af653f747f743ff3df842f242003b023b11f620f32af7" +
+    "31fb35004003440a421b2f39fb470018ff24fe2afe34f739fa3ffc41fc43f952",
+  "14f10236034a14f10236034ae47fe968fa35ff3607331d1019000e00f633fd3ee5631a10fc55e86605390639ef490e391428140a1d003600" +
+    "252a0c61e07fea75fe4afc55e8660539fa5df258fa2c0437f559f167eb741339143a04540660013ffb55f36a053f064bfd5aff650337fc4f" +
+    "fe4bf461f932013c0029003f003f003ff75304560061f9480d29033e0722f758ec7fdc7fef5bf25fe754e756f459ef5be17ff24cee67f35a" +
+    "db7f0b50054c0254054efa37043df253db7ffb4ff568f55be27f0041fe4f0048fc5cfa380344f847f362fc56f458fb52fd48fc43f848f059" +
+    "f745ff3b05420439fc47fe47023aff4afc2cff45003ef933fc2ffa2afd29fa35084cf74ef55309340043fb5a0143f148fb4bf850eb53eb40" +
+    "f31fe740e35e094b113ff84afb23fe1b0d5b0341f945084df642033efd44ec51001e0107fd17eb4a1042e97c11252cee32deea7f0427002a" +
+    "07220b1d081f0625072a032808210d2b0d24042f0337023a063c082c0b2c0e2a0730043804340d250931133a0a300c2d00451421083f23ee" +
+    "21e71cfd180a1b0022f234d427e813111f19241d1821220f1e1416491422131f1b2c13100f240f24151c19151e141f0c1b10182a005d0e38" +
+    "0f391a26e87fe873ea52f73e0035003bf255f359f35ef55ce37feb64f239f443f547f64deb55f058e968f162db7ff652f830f83df842f946" +
+    "f24bf64ff753f45cee6cfc4fea45f04bfe3a013af34ef753fc51f363f351fa26f33efa3afe3bf049f64cf356f753f6570000ea7fe77fe778" +
+    "e57fed72e975e776e675e871e476e178db7cf65ef166f663f36ace7ffb5c1139fb56f35ef45bfe4d0047ff490440f95105400f3901430044" +
+    "f6430144004d02400044fb4e0737053b02410e360f2c053c0246fe4cee560c460540f4460b37053800450241fa4a05360736fa4cf552fe4d" +
+    "fe4d192a11f310f711f41beb25e229d82ad730d127e02ed834cd2ed734d92bed200b3dc938d23ece51bd2dec23fe1c0f220127011e111426" +
+    "122d0f36004f24f025f225ef2001220f1d0f181922161f1023121f1c2129241c1b2f153e121f131a241818171b10181e1f1d1629162a103c" +
+    "0f340e3c034ef07b15351638193d15211332113dfd4ef84af748f648ee4bf447f53ffb46ef4bf248f043f835f23bf734f54409fe1ef61ffc" +
+    "21ff21071f0c25171f261440f747f925f82cf531f638f43bf83ff743fa44f64f"
+];
+const CABAC_PB_CONTEXT_TAIL_HEX = ["fd4af75cf857e97e", "fe49f468f75be17f", "fb4ff568f55be27f"];
+
 class CabacArithmeticReader {
   constructor(encodedBytes) {
     this.encodedBytes = encodedBytes;
@@ -1223,6 +1305,16 @@ function createIntraCabacContextModels(sliceQpY) {
   return contextModels;
 }
 
+function createPredictiveCabacContextModels(sliceQpY, cabacInitIdc) {
+  if (!Number.isInteger(cabacInitIdc) || cabacInitIdc < 0 || cabacInitIdc > 2) {
+    throw new AvcSyntaxError("invalid-cabac-init", "Invalid AVC cabac_init_idc " + cabacInitIdc + ".");
+  }
+  const contextModels = new Uint8Array(1024);
+  initializeCabacContextRange(contextModels, 0, CABAC_PB_CONTEXT_HEAD_HEX[cabacInitIdc], sliceQpY);
+  initializeCabacContextRange(contextModels, 1012, CABAC_PB_CONTEXT_TAIL_HEX[cabacInitIdc], sliceQpY);
+  return contextModels;
+}
+
 function initializeCabacContextRange(contextModels, firstContextIndex, packedMnHex, sliceQpY) {
   const clippedQp = clip3(0, 51, sliceQpY);
   for (let hexOffset = 0; hexOffset < packedMnHex.length; hexOffset += 4) {
@@ -1246,7 +1338,7 @@ function clip3(minimum, maximum, value) {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
-function decodeIntraSlice(slice, sliceIndex, endMacroblockAddress, pictureState) {
+function decodeSlice(slice, sliceIndex, endMacroblockAddress, pictureState) {
   const { header, nalUnit } = slice;
   const sliceQpY = 26 + header.pictureParameterSet.picInitQpMinus26 + header.sliceQpDelta;
   const qpBdOffsetY = 6 * pictureState.sequenceParameterSet.bitDepthLumaMinus8;
@@ -1265,20 +1357,29 @@ function decodeIntraSlice(slice, sliceIndex, endMacroblockAddress, pictureState)
     const cabacBytes = header.rbsp.subarray(bitReader.bitOffset >> 3);
     const cabacDecoder = new CabacArithmeticReader(cabacBytes);
     syntaxState.cabacDecoder = cabacDecoder;
-    syntaxState.cabacContexts = createIntraCabacContextModels(sliceQpY);
+    syntaxState.cabacContexts = header.sliceType === SLICE_TYPE_I
+      ? createIntraCabacContextModels(sliceQpY)
+      : createPredictiveCabacContextModels(sliceQpY, header.cabacInitIdc);
     let macroblockAddress = header.firstMbInSlice;
     for (;;) {
       if (macroblockAddress >= endMacroblockAddress) {
         throw new AvcSyntaxError("missing-end-of-slice", "AVC CABAC slice did not terminate before the next slice.");
       }
-      decodeCabacIntraMacroblock(syntaxState, macroblockAddress);
+      if (header.sliceType === SLICE_TYPE_P) {
+        decodeCabacPredictiveMacroblock(syntaxState, macroblockAddress, header);
+      } else if (header.sliceType === SLICE_TYPE_B) {
+        decodeCabacBipredictiveMacroblock(syntaxState, macroblockAddress, header);
+      } else {
+        decodeCabacIntraMacroblock(syntaxState, macroblockAddress);
+      }
       const endOfSlice = cabacDecoder.decodeTerminateBin();
       macroblockAddress += 1;
       if (endOfSlice) {
         if (macroblockAddress !== endMacroblockAddress) {
           throw new AvcSyntaxError(
             "early-end-of-slice",
-            "AVC CABAC slice ended before its expected macroblock boundary."
+            "AVC CABAC slice ended at macroblock " + macroblockAddress +
+              " before expected boundary " + endMacroblockAddress + "."
           );
         }
         break;
@@ -1287,12 +1388,16 @@ function decodeIntraSlice(slice, sliceIndex, endMacroblockAddress, pictureState)
   } else {
     const bitReader = new RbspBitReader(header.rbsp, header.headerBitOffset);
     syntaxState.bitReader = bitReader;
-    for (
-      let macroblockAddress = header.firstMbInSlice;
-      macroblockAddress < endMacroblockAddress;
-      macroblockAddress += 1
-    ) {
-      decodeCavlcIntraMacroblock(syntaxState, macroblockAddress);
+    if (header.sliceType === SLICE_TYPE_P || header.sliceType === SLICE_TYPE_B) {
+      decodeCavlcInterSlice(syntaxState, header, endMacroblockAddress);
+    } else {
+      for (
+        let macroblockAddress = header.firstMbInSlice;
+        macroblockAddress < endMacroblockAddress;
+        macroblockAddress += 1
+      ) {
+        decodeCavlcIntraMacroblock(syntaxState, macroblockAddress);
+      }
     }
     if (bitReader.moreRbspData()) {
       throw new AvcSyntaxError("unconsumed-cavlc-syntax", "AVC CAVLC slice contains unconsumed macroblock syntax.");
@@ -1324,6 +1429,12 @@ function createMacroblockSyntaxState(sliceState, macroblockAddress) {
   const syntax = {
     sliceIndex: sliceState.sliceIndex,
     mbType: -1,
+    rawMbType: -1,
+    isIntra: false,
+    isSkipped: false,
+    isDirect: false,
+    interMode: "",
+    interPartitions: [],
     transformSize8x8: false,
     intraPredMode16x16: 0,
     intra4x4PredMode: new Int8Array(16),
@@ -1336,17 +1447,773 @@ function createMacroblockSyntaxState(sliceState, macroblockAddress) {
     codedBlockFlag: Array.from({ length: 6 }, () => new Uint8Array(16)),
     nonZeroLuma: new Int8Array(16),
     nonZeroChroma: new Int8Array(8),
+    directBlockFlags: new Uint8Array(16),
+    referenceIndexL0: new Int8Array(16).fill(-1),
+    referenceIndexL1: new Int8Array(16).fill(-1),
+    motionVectorDifferenceL0X: new Int32Array(16),
+    motionVectorDifferenceL0Y: new Int32Array(16),
+    motionVectorDifferenceL1X: new Int32Array(16),
+    motionVectorDifferenceL1Y: new Int32Array(16),
     partitionSyntaxBits: []
   };
   sliceState.syntaxState[macroblockAddress] = syntax;
   return syntax;
 }
 
+const PREDICTIVE_MACROBLOCK_MODE_NAMES = [
+  "P_L0_16x16",
+  "P_L0_L0_16x8",
+  "P_L0_L0_8x16",
+  "P_8x8",
+  "P_8x8ref0"
+];
+const PREDICTIVE_SUB_MACROBLOCK_MODE_NAMES = ["P_L0_8x8", "P_L0_8x4", "P_L0_4x8", "P_L0_4x4"];
+
+// H.264 Tables 7-14 and 7-17: B-slice macroblock and sub-macroblock prediction modes.
+const BIPREDICTIVE_MACROBLOCK_MODES = [
+  { name: "B_Direct_16x16", layout: "16x16", directions: ["Direct"] },
+  { name: "B_L0_16x16", layout: "16x16", directions: ["L0"] },
+  { name: "B_L1_16x16", layout: "16x16", directions: ["L1"] },
+  { name: "B_Bi_16x16", layout: "16x16", directions: ["Bi"] },
+  { name: "B_L0_L0_16x8", layout: "16x8", directions: ["L0", "L0"] },
+  { name: "B_L0_L0_8x16", layout: "8x16", directions: ["L0", "L0"] },
+  { name: "B_L1_L1_16x8", layout: "16x8", directions: ["L1", "L1"] },
+  { name: "B_L1_L1_8x16", layout: "8x16", directions: ["L1", "L1"] },
+  { name: "B_L0_L1_16x8", layout: "16x8", directions: ["L0", "L1"] },
+  { name: "B_L0_L1_8x16", layout: "8x16", directions: ["L0", "L1"] },
+  { name: "B_L1_L0_16x8", layout: "16x8", directions: ["L1", "L0"] },
+  { name: "B_L1_L0_8x16", layout: "8x16", directions: ["L1", "L0"] },
+  { name: "B_L0_Bi_16x8", layout: "16x8", directions: ["L0", "Bi"] },
+  { name: "B_L0_Bi_8x16", layout: "8x16", directions: ["L0", "Bi"] },
+  { name: "B_L1_Bi_16x8", layout: "16x8", directions: ["L1", "Bi"] },
+  { name: "B_L1_Bi_8x16", layout: "8x16", directions: ["L1", "Bi"] },
+  { name: "B_Bi_L0_16x8", layout: "16x8", directions: ["Bi", "L0"] },
+  { name: "B_Bi_L0_8x16", layout: "8x16", directions: ["Bi", "L0"] },
+  { name: "B_Bi_L1_16x8", layout: "16x8", directions: ["Bi", "L1"] },
+  { name: "B_Bi_L1_8x16", layout: "8x16", directions: ["Bi", "L1"] },
+  { name: "B_Bi_Bi_16x8", layout: "16x8", directions: ["Bi", "Bi"] },
+  { name: "B_Bi_Bi_8x16", layout: "8x16", directions: ["Bi", "Bi"] },
+  { name: "B_8x8", layout: "8x8", directions: [] }
+];
+
+const BIPREDICTIVE_SUB_MACROBLOCK_MODES = [
+  { name: "B_Direct_8x8", direction: "Direct", widthInBlocks: 2, heightInBlocks: 2 },
+  { name: "B_L0_8x8", direction: "L0", widthInBlocks: 2, heightInBlocks: 2 },
+  { name: "B_L1_8x8", direction: "L1", widthInBlocks: 2, heightInBlocks: 2 },
+  { name: "B_Bi_8x8", direction: "Bi", widthInBlocks: 2, heightInBlocks: 2 },
+  { name: "B_L0_8x4", direction: "L0", widthInBlocks: 2, heightInBlocks: 1 },
+  { name: "B_L0_4x8", direction: "L0", widthInBlocks: 1, heightInBlocks: 2 },
+  { name: "B_L1_8x4", direction: "L1", widthInBlocks: 2, heightInBlocks: 1 },
+  { name: "B_L1_4x8", direction: "L1", widthInBlocks: 1, heightInBlocks: 2 },
+  { name: "B_Bi_8x4", direction: "Bi", widthInBlocks: 2, heightInBlocks: 1 },
+  { name: "B_Bi_4x8", direction: "Bi", widthInBlocks: 1, heightInBlocks: 2 },
+  { name: "B_L0_4x4", direction: "L0", widthInBlocks: 1, heightInBlocks: 1 },
+  { name: "B_L1_4x4", direction: "L1", widthInBlocks: 1, heightInBlocks: 1 },
+  { name: "B_Bi_4x4", direction: "Bi", widthInBlocks: 1, heightInBlocks: 1 }
+];
+
+function decodeCabacPredictiveMacroblock(sliceState, macroblockAddress, sliceHeader) {
+  const decoder = sliceState.cabacDecoder;
+  const macroblockStartBit = decoder.consumedBitCount;
+  const macroblock = createMacroblockSyntaxState(sliceState, macroblockAddress);
+  const skipFlagStartBit = decoder.consumedBitCount;
+  if (decodeCabacInterSkipFlag(sliceState, macroblockAddress, SLICE_TYPE_P)) {
+    macroblock.isSkipped = true;
+    macroblock.interMode = "P_Skip";
+    configurePredictivePartitions(macroblock, -1, []);
+    fillMacroblockBlockRegion(macroblock.referenceIndexL0, macroblock.interPartitions[0], 0);
+    addPartitionSyntaxBits(macroblock, 0, decoder.consumedBitCount - skipFlagStartBit);
+    macroblock.qpY = sliceState.currentQpY;
+    sliceState.previousMacroblockQpDeltaNonZero = false;
+    storeMacroblockResult(sliceState, macroblockAddress, decoder.consumedBitCount - macroblockStartBit);
+    return;
+  }
+
+  const decodedType = decodeCabacPredictiveMacroblockType(sliceState, macroblockAddress);
+  if (decodedType.isIntra) {
+    macroblock.isIntra = true;
+    macroblock.mbType = decodedType.mbType;
+    macroblock.rawMbType = 5 + decodedType.mbType;
+    decodeCabacIntraMacroblockSyntax(sliceState, macroblockAddress, macroblock);
+  } else {
+    macroblock.mbType = decodedType.mbType;
+    macroblock.rawMbType = decodedType.mbType;
+    macroblock.interMode = PREDICTIVE_MACROBLOCK_MODE_NAMES[decodedType.mbType];
+    const subMacroblockTypes = [];
+    const subMacroblockSyntaxBits = [];
+    if (decodedType.mbType === 3) {
+      for (let groupIndex = 0; groupIndex < 4; groupIndex += 1) {
+        const startBit = decoder.consumedBitCount;
+        subMacroblockTypes.push(decodeCabacPredictiveSubMacroblockType(sliceState));
+        subMacroblockSyntaxBits.push(decoder.consumedBitCount - startBit);
+      }
+    }
+    configurePredictivePartitions(macroblock, decodedType.mbType, subMacroblockTypes);
+    for (let groupIndex = 0; groupIndex < subMacroblockSyntaxBits.length; groupIndex += 1) {
+      const firstPartitionIndex = macroblock.interPartitions.findIndex(
+        (partition) => partition.referenceGroupIndex === groupIndex
+      );
+      addPartitionSyntaxBits(macroblock, firstPartitionIndex, subMacroblockSyntaxBits[groupIndex]);
+    }
+    decodeCabacPredictiveMotionSyntax(sliceState, macroblockAddress, sliceHeader);
+    [macroblock.cbpLuma, macroblock.cbpChroma] = decodeCabacCodedBlockPattern(
+      sliceState,
+      macroblockAddress
+    );
+    if (canSignalInterTransformSize8x8Flag(sliceState, macroblock)) {
+      macroblock.transformSize8x8 = decodeCabacTransformSize8x8Flag(sliceState, macroblockAddress);
+    }
+    if (macroblock.cbpLuma > 0 || macroblock.cbpChroma > 0) {
+      macroblock.qpDelta = decodeCabacMacroblockQpDelta(sliceState);
+      updateMacroblockQp(sliceState, macroblock);
+      sliceState.previousMacroblockQpDeltaNonZero = macroblock.qpDelta !== 0;
+    } else {
+      macroblock.qpY = sliceState.currentQpY;
+      sliceState.previousMacroblockQpDeltaNonZero = false;
+    }
+    decodeCabacMacroblockResidual(sliceState, macroblockAddress);
+  }
+  storeMacroblockResult(sliceState, macroblockAddress, decoder.consumedBitCount - macroblockStartBit);
+}
+
+function decodeCabacBipredictiveMacroblock(sliceState, macroblockAddress, sliceHeader) {
+  const decoder = sliceState.cabacDecoder;
+  const macroblockStartBit = decoder.consumedBitCount;
+  const macroblock = createMacroblockSyntaxState(sliceState, macroblockAddress);
+  const skipFlagStartBit = decoder.consumedBitCount;
+  if (decodeCabacInterSkipFlag(sliceState, macroblockAddress, SLICE_TYPE_B)) {
+    macroblock.isSkipped = true;
+    macroblock.isDirect = true;
+    macroblock.interMode = "B_Skip";
+    configureBipredictivePartitions(
+      macroblock,
+      -1,
+      [],
+      sliceState.sequenceParameterSet.direct8x8InferenceFlag
+    );
+    addPartitionSyntaxBits(macroblock, 0, decoder.consumedBitCount - skipFlagStartBit);
+    macroblock.qpY = sliceState.currentQpY;
+    sliceState.previousMacroblockQpDeltaNonZero = false;
+    storeMacroblockResult(sliceState, macroblockAddress, decoder.consumedBitCount - macroblockStartBit);
+    return;
+  }
+
+  const decodedType = decodeCabacBipredictiveMacroblockType(sliceState, macroblockAddress);
+  if (decodedType.isIntra) {
+    macroblock.isIntra = true;
+    macroblock.mbType = decodedType.mbType;
+    macroblock.rawMbType = 23 + decodedType.mbType;
+    decodeCabacIntraMacroblockSyntax(sliceState, macroblockAddress, macroblock);
+  } else {
+    macroblock.mbType = decodedType.mbType;
+    macroblock.rawMbType = decodedType.mbType;
+    macroblock.interMode = BIPREDICTIVE_MACROBLOCK_MODES[decodedType.mbType].name;
+    macroblock.isDirect = decodedType.mbType === 0;
+    const subMacroblockTypes = [];
+    const subMacroblockSyntaxBits = [];
+    if (decodedType.mbType === 22) {
+      for (let groupIndex = 0; groupIndex < 4; groupIndex += 1) {
+        const startBit = decoder.consumedBitCount;
+        subMacroblockTypes.push(decodeCabacBipredictiveSubMacroblockType(sliceState));
+        subMacroblockSyntaxBits.push(decoder.consumedBitCount - startBit);
+      }
+    }
+    configureBipredictivePartitions(
+      macroblock,
+      decodedType.mbType,
+      subMacroblockTypes,
+      sliceState.sequenceParameterSet.direct8x8InferenceFlag
+    );
+    for (let groupIndex = 0; groupIndex < subMacroblockSyntaxBits.length; groupIndex += 1) {
+      const firstPartitionIndex = macroblock.interPartitions.findIndex(
+        (partition) => partition.referenceGroupIndex === groupIndex
+      );
+      addPartitionSyntaxBits(macroblock, firstPartitionIndex, subMacroblockSyntaxBits[groupIndex]);
+    }
+    decodeCabacInterMotionSyntax(sliceState, macroblockAddress, sliceHeader, 2);
+    [macroblock.cbpLuma, macroblock.cbpChroma] = decodeCabacCodedBlockPattern(
+      sliceState,
+      macroblockAddress
+    );
+    if (canSignalInterTransformSize8x8Flag(sliceState, macroblock)) {
+      macroblock.transformSize8x8 = decodeCabacTransformSize8x8Flag(sliceState, macroblockAddress);
+    }
+    if (macroblock.cbpLuma > 0 || macroblock.cbpChroma > 0) {
+      macroblock.qpDelta = decodeCabacMacroblockQpDelta(sliceState);
+      updateMacroblockQp(sliceState, macroblock);
+      sliceState.previousMacroblockQpDeltaNonZero = macroblock.qpDelta !== 0;
+    } else {
+      macroblock.qpY = sliceState.currentQpY;
+      sliceState.previousMacroblockQpDeltaNonZero = false;
+    }
+    decodeCabacMacroblockResidual(sliceState, macroblockAddress);
+  }
+  storeMacroblockResult(sliceState, macroblockAddress, decoder.consumedBitCount - macroblockStartBit);
+}
+
+function decodeCabacBipredictiveMacroblockType(sliceState, macroblockAddress) {
+  const decoder = sliceState.cabacDecoder;
+  const contexts = sliceState.cabacContexts;
+  let contextIncrement = 0;
+  const left = getMacroblockNeighbor(sliceState, macroblockAddress, -1, 0);
+  const top = getMacroblockNeighbor(sliceState, macroblockAddress, 0, -1);
+  if (left && !left.isDirect) contextIncrement += 1;
+  if (top && !top.isDirect) contextIncrement += 1;
+  if (decoder.decodeContextBin(contexts, 27 + contextIncrement) === 0) {
+    return { isIntra: false, mbType: 0 };
+  }
+  if (decoder.decodeContextBin(contexts, 30) === 0) {
+    return { isIntra: false, mbType: 1 + decoder.decodeContextBin(contexts, 32) };
+  }
+
+  let code = decoder.decodeContextBin(contexts, 31) << 3;
+  code |= decoder.decodeContextBin(contexts, 32) << 2;
+  code |= decoder.decodeContextBin(contexts, 32) << 1;
+  code |= decoder.decodeContextBin(contexts, 32);
+  if (code < 8) return { isIntra: false, mbType: code + 3 };
+  if (code === 13) {
+    return {
+      isIntra: true,
+      mbType: decodeCabacIntraMacroblockType(sliceState, macroblockAddress, 32, false)
+    };
+  }
+  if (code === 14) return { isIntra: false, mbType: 11 };
+  if (code === 15) return { isIntra: false, mbType: 22 };
+  code = (code << 1) | decoder.decodeContextBin(contexts, 32);
+  const mbType = code - 4;
+  if (mbType < 12 || mbType > 21) {
+    throw new AvcSyntaxError("invalid-bipredictive-macroblock-type", "Invalid AVC B-slice mb_type.");
+  }
+  return { isIntra: false, mbType };
+}
+
+function decodeCabacBipredictiveSubMacroblockType(sliceState) {
+  const decoder = sliceState.cabacDecoder;
+  const contexts = sliceState.cabacContexts;
+  if (decoder.decodeContextBin(contexts, 36) === 0) return 0;
+  if (decoder.decodeContextBin(contexts, 37) === 0) {
+    return 1 + decoder.decodeContextBin(contexts, 39);
+  }
+  let subMacroblockType = 3;
+  if (decoder.decodeContextBin(contexts, 38) === 1) {
+    if (decoder.decodeContextBin(contexts, 39) === 1) {
+      return 11 + decoder.decodeContextBin(contexts, 39);
+    }
+    subMacroblockType += 4;
+  }
+  subMacroblockType += 2 * decoder.decodeContextBin(contexts, 39);
+  subMacroblockType += decoder.decodeContextBin(contexts, 39);
+  return subMacroblockType;
+}
+
+function decodeCabacInterSkipFlag(sliceState, macroblockAddress, sliceType) {
+  let contextIncrement = 0;
+  const left = getMacroblockNeighbor(sliceState, macroblockAddress, -1, 0);
+  const top = getMacroblockNeighbor(sliceState, macroblockAddress, 0, -1);
+  if (left && !left.isSkipped) contextIncrement += 1;
+  if (top && !top.isSkipped) contextIncrement += 1;
+  const contextBase = sliceType === SLICE_TYPE_B ? 24 : 11;
+  return sliceState.cabacDecoder.decodeContextBin(
+    sliceState.cabacContexts,
+    contextBase + contextIncrement
+  ) === 1;
+}
+
+function decodeCabacPredictiveMacroblockType(sliceState, macroblockAddress) {
+  const decoder = sliceState.cabacDecoder;
+  const contexts = sliceState.cabacContexts;
+  if (decoder.decodeContextBin(contexts, 14) === 1) {
+    return {
+      isIntra: true,
+      mbType: decodeCabacIntraMacroblockType(sliceState, macroblockAddress, 17, false)
+    };
+  }
+  if (decoder.decodeContextBin(contexts, 15) === 0) {
+    return { isIntra: false, mbType: 3 * decoder.decodeContextBin(contexts, 16) };
+  }
+  return { isIntra: false, mbType: 2 - decoder.decodeContextBin(contexts, 17) };
+}
+
+function decodeCabacPredictiveSubMacroblockType(sliceState) {
+  const decoder = sliceState.cabacDecoder;
+  const contexts = sliceState.cabacContexts;
+  if (decoder.decodeContextBin(contexts, 21) === 1) return 0;
+  if (decoder.decodeContextBin(contexts, 22) === 0) return 1;
+  return decoder.decodeContextBin(contexts, 23) === 1 ? 2 : 3;
+}
+
+function decodeCabacPredictiveMotionSyntax(sliceState, macroblockAddress, sliceHeader) {
+  decodeCabacInterMotionSyntax(sliceState, macroblockAddress, sliceHeader, 1);
+}
+
+function decodeCabacInterMotionSyntax(sliceState, macroblockAddress, sliceHeader, listCount) {
+  const macroblock = sliceState.syntaxState[macroblockAddress];
+  const referenceGroups = getPredictiveReferenceGroups(macroblock);
+  for (let listIndex = 0; listIndex < listCount; listIndex += 1) {
+    const maximumReferenceIndex = listIndex === 0
+      ? sliceHeader.numRefIdxL0ActiveMinus1
+      : sliceHeader.numRefIdxL1ActiveMinus1;
+    const referenceIndexValues = macroblock[listIndex === 0 ? "referenceIndexL0" : "referenceIndexL1"];
+    for (const group of referenceGroups) {
+      if (!groupUsesReferenceList(group, listIndex)) continue;
+      const startBit = sliceState.cabacDecoder.consumedBitCount;
+      const referenceIndex = (
+        (listCount === 1 && listIndex === 0 && macroblock.rawMbType === 4) ||
+        maximumReferenceIndex === 0
+      )
+        ? 0
+        : decodeCabacReferenceIndex(
+          sliceState,
+          macroblockAddress,
+          group,
+          listIndex,
+          listCount === 2
+        );
+      if (referenceIndex > maximumReferenceIndex) {
+        throw new AvcSyntaxError(
+          "reference-index-out-of-range",
+          "AVC ref_idx_l" + listIndex + " value " + referenceIndex +
+            " exceeds active maximum " + maximumReferenceIndex +
+            " at macroblock " + macroblockAddress + " (" + macroblock.interMode + ")."
+        );
+      }
+      fillMacroblockBlockRegion(referenceIndexValues, group, referenceIndex);
+      addPartitionSyntaxBits(
+        macroblock,
+        group.firstPartitionIndex,
+        sliceState.cabacDecoder.consumedBitCount - startBit
+      );
+    }
+  }
+
+  for (let listIndex = 0; listIndex < listCount; listIndex += 1) {
+    const horizontalValues = macroblock[
+      listIndex === 0 ? "motionVectorDifferenceL0X" : "motionVectorDifferenceL1X"
+    ];
+    const verticalValues = macroblock[
+      listIndex === 0 ? "motionVectorDifferenceL0Y" : "motionVectorDifferenceL1Y"
+    ];
+    const horizontalComponentName = listIndex === 0
+      ? "motionVectorDifferenceL0X"
+      : "motionVectorDifferenceL1X";
+    const verticalComponentName = listIndex === 0
+      ? "motionVectorDifferenceL0Y"
+      : "motionVectorDifferenceL1Y";
+    for (let partitionIndex = 0; partitionIndex < macroblock.interPartitions.length; partitionIndex += 1) {
+      const partition = macroblock.interPartitions[partitionIndex];
+      if (!partitionUsesReferenceList(partition, listIndex)) continue;
+      const startBit = sliceState.cabacDecoder.consumedBitCount;
+      const differenceX = decodeCabacMotionVectorDifference(
+        sliceState,
+        macroblockAddress,
+        partition,
+        horizontalComponentName,
+        40
+      );
+      const differenceY = decodeCabacMotionVectorDifference(
+        sliceState,
+        macroblockAddress,
+        partition,
+        verticalComponentName,
+        47
+      );
+      fillMacroblockBlockRegion(horizontalValues, partition, differenceX);
+      fillMacroblockBlockRegion(verticalValues, partition, differenceY);
+      addPartitionSyntaxBits(
+        macroblock,
+        partitionIndex,
+        sliceState.cabacDecoder.consumedBitCount - startBit
+      );
+    }
+  }
+}
+
+function decodeCabacReferenceIndex(
+  sliceState,
+  macroblockAddress,
+  group,
+  listIndex,
+  excludeDirectNeighbors
+) {
+  const referenceArrayName = listIndex === 0 ? "referenceIndexL0" : "referenceIndexL1";
+  const leftReferenceIndex = getNeighborReferenceIndex(
+    sliceState,
+    macroblockAddress,
+    group.blockX - 1,
+    group.blockY,
+    referenceArrayName,
+    excludeDirectNeighbors
+  );
+  const topReferenceIndex = getNeighborReferenceIndex(
+    sliceState,
+    macroblockAddress,
+    group.blockX,
+    group.blockY - 1,
+    referenceArrayName,
+    excludeDirectNeighbors
+  );
+  let contextIncrement = Number(leftReferenceIndex > 0) + 2 * Number(topReferenceIndex > 0);
+  let referenceIndex = 0;
+  while (sliceState.cabacDecoder.decodeContextBin(sliceState.cabacContexts, 54 + contextIncrement) === 1) {
+    referenceIndex += 1;
+    if (referenceIndex > 31) {
+      throw new AvcSyntaxError(
+        "reference-index-too-large",
+        "AVC ref_idx_l" + listIndex + " exceeds 31."
+      );
+    }
+    contextIncrement = (contextIncrement >> 2) + 4;
+  }
+  return referenceIndex;
+}
+
+function decodeCabacMotionVectorDifference(
+  sliceState,
+  macroblockAddress,
+  partition,
+  componentName,
+  contextBase
+) {
+  const leftDifference = getNeighborMotionVectorDifference(
+    sliceState,
+    macroblockAddress,
+    partition.blockX - 1,
+    partition.blockY,
+    componentName
+  );
+  const topDifference = getNeighborMotionVectorDifference(
+    sliceState,
+    macroblockAddress,
+    partition.blockX,
+    partition.blockY - 1,
+    componentName
+  );
+  const neighboringMagnitude = Math.abs(leftDifference) + Math.abs(topDifference);
+  const contextIncrement = neighboringMagnitude < 3 ? 0 : neighboringMagnitude > 32 ? 2 : 1;
+  const decoder = sliceState.cabacDecoder;
+  const contexts = sliceState.cabacContexts;
+  if (decoder.decodeContextBin(contexts, contextBase + contextIncrement) === 0) return 0;
+
+  let magnitude = 1;
+  let unaryContextIndex = contextBase + 3;
+  while (magnitude < 9 && decoder.decodeContextBin(contexts, unaryContextIndex) === 1) {
+    if (magnitude < 4) unaryContextIndex += 1;
+    magnitude += 1;
+  }
+  if (magnitude >= 9) {
+    let suffixLength = 3;
+    while (decoder.decodeBypassBin() === 1) {
+      magnitude += 2 ** suffixLength;
+      suffixLength += 1;
+      if (suffixLength > 24) {
+        throw new AvcSyntaxError("motion-vector-difference-too-large", "AVC mvd_l0 is too large.");
+      }
+    }
+    while (suffixLength > 0) {
+      suffixLength -= 1;
+      magnitude += decoder.decodeBypassBin() * (2 ** suffixLength);
+    }
+  }
+  return decoder.decodeBypassBin() === 1 ? -magnitude : magnitude;
+}
+
+function configurePredictivePartitions(macroblock, macroblockType, subMacroblockTypes) {
+  const partitions = [];
+  const addPartition = (
+    blockX,
+    blockY,
+    blockWidth,
+    blockHeight,
+    type,
+    referenceGroupIndex,
+    subMacroblockType = -1
+  ) => {
+    partitions.push({
+      partitionIndex: partitions.length,
+      blockX,
+      blockY,
+      blockWidth,
+      blockHeight,
+      codedLeft: blockX * 4,
+      codedTop: blockY * 4,
+      codedWidth: blockWidth * 4,
+      codedHeight: blockHeight * 4,
+      type,
+      referenceGroupIndex,
+      subMacroblockType,
+      predictionDirection: "L0",
+      usesList0: true,
+      usesList1: false,
+      direct: false
+    });
+  };
+
+  if (macroblockType < 0) {
+    addPartition(0, 0, 4, 4, "P_Skip", 0);
+  } else if (macroblockType === 0) {
+    addPartition(0, 0, 4, 4, PREDICTIVE_MACROBLOCK_MODE_NAMES[0], 0);
+  } else if (macroblockType === 1) {
+    addPartition(0, 0, 4, 2, PREDICTIVE_MACROBLOCK_MODE_NAMES[1], 0);
+    addPartition(0, 2, 4, 2, PREDICTIVE_MACROBLOCK_MODE_NAMES[1], 1);
+  } else if (macroblockType === 2) {
+    addPartition(0, 0, 2, 4, PREDICTIVE_MACROBLOCK_MODE_NAMES[2], 0);
+    addPartition(2, 0, 2, 4, PREDICTIVE_MACROBLOCK_MODE_NAMES[2], 1);
+  } else if (macroblockType === 3 || macroblockType === 4) {
+    for (let groupIndex = 0; groupIndex < 4; groupIndex += 1) {
+      const groupBlockX = (groupIndex % 2) * 2;
+      const groupBlockY = Math.floor(groupIndex / 2) * 2;
+      const subMacroblockType = subMacroblockTypes[groupIndex];
+      const type = PREDICTIVE_SUB_MACROBLOCK_MODE_NAMES[subMacroblockType];
+      if (!type) {
+        throw new AvcSyntaxError("invalid-sub-macroblock-type", "Invalid AVC P sub_mb_type.");
+      }
+      if (subMacroblockType === 0) {
+        addPartition(groupBlockX, groupBlockY, 2, 2, type, groupIndex, subMacroblockType);
+      } else if (subMacroblockType === 1) {
+        addPartition(groupBlockX, groupBlockY, 2, 1, type, groupIndex, subMacroblockType);
+        addPartition(groupBlockX, groupBlockY + 1, 2, 1, type, groupIndex, subMacroblockType);
+      } else if (subMacroblockType === 2) {
+        addPartition(groupBlockX, groupBlockY, 1, 2, type, groupIndex, subMacroblockType);
+        addPartition(groupBlockX + 1, groupBlockY, 1, 2, type, groupIndex, subMacroblockType);
+      } else {
+        addPartition(groupBlockX, groupBlockY, 1, 1, type, groupIndex, subMacroblockType);
+        addPartition(groupBlockX + 1, groupBlockY, 1, 1, type, groupIndex, subMacroblockType);
+        addPartition(groupBlockX, groupBlockY + 1, 1, 1, type, groupIndex, subMacroblockType);
+        addPartition(groupBlockX + 1, groupBlockY + 1, 1, 1, type, groupIndex, subMacroblockType);
+      }
+    }
+  } else {
+    throw new AvcSyntaxError("invalid-predictive-macroblock-type", "Invalid AVC P-slice mb_type.");
+  }
+  macroblock.interPartitions = partitions;
+}
+
+function configureBipredictivePartitions(
+  macroblock,
+  macroblockType,
+  subMacroblockTypes,
+  direct8x8InferenceFlag
+) {
+  const partitions = [];
+  const addPartition = (
+    blockX,
+    blockY,
+    blockWidth,
+    blockHeight,
+    type,
+    direction,
+    referenceGroupIndex,
+    subMacroblockType = -1
+  ) => {
+    const direct = direction === "Direct";
+    const partition = {
+      partitionIndex: partitions.length,
+      blockX,
+      blockY,
+      blockWidth,
+      blockHeight,
+      codedLeft: blockX * 4,
+      codedTop: blockY * 4,
+      codedWidth: blockWidth * 4,
+      codedHeight: blockHeight * 4,
+      type,
+      referenceGroupIndex,
+      subMacroblockType,
+      predictionDirection: direction,
+      usesList0: direction === "L0" || direction === "Bi",
+      usesList1: direction === "L1" || direction === "Bi",
+      direct
+    };
+    partitions.push(partition);
+    if (direct) fillMacroblockBlockRegion(macroblock.directBlockFlags, partition, 1);
+  };
+
+  if (macroblockType < 0) {
+    addPartition(0, 0, 4, 4, "B_Skip", "Direct", 0);
+  } else {
+    const mode = BIPREDICTIVE_MACROBLOCK_MODES[macroblockType];
+    if (!mode) {
+      throw new AvcSyntaxError(
+        "invalid-bipredictive-macroblock-type",
+        "Invalid AVC B-slice mb_type " + macroblockType + "."
+      );
+    }
+    if (mode.layout === "16x16") {
+      addPartition(0, 0, 4, 4, mode.name, mode.directions[0], 0);
+    } else if (mode.layout === "16x8") {
+      addPartition(0, 0, 4, 2, mode.name, mode.directions[0], 0);
+      addPartition(0, 2, 4, 2, mode.name, mode.directions[1], 1);
+    } else if (mode.layout === "8x16") {
+      addPartition(0, 0, 2, 4, mode.name, mode.directions[0], 0);
+      addPartition(2, 0, 2, 4, mode.name, mode.directions[1], 1);
+    } else {
+      if (subMacroblockTypes.length !== 4) {
+        throw new AvcSyntaxError(
+          "invalid-sub-macroblock-count",
+          "AVC B_8x8 requires four sub_mb_type values."
+        );
+      }
+      for (let groupIndex = 0; groupIndex < 4; groupIndex += 1) {
+        const groupBlockX = (groupIndex % 2) * 2;
+        const groupBlockY = Math.floor(groupIndex / 2) * 2;
+        const subMacroblockType = subMacroblockTypes[groupIndex];
+        const subMode = BIPREDICTIVE_SUB_MACROBLOCK_MODES[subMacroblockType];
+        if (!subMode) {
+          throw new AvcSyntaxError(
+            "invalid-sub-macroblock-type",
+            "Invalid AVC B-slice sub_mb_type " + subMacroblockType + "."
+          );
+        }
+        const widthInBlocks = subMode.direction === "Direct" && !direct8x8InferenceFlag
+          ? 1
+          : subMode.widthInBlocks;
+        const heightInBlocks = subMode.direction === "Direct" && !direct8x8InferenceFlag
+          ? 1
+          : subMode.heightInBlocks;
+        for (let blockY = 0; blockY < 2; blockY += heightInBlocks) {
+          for (let blockX = 0; blockX < 2; blockX += widthInBlocks) {
+            addPartition(
+              groupBlockX + blockX,
+              groupBlockY + blockY,
+              widthInBlocks,
+              heightInBlocks,
+              subMode.name,
+              subMode.direction,
+              groupIndex,
+              subMacroblockType
+            );
+          }
+        }
+      }
+    }
+  }
+  macroblock.interPartitions = partitions;
+}
+
+function getPredictiveReferenceGroups(macroblock) {
+  const groupsByIndex = new Map();
+  for (let partitionIndex = 0; partitionIndex < macroblock.interPartitions.length; partitionIndex += 1) {
+    const partition = macroblock.interPartitions[partitionIndex];
+    let group = groupsByIndex.get(partition.referenceGroupIndex);
+    if (!group) {
+      group = {
+        referenceGroupIndex: partition.referenceGroupIndex,
+        firstPartitionIndex: partitionIndex,
+        blockX: partition.blockX,
+        blockY: partition.blockY,
+        blockRight: partition.blockX + partition.blockWidth,
+        blockBottom: partition.blockY + partition.blockHeight,
+        usesList0: Boolean(partition.usesList0),
+        usesList1: Boolean(partition.usesList1)
+      };
+      groupsByIndex.set(partition.referenceGroupIndex, group);
+    } else {
+      group.blockX = Math.min(group.blockX, partition.blockX);
+      group.blockY = Math.min(group.blockY, partition.blockY);
+      group.blockRight = Math.max(group.blockRight, partition.blockX + partition.blockWidth);
+      group.blockBottom = Math.max(group.blockBottom, partition.blockY + partition.blockHeight);
+      group.usesList0 = group.usesList0 || Boolean(partition.usesList0);
+      group.usesList1 = group.usesList1 || Boolean(partition.usesList1);
+    }
+  }
+  return Array.from(groupsByIndex.values()).sort(
+    (left, right) => left.referenceGroupIndex - right.referenceGroupIndex
+  ).map((group) => ({
+    ...group,
+    blockWidth: group.blockRight - group.blockX,
+    blockHeight: group.blockBottom - group.blockY
+  }));
+}
+
+function partitionUsesReferenceList(partition, listIndex) {
+  return listIndex === 0 ? Boolean(partition.usesList0) : Boolean(partition.usesList1);
+}
+
+function groupUsesReferenceList(group, listIndex) {
+  return listIndex === 0 ? Boolean(group.usesList0) : Boolean(group.usesList1);
+}
+
+function fillMacroblockBlockRegion(values, region, value) {
+  for (let blockY = region.blockY; blockY < region.blockY + region.blockHeight; blockY += 1) {
+    for (let blockX = region.blockX; blockX < region.blockX + region.blockWidth; blockX += 1) {
+      values[blockY * 4 + blockX] = value;
+    }
+  }
+}
+
+function addPartitionSyntaxBits(macroblock, partitionIndex, syntaxBits) {
+  if (partitionIndex < 0 || !Number.isFinite(syntaxBits) || syntaxBits <= 0) return;
+  macroblock.partitionSyntaxBits[partitionIndex] = (macroblock.partitionSyntaxBits[partitionIndex] || 0) + syntaxBits;
+}
+
+function getNeighborReferenceIndex(
+  sliceState,
+  macroblockAddress,
+  blockX,
+  blockY,
+  referenceArrayName = "referenceIndexL0",
+  excludeDirectNeighbors = false
+) {
+  const target = getMacroblockBlockTarget(sliceState, macroblockAddress, blockX, blockY);
+  if (!target || target.macroblock.isIntra) return -1;
+  const blockIndex = target.blockY * 4 + target.blockX;
+  if (excludeDirectNeighbors && target.macroblock.directBlockFlags[blockIndex]) return -1;
+  if (target.macroblock.isSkipped) return 0;
+  return target.macroblock[referenceArrayName][blockIndex];
+}
+
+function getNeighborMotionVectorDifference(
+  sliceState,
+  macroblockAddress,
+  blockX,
+  blockY,
+  componentName
+) {
+  const target = getMacroblockBlockTarget(sliceState, macroblockAddress, blockX, blockY);
+  if (!target || target.macroblock.isIntra || target.macroblock.isSkipped) return 0;
+  const blockIndex = target.blockY * 4 + target.blockX;
+  if (target.macroblock.directBlockFlags[blockIndex]) return 0;
+  return target.macroblock[componentName][blockIndex];
+}
+
+function getMacroblockBlockTarget(sliceState, macroblockAddress, blockX, blockY) {
+  if (blockX >= 0 && blockX < 4 && blockY >= 0 && blockY < 4) {
+    const macroblock = sliceState.syntaxState[macroblockAddress];
+    return macroblock ? { macroblock, blockX, blockY } : null;
+  }
+  if (blockX < 0 && blockY >= 0 && blockY < 4) {
+    const macroblock = getMacroblockNeighbor(sliceState, macroblockAddress, -1, 0);
+    return macroblock ? { macroblock, blockX: 3, blockY } : null;
+  }
+  if (blockY < 0 && blockX >= 0 && blockX < 4) {
+    const macroblock = getMacroblockNeighbor(sliceState, macroblockAddress, 0, -1);
+    return macroblock ? { macroblock, blockX, blockY: 3 } : null;
+  }
+  return null;
+}
+
+function canSignalInterTransformSize8x8Flag(sliceState, macroblock) {
+  if (!sliceState.pictureParameterSet.transform8x8ModeFlag || macroblock.cbpLuma === 0) return false;
+  if (macroblock.isDirect && !sliceState.sequenceParameterSet.direct8x8InferenceFlag) return false;
+  return macroblock.interPartitions.every((partition) => (
+    partition.codedWidth >= 8 && partition.codedHeight >= 8
+  ));
+}
+
 function decodeCabacIntraMacroblock(sliceState, macroblockAddress) {
   const decoder = sliceState.cabacDecoder;
   const macroblockStartBit = decoder.consumedBitCount;
   const macroblock = createMacroblockSyntaxState(sliceState, macroblockAddress);
+  macroblock.isIntra = true;
   macroblock.mbType = decodeCabacIntraMacroblockType(sliceState, macroblockAddress);
+  macroblock.rawMbType = macroblock.mbType;
+  decodeCabacIntraMacroblockSyntax(sliceState, macroblockAddress, macroblock);
+  const syntaxBits = decoder.consumedBitCount - macroblockStartBit;
+  storeMacroblockResult(sliceState, macroblockAddress, syntaxBits);
+}
+
+function decodeCabacIntraMacroblockSyntax(sliceState, macroblockAddress, macroblock) {
+  const decoder = sliceState.cabacDecoder;
   if (macroblock.mbType === 25) {
     throw new AvcSyntaxError("cabac-ipcm-unsupported", "AVC CABAC I_PCM restart syntax is not supported.");
   }
@@ -1392,7 +2259,7 @@ function decodeCabacIntraMacroblock(sliceState, macroblockAddress) {
     }
   }
 
-  if (macroblock.cbpLuma > 0 || macroblock.cbpChroma > 0 || (macroblock.mbType >= 1 && macroblock.mbType <= 24)) {
+  if (macroblock.cbpLuma > 0 || macroblock.cbpChroma > 0 || isIntra16x16Macroblock(macroblock)) {
     macroblock.qpDelta = decodeCabacMacroblockQpDelta(sliceState);
     updateMacroblockQp(sliceState, macroblock);
     sliceState.previousMacroblockQpDeltaNonZero = macroblock.qpDelta !== 0;
@@ -1401,27 +2268,45 @@ function decodeCabacIntraMacroblock(sliceState, macroblockAddress) {
     macroblock.qpY = sliceState.currentQpY;
   }
   decodeCabacMacroblockResidual(sliceState, macroblockAddress);
-  const syntaxBits = decoder.consumedBitCount - macroblockStartBit;
-  storeMacroblockResult(sliceState, macroblockAddress, syntaxBits);
 }
 
-function decodeCabacIntraMacroblockType(sliceState, macroblockAddress) {
-  let contextIncrement = 0;
-  const left = getMacroblockNeighbor(sliceState, macroblockAddress, -1, 0);
-  const top = getMacroblockNeighbor(sliceState, macroblockAddress, 0, -1);
-  if (left && left.mbType !== 0) contextIncrement += 1;
-  if (top && top.mbType !== 0) contextIncrement += 1;
+function decodeCabacIntraMacroblockType(
+  sliceState,
+  macroblockAddress,
+  contextBase = 3,
+  intraSlice = true
+) {
   const decoder = sliceState.cabacDecoder;
   const contexts = sliceState.cabacContexts;
-  if (decoder.decodeContextBin(contexts, 3 + contextIncrement) === 0) return 0;
+  let remainingContextBase = contextBase;
+  if (intraSlice) {
+    let contextIncrement = 0;
+    const left = getMacroblockNeighbor(sliceState, macroblockAddress, -1, 0);
+    const top = getMacroblockNeighbor(sliceState, macroblockAddress, 0, -1);
+    if (left && isIntra16x16OrPcm(left)) contextIncrement += 1;
+    if (top && isIntra16x16OrPcm(top)) contextIncrement += 1;
+    if (decoder.decodeContextBin(contexts, contextBase + contextIncrement) === 0) return 0;
+    remainingContextBase += 2;
+  } else if (decoder.decodeContextBin(contexts, contextBase) === 0) {
+    return 0;
+  }
   if (decoder.decodeTerminateBin() === 1) return 25;
-  const codedBlockPatternLuma = decoder.decodeContextBin(contexts, 6);
-  const firstChromaBin = decoder.decodeContextBin(contexts, 7);
+  const codedBlockPatternLuma = decoder.decodeContextBin(contexts, remainingContextBase + 1);
+  const firstChromaBin = decoder.decodeContextBin(contexts, remainingContextBase + 2);
   let codedBlockPatternChroma = 0;
   if (firstChromaBin === 1) {
-    codedBlockPatternChroma = decoder.decodeContextBin(contexts, 8) === 1 ? 2 : 1;
+    codedBlockPatternChroma = decoder.decodeContextBin(
+      contexts,
+      remainingContextBase + 2 + Number(intraSlice)
+    ) === 1 ? 2 : 1;
   }
-  const predictionMode = decoder.decodeContextBin(contexts, 9) * 2 + decoder.decodeContextBin(contexts, 10);
+  const predictionMode = decoder.decodeContextBin(
+    contexts,
+    remainingContextBase + 3 + Number(intraSlice)
+  ) * 2 + decoder.decodeContextBin(
+    contexts,
+    remainingContextBase + 3 + 2 * Number(intraSlice)
+  );
   return 1 + predictionMode + 4 * codedBlockPatternChroma + (codedBlockPatternLuma ? 12 : 0);
 }
 
@@ -1592,7 +2477,7 @@ const LUMA_TOP_FROM_MACROBLOCK_B = [10, 11, -1, -1, 14, 15, -1, -1, -1, -1, -1, 
 
 function decodeCabacMacroblockResidual(sliceState, macroblockAddress) {
   const macroblock = sliceState.syntaxState[macroblockAddress];
-  if (macroblock.mbType >= 1 && macroblock.mbType <= 24) {
+  if (isIntra16x16Macroblock(macroblock)) {
     addCabacResidualSyntaxBits(
       sliceState,
       macroblockAddress,
@@ -1682,7 +2567,13 @@ function addCabacResidualSyntaxBits(
   consumeCabacResidualBlock(sliceState, macroblockAddress, blockCategory, blockIndex, maximumCoefficientCount);
   const syntaxBits = sliceState.cabacDecoder.consumedBitCount - startBit;
   const macroblock = sliceState.syntaxState[macroblockAddress];
-  macroblock.partitionSyntaxBits[partitionIndex] = (macroblock.partitionSyntaxBits[partitionIndex] || 0) + syntaxBits;
+  const syntaxPartitionIndex = getResidualSyntaxPartitionIndex(
+    macroblock,
+    blockCategory,
+    blockIndex,
+    partitionIndex
+  );
+  addPartitionSyntaxBits(macroblock, syntaxPartitionIndex, syntaxBits);
 }
 
 function consumeCabacResidualBlock(
@@ -1771,8 +2662,10 @@ function consumeCabacBypassExpGolombSuffix(decoder) {
 }
 
 function deriveCabacCodedBlockFlagContext(sliceState, macroblockAddress, blockCategory, blockIndex) {
-  let leftTerm = 1;
-  let topTerm = 1;
+  const currentMacroblock = sliceState.syntaxState[macroblockAddress];
+  const unavailableTerm = currentMacroblock && currentMacroblock.isIntra ? 1 : 0;
+  let leftTerm = unavailableTerm;
+  let topTerm = unavailableTerm;
   if (blockCategory === CABAC_BLOCK_CATEGORY_INTRA_16X16_DC) {
     const left = getMacroblockNeighbor(sliceState, macroblockAddress, -1, 0);
     const top = getMacroblockNeighbor(sliceState, macroblockAddress, 0, -1);
@@ -1805,8 +2698,9 @@ function deriveCabacCodedBlockFlagContext(sliceState, macroblockAddress, blockCa
 
 function deriveLumaBlockNeighborCodedFlag(sliceState, macroblockAddress, blockCategory, blockIndex) {
   const macroblock = sliceState.syntaxState[macroblockAddress];
-  let leftTerm = 1;
-  let topTerm = 1;
+  const unavailableTerm = macroblock && macroblock.isIntra ? 1 : 0;
+  let leftTerm = unavailableTerm;
+  let topTerm = unavailableTerm;
   const leftBlockIndex = LUMA_LEFT_NEIGHBOR[blockIndex];
   if (leftBlockIndex >= 0) {
     leftTerm = macroblock.codedBlockFlag[blockCategory][leftBlockIndex];
@@ -1829,14 +2723,14 @@ function deriveLumaBlockNeighborCodedFlag(sliceState, macroblockAddress, blockCa
 }
 
 function getLumaBlockCodedFlag(macroblock, blockIndex) {
-  if (macroblock.mbType === 25) return 1;
-  if (macroblock.mbType >= 1 && macroblock.mbType <= 24) {
+  if (macroblock.isIntra && macroblock.mbType === 25) return 1;
+  if (isIntra16x16Macroblock(macroblock)) {
     return macroblock.codedBlockFlag[CABAC_BLOCK_CATEGORY_INTRA_16X16_AC][blockIndex];
   }
-  if (macroblock.mbType === 0 && macroblock.transformSize8x8) {
+  if (macroblock.transformSize8x8) {
     return macroblock.codedBlockFlag[CABAC_BLOCK_CATEGORY_LUMA_8X8][Math.floor(blockIndex / 4)];
   }
-  if (macroblock.mbType === 0) {
+  if (!isIntra16x16Macroblock(macroblock)) {
     return macroblock.codedBlockFlag[CABAC_BLOCK_CATEGORY_LUMA_4X4][blockIndex];
   }
   return 0;
@@ -1848,8 +2742,9 @@ function deriveChromaAcBlockNeighborCodedFlag(sliceState, macroblockAddress, blo
   const localBlockIndex = blockIndex % 4;
   const blockX = localBlockIndex % 2;
   const blockY = Math.floor(localBlockIndex / 2);
-  let leftTerm = 1;
-  let topTerm = 1;
+  const unavailableTerm = macroblock && macroblock.isIntra ? 1 : 0;
+  let leftTerm = unavailableTerm;
+  let topTerm = unavailableTerm;
   if (blockX > 0) {
     leftTerm = macroblock.codedBlockFlag[CABAC_BLOCK_CATEGORY_CHROMA_AC][componentBase + localBlockIndex - 1];
   } else {
@@ -1988,18 +2883,276 @@ const CAVLC_INTRA_CODED_BLOCK_PATTERN = [
   16, 3, 5, 10, 12, 19, 21, 26, 28, 35, 37, 42, 44, 1, 2, 4,
   8, 17, 18, 20, 24, 6, 9, 22, 25, 32, 33, 34, 36, 40, 38, 41
 ];
+const CAVLC_INTER_CODED_BLOCK_PATTERN = [
+  0, 16, 1, 2, 4, 8, 32, 3, 5, 10, 12, 15, 47, 7, 11, 13,
+  14, 6, 9, 31, 35, 37, 42, 44, 33, 34, 36, 40, 39, 43, 45, 46,
+  17, 18, 20, 24, 19, 21, 26, 28, 23, 27, 29, 30, 22, 25, 38, 41
+];
+
+function decodeCavlcInterSlice(sliceState, sliceHeader, endMacroblockAddress) {
+  const bitReader = sliceState.bitReader;
+  let macroblockAddress = sliceHeader.firstMbInSlice;
+  while (macroblockAddress < endMacroblockAddress) {
+    if (!bitReader.moreRbspData()) {
+      throw new AvcSyntaxError("early-end-of-slice", "AVC CAVLC P slice ended before its expected macroblock boundary.");
+    }
+    const skipRun = bitReader.readUE();
+    if (skipRun > endMacroblockAddress - macroblockAddress) {
+      throw new AvcSyntaxError("invalid-skip-run", "AVC mb_skip_run exceeds the remaining slice macroblocks.");
+    }
+    for (let skippedIndex = 0; skippedIndex < skipRun; skippedIndex += 1) {
+      decodeCavlcSkippedMacroblock(
+        sliceState,
+        macroblockAddress,
+        sliceHeader.sliceType
+      );
+      macroblockAddress += 1;
+    }
+    if (macroblockAddress >= endMacroblockAddress) break;
+    if (!bitReader.moreRbspData()) {
+      throw new AvcSyntaxError("early-end-of-slice", "AVC CAVLC P slice omitted a coded macroblock after mb_skip_run.");
+    }
+    if (sliceHeader.sliceType === SLICE_TYPE_B) {
+      decodeCavlcBipredictiveMacroblock(
+        sliceState,
+        macroblockAddress,
+        sliceHeader
+      );
+    } else {
+      decodeCavlcPredictiveMacroblock(
+        sliceState,
+        macroblockAddress,
+        sliceHeader
+      );
+    }
+    macroblockAddress += 1;
+  }
+}
+
+function decodeCavlcSkippedMacroblock(sliceState, macroblockAddress, sliceType) {
+  const macroblock = createMacroblockSyntaxState(sliceState, macroblockAddress);
+  macroblock.isSkipped = true;
+  if (sliceType === SLICE_TYPE_B) {
+    macroblock.isDirect = true;
+    macroblock.interMode = "B_Skip";
+    configureBipredictivePartitions(
+      macroblock,
+      -1,
+      [],
+      sliceState.sequenceParameterSet.direct8x8InferenceFlag
+    );
+  } else {
+    macroblock.interMode = "P_Skip";
+    configurePredictivePartitions(macroblock, -1, []);
+    fillMacroblockBlockRegion(macroblock.referenceIndexL0, macroblock.interPartitions[0], 0);
+  }
+  macroblock.qpY = sliceState.currentQpY;
+  sliceState.previousMacroblockQpDeltaNonZero = false;
+  storeMacroblockResult(sliceState, macroblockAddress, 0);
+}
+
+function decodeCavlcPredictiveMacroblock(
+  sliceState,
+  macroblockAddress,
+  sliceHeader
+) {
+  const bitReader = sliceState.bitReader;
+  const macroblockStartBit = bitReader.bitOffset;
+  const macroblock = createMacroblockSyntaxState(sliceState, macroblockAddress);
+  macroblock.rawMbType = bitReader.readUE();
+  if (macroblock.rawMbType > 30) {
+    throw new AvcSyntaxError(
+      "invalid-predictive-macroblock-type",
+      "Invalid AVC P-slice mb_type " + macroblock.rawMbType + "."
+    );
+  }
+  if (macroblock.rawMbType >= 5) {
+    macroblock.isIntra = true;
+    macroblock.mbType = macroblock.rawMbType - 5;
+    decodeCavlcIntraMacroblockSyntax(sliceState, macroblockAddress, macroblock);
+  } else {
+    macroblock.mbType = macroblock.rawMbType;
+    macroblock.interMode = PREDICTIVE_MACROBLOCK_MODE_NAMES[macroblock.rawMbType];
+    const subMacroblockTypes = [];
+    const subMacroblockSyntaxBits = [];
+    if (macroblock.rawMbType === 3 || macroblock.rawMbType === 4) {
+      for (let groupIndex = 0; groupIndex < 4; groupIndex += 1) {
+        const startBit = bitReader.bitOffset;
+        const subMacroblockType = bitReader.readUE();
+        if (subMacroblockType > 3) {
+          throw new AvcSyntaxError(
+            "invalid-sub-macroblock-type",
+            "Invalid AVC P-slice sub_mb_type " + subMacroblockType + "."
+          );
+        }
+        subMacroblockTypes.push(subMacroblockType);
+        subMacroblockSyntaxBits.push(bitReader.bitOffset - startBit);
+      }
+    }
+    configurePredictivePartitions(macroblock, macroblock.rawMbType, subMacroblockTypes);
+    for (let groupIndex = 0; groupIndex < subMacroblockSyntaxBits.length; groupIndex += 1) {
+      const firstPartitionIndex = macroblock.interPartitions.findIndex(
+        (partition) => partition.referenceGroupIndex === groupIndex
+      );
+      addPartitionSyntaxBits(macroblock, firstPartitionIndex, subMacroblockSyntaxBits[groupIndex]);
+    }
+    decodeCavlcPredictiveMotionSyntax(sliceState, macroblock, sliceHeader);
+    const codedBlockPatternIndex = bitReader.readUE();
+    if (codedBlockPatternIndex > 47) {
+      throw new AvcSyntaxError("invalid-coded-block-pattern", "Invalid AVC inter coded_block_pattern.");
+    }
+    const codedBlockPattern = CAVLC_INTER_CODED_BLOCK_PATTERN[codedBlockPatternIndex];
+    macroblock.cbpLuma = codedBlockPattern & 0x0f;
+    macroblock.cbpChroma = (codedBlockPattern >> 4) & 0x03;
+    if (canSignalInterTransformSize8x8Flag(sliceState, macroblock)) {
+      macroblock.transformSize8x8 = Boolean(bitReader.readBit());
+    }
+    if (macroblock.cbpLuma > 0 || macroblock.cbpChroma > 0) {
+      macroblock.qpDelta = bitReader.readSE();
+      updateMacroblockQp(sliceState, macroblock);
+    } else {
+      macroblock.qpY = sliceState.currentQpY;
+    }
+    decodeCavlcMacroblockResidual(sliceState, macroblockAddress);
+  }
+  const syntaxBits = bitReader.bitOffset - macroblockStartBit;
+  storeMacroblockResult(sliceState, macroblockAddress, syntaxBits);
+}
+
+function decodeCavlcBipredictiveMacroblock(
+  sliceState,
+  macroblockAddress,
+  sliceHeader
+) {
+  const bitReader = sliceState.bitReader;
+  const macroblockStartBit = bitReader.bitOffset;
+  const macroblock = createMacroblockSyntaxState(sliceState, macroblockAddress);
+  macroblock.rawMbType = bitReader.readUE();
+  if (macroblock.rawMbType > 48) {
+    throw new AvcSyntaxError(
+      "invalid-bipredictive-macroblock-type",
+      "Invalid AVC B-slice mb_type " + macroblock.rawMbType + "."
+    );
+  }
+  if (macroblock.rawMbType >= 23) {
+    macroblock.isIntra = true;
+    macroblock.mbType = macroblock.rawMbType - 23;
+    decodeCavlcIntraMacroblockSyntax(sliceState, macroblockAddress, macroblock);
+  } else {
+    macroblock.mbType = macroblock.rawMbType;
+    macroblock.interMode = BIPREDICTIVE_MACROBLOCK_MODES[macroblock.rawMbType].name;
+    macroblock.isDirect = macroblock.rawMbType === 0;
+    const subMacroblockTypes = [];
+    const subMacroblockSyntaxBits = [];
+    if (macroblock.rawMbType === 22) {
+      for (let groupIndex = 0; groupIndex < 4; groupIndex += 1) {
+        const startBit = bitReader.bitOffset;
+        const subMacroblockType = bitReader.readUE();
+        if (subMacroblockType > 12) {
+          throw new AvcSyntaxError(
+            "invalid-sub-macroblock-type",
+            "Invalid AVC B-slice sub_mb_type " + subMacroblockType + "."
+          );
+        }
+        subMacroblockTypes.push(subMacroblockType);
+        subMacroblockSyntaxBits.push(bitReader.bitOffset - startBit);
+      }
+    }
+    configureBipredictivePartitions(
+      macroblock,
+      macroblock.rawMbType,
+      subMacroblockTypes,
+      sliceState.sequenceParameterSet.direct8x8InferenceFlag
+    );
+    for (let groupIndex = 0; groupIndex < subMacroblockSyntaxBits.length; groupIndex += 1) {
+      const firstPartitionIndex = macroblock.interPartitions.findIndex(
+        (partition) => partition.referenceGroupIndex === groupIndex
+      );
+      addPartitionSyntaxBits(macroblock, firstPartitionIndex, subMacroblockSyntaxBits[groupIndex]);
+    }
+    decodeCavlcInterMotionSyntax(sliceState, macroblock, sliceHeader, 2);
+    const codedBlockPatternIndex = bitReader.readUE();
+    if (codedBlockPatternIndex > 47) {
+      throw new AvcSyntaxError("invalid-coded-block-pattern", "Invalid AVC inter coded_block_pattern.");
+    }
+    const codedBlockPattern = CAVLC_INTER_CODED_BLOCK_PATTERN[codedBlockPatternIndex];
+    macroblock.cbpLuma = codedBlockPattern & 0x0f;
+    macroblock.cbpChroma = (codedBlockPattern >> 4) & 0x03;
+    if (canSignalInterTransformSize8x8Flag(sliceState, macroblock)) {
+      macroblock.transformSize8x8 = Boolean(bitReader.readBit());
+    }
+    if (macroblock.cbpLuma > 0 || macroblock.cbpChroma > 0) {
+      macroblock.qpDelta = bitReader.readSE();
+      updateMacroblockQp(sliceState, macroblock);
+    } else {
+      macroblock.qpY = sliceState.currentQpY;
+    }
+    decodeCavlcMacroblockResidual(sliceState, macroblockAddress);
+  }
+  const syntaxBits = bitReader.bitOffset - macroblockStartBit;
+  storeMacroblockResult(sliceState, macroblockAddress, syntaxBits);
+}
+
+function decodeCavlcPredictiveMotionSyntax(sliceState, macroblock, sliceHeader) {
+  decodeCavlcInterMotionSyntax(sliceState, macroblock, sliceHeader, 1);
+}
+
+function decodeCavlcInterMotionSyntax(sliceState, macroblock, sliceHeader, listCount) {
+  const bitReader = sliceState.bitReader;
+  const referenceGroups = getPredictiveReferenceGroups(macroblock);
+  for (let listIndex = 0; listIndex < listCount; listIndex += 1) {
+    const maximumReferenceIndex = listIndex === 0
+      ? sliceHeader.numRefIdxL0ActiveMinus1
+      : sliceHeader.numRefIdxL1ActiveMinus1;
+    const referenceIndexValues = macroblock[listIndex === 0 ? "referenceIndexL0" : "referenceIndexL1"];
+    for (const group of referenceGroups) {
+      if (!groupUsesReferenceList(group, listIndex)) continue;
+      const startBit = bitReader.bitOffset;
+      const referenceIndex = listCount === 1 && listIndex === 0 && macroblock.rawMbType === 4
+        ? 0
+        : bitReader.readTE(maximumReferenceIndex);
+      fillMacroblockBlockRegion(referenceIndexValues, group, referenceIndex);
+      addPartitionSyntaxBits(macroblock, group.firstPartitionIndex, bitReader.bitOffset - startBit);
+    }
+  }
+  for (let listIndex = 0; listIndex < listCount; listIndex += 1) {
+    const horizontalValues = macroblock[
+      listIndex === 0 ? "motionVectorDifferenceL0X" : "motionVectorDifferenceL1X"
+    ];
+    const verticalValues = macroblock[
+      listIndex === 0 ? "motionVectorDifferenceL0Y" : "motionVectorDifferenceL1Y"
+    ];
+    for (let partitionIndex = 0; partitionIndex < macroblock.interPartitions.length; partitionIndex += 1) {
+      const partition = macroblock.interPartitions[partitionIndex];
+      if (!partitionUsesReferenceList(partition, listIndex)) continue;
+      const startBit = bitReader.bitOffset;
+      const differenceX = bitReader.readSE();
+      const differenceY = bitReader.readSE();
+      fillMacroblockBlockRegion(horizontalValues, partition, differenceX);
+      fillMacroblockBlockRegion(verticalValues, partition, differenceY);
+      addPartitionSyntaxBits(macroblock, partitionIndex, bitReader.bitOffset - startBit);
+    }
+  }
+}
 
 function decodeCavlcIntraMacroblock(sliceState, macroblockAddress) {
   const bitReader = sliceState.bitReader;
   const macroblockStartBit = bitReader.bitOffset;
   const macroblock = createMacroblockSyntaxState(sliceState, macroblockAddress);
+  macroblock.isIntra = true;
   macroblock.mbType = bitReader.readUE();
+  macroblock.rawMbType = macroblock.mbType;
+  decodeCavlcIntraMacroblockSyntax(sliceState, macroblockAddress, macroblock);
+  storeMacroblockResult(sliceState, macroblockAddress, bitReader.bitOffset - macroblockStartBit);
+}
+
+function decodeCavlcIntraMacroblockSyntax(sliceState, macroblockAddress, macroblock) {
+  const bitReader = sliceState.bitReader;
   if (macroblock.mbType > 25) {
     throw new AvcSyntaxError("invalid-intra-macroblock-type", "Invalid AVC I-slice mb_type " + macroblock.mbType + ".");
   }
   if (macroblock.mbType === 25) {
     decodeCavlcPcmMacroblock(sliceState, macroblock);
-    storeMacroblockResult(sliceState, macroblockAddress, bitReader.bitOffset - macroblockStartBit);
     return;
   }
 
@@ -2054,14 +3207,13 @@ function decodeCavlcIntraMacroblock(sliceState, macroblockAddress) {
     }
   }
 
-  if (macroblock.cbpLuma > 0 || macroblock.cbpChroma > 0 || (macroblock.mbType >= 1 && macroblock.mbType <= 24)) {
+  if (macroblock.cbpLuma > 0 || macroblock.cbpChroma > 0 || isIntra16x16Macroblock(macroblock)) {
     macroblock.qpDelta = bitReader.readSE();
     updateMacroblockQp(sliceState, macroblock);
   } else {
     macroblock.qpY = sliceState.currentQpY;
   }
   decodeCavlcMacroblockResidual(sliceState, macroblockAddress);
-  storeMacroblockResult(sliceState, macroblockAddress, bitReader.bitOffset - macroblockStartBit);
 }
 
 function decodeCavlcPcmMacroblock(sliceState, macroblock) {
@@ -2079,7 +3231,7 @@ function decodeCavlcPcmMacroblock(sliceState, macroblock) {
 
 function decodeCavlcMacroblockResidual(sliceState, macroblockAddress) {
   const macroblock = sliceState.syntaxState[macroblockAddress];
-  if (macroblock.mbType >= 1 && macroblock.mbType <= 24) {
+  if (isIntra16x16Macroblock(macroblock)) {
     const lumaDcCoefficientCount = deriveCavlcNonZeroCount(sliceState, macroblockAddress, 0);
     addCavlcResidualSyntaxBits(
       sliceState,
@@ -2168,11 +3320,46 @@ function addCavlcResidualSyntaxBits(
     maximumCoefficientCount
   );
   const macroblock = sliceState.syntaxState[macroblockAddress];
-  macroblock.partitionSyntaxBits[partitionIndex] = (macroblock.partitionSyntaxBits[partitionIndex] || 0) +
-    sliceState.bitReader.bitOffset - startBit;
+  const syntaxPartitionIndex = macroblock.isIntra || !nonZeroTarget
+    ? partitionIndex
+    : findInterPartitionIndexForLumaBlock(macroblock, nonZeroTarget.blockIndex);
+  addPartitionSyntaxBits(
+    macroblock,
+    syntaxPartitionIndex,
+    sliceState.bitReader.bitOffset - startBit
+  );
   if (nonZeroTarget && nonZeroTarget.kind === "luma") {
     macroblock.nonZeroLuma[nonZeroTarget.blockIndex] = result.totalCoefficientCount;
   }
+}
+
+function getResidualSyntaxPartitionIndex(macroblock, blockCategory, blockIndex, fallbackPartitionIndex) {
+  if (macroblock.isIntra) return fallbackPartitionIndex;
+  if (blockCategory === CABAC_BLOCK_CATEGORY_LUMA_8X8) {
+    const blockX = (blockIndex % 2) * 2;
+    const blockY = Math.floor(blockIndex / 2) * 2;
+    return findInterPartitionIndexForBlockCoordinate(macroblock, blockX, blockY);
+  }
+  if (blockCategory === CABAC_BLOCK_CATEGORY_LUMA_4X4) {
+    return findInterPartitionIndexForLumaBlock(macroblock, blockIndex);
+  }
+  return fallbackPartitionIndex;
+}
+
+function findInterPartitionIndexForLumaBlock(macroblock, blockIndex) {
+  return findInterPartitionIndexForBlockCoordinate(
+    macroblock,
+    Z_SCAN_BLOCK_X[blockIndex],
+    Z_SCAN_BLOCK_Y[blockIndex]
+  );
+}
+
+function findInterPartitionIndexForBlockCoordinate(macroblock, blockX, blockY) {
+  const partitionIndex = macroblock.interPartitions.findIndex((partition) => (
+    blockX >= partition.blockX && blockX < partition.blockX + partition.blockWidth &&
+    blockY >= partition.blockY && blockY < partition.blockY + partition.blockHeight
+  ));
+  return partitionIndex >= 0 ? partitionIndex : 0;
 }
 
 function consumeCavlcResidualBlock(bitReader, neighboringCoefficientCount, maximumCoefficientCount) {
@@ -2427,6 +3614,7 @@ function deriveIntra8x8PredictionMode(sliceState, macroblockAddress, blockIndex,
 }
 
 function getNeighborIntraPredictionMode(macroblock, blockX, blockY) {
+  if (!macroblock.isIntra) return -1;
   if (macroblock.mbType === 0 && macroblock.transformSize8x8) {
     return macroblock.intra8x8PredMode[Math.floor(blockY / 2) * 2 + Math.floor(blockX / 2)];
   }
@@ -2434,6 +3622,16 @@ function getNeighborIntraPredictionMode(macroblock, blockX, blockY) {
     return macroblock.intra4x4PredMode[RASTER_TO_Z_SCAN[blockY * 4 + blockX]];
   }
   return 2;
+}
+
+function isIntra16x16Macroblock(macroblock) {
+  return Boolean(macroblock && macroblock.isIntra && macroblock.mbType >= 1 && macroblock.mbType <= 24);
+}
+
+function isIntra16x16OrPcm(macroblock) {
+  return isIntra16x16Macroblock(macroblock) || Boolean(
+    macroblock && macroblock.isIntra && macroblock.mbType === 25
+  );
 }
 
 function getMacroblockNeighbor(sliceState, macroblockAddress, deltaX, deltaY) {
@@ -2462,24 +3660,42 @@ function storeMacroblockResult(sliceState, macroblockAddress, syntaxBits) {
     AVC_MACROBLOCK_SIZE,
     AVC_MACROBLOCK_SIZE
   );
-  const type = getIntraMacroblockTypeName(syntax);
-  const partitionCount = getIntraPartitionCount(type);
+  const type = getMacroblockTypeName(syntax);
+  const partitionCount = syntax.isIntra ? getIntraPartitionCount(type) : syntax.interPartitions.length;
   sliceState.structureBudget.decodedPartitionCount += partitionCount;
-  sliceState.partitionModeCounts.set(
-    type,
-    (sliceState.partitionModeCounts.get(type) || 0) + partitionCount + 1
-  );
+  if (syntax.isIntra) {
+    sliceState.partitionModeCounts.set(
+      type,
+      (sliceState.partitionModeCounts.get(type) || 0) + partitionCount + 1
+    );
+  } else {
+    sliceState.partitionModeCounts.set(type, (sliceState.partitionModeCounts.get(type) || 0) + 1);
+    for (const partition of syntax.interPartitions) {
+      sliceState.partitionModeCounts.set(
+        partition.type,
+        (sliceState.partitionModeCounts.get(partition.type) || 0) + 1
+      );
+    }
+  }
   const retainPartitionGeometry =
     sliceState.structureBudget.retainedStructureRecordCount + partitionCount <=
       sliceState.structureBudget.maximumStructureRecords;
   const children = retainPartitionGeometry
-    ? buildIntraPartitionGeometry(
-      sliceState.sequenceParameterSet,
-      macroblockAddress,
-      codedLeft,
-      codedTop,
-      syntax
-    )
+    ? (syntax.isIntra
+      ? buildIntraPartitionGeometry(
+        sliceState.sequenceParameterSet,
+        macroblockAddress,
+        codedLeft,
+        codedTop,
+        syntax
+      )
+      : buildPredictivePartitionGeometry(
+        sliceState.sequenceParameterSet,
+        macroblockAddress,
+        codedLeft,
+        codedTop,
+        syntax
+      ))
     : [];
   if (retainPartitionGeometry) {
     sliceState.structureBudget.retainedStructureRecordCount += children.length;
@@ -2504,6 +3720,8 @@ function storeMacroblockResult(sliceState, macroblockAddress, syntaxBits) {
     codedBlockHeight: AVC_MACROBLOCK_SIZE,
     depth: 0,
     type,
+    rawMbType: syntax.rawMbType,
+    skipped: syntax.isSkipped,
     syntaxBits,
     ownBits: syntaxBits - childSyntaxBits,
     subtreeBits: syntaxBits,
@@ -2521,6 +3739,10 @@ function getIntraMacroblockTypeName(syntax) {
   if (syntax.mbType === 25) return "I_PCM";
   if (syntax.mbType !== 0) return "I_16x16";
   return syntax.transformSize8x8 ? "I_8x8" : "I_4x4";
+}
+
+function getMacroblockTypeName(syntax) {
+  return syntax.isIntra ? getIntraMacroblockTypeName(syntax) : syntax.interMode;
 }
 
 function getIntraPartitionCount(type) {
@@ -2607,6 +3829,66 @@ function buildIntraPartitionGeometry(
     throw new AvcSyntaxError("invalid-partition-geometry", "AVC partition geometry is inconsistent.");
   }
   return children;
+}
+
+function buildPredictivePartitionGeometry(
+  sequenceParameterSet,
+  macroblockAddress,
+  macroblockCodedLeft,
+  macroblockCodedTop,
+  syntax
+) {
+  return syntax.interPartitions.map((partition, partitionIndex) => {
+    const codedLeft = macroblockCodedLeft + partition.codedLeft;
+    const codedTop = macroblockCodedTop + partition.codedTop;
+    const geometry = getTranslatedCodedRectangle(
+      sequenceParameterSet,
+      codedLeft,
+      codedTop,
+      partition.codedWidth,
+      partition.codedHeight
+    );
+    const topLeftBlockIndex = partition.blockY * 4 + partition.blockX;
+    return {
+      id: "mb:" + macroblockAddress + "/partition:" + partitionIndex,
+      partitionIndex,
+      referenceGroupIndex: partition.referenceGroupIndex,
+      codedLeft,
+      codedTop,
+      left: geometry.left,
+      top: geometry.top,
+      width: geometry.width,
+      height: geometry.height,
+      codedWidth: partition.codedWidth,
+      codedHeight: partition.codedHeight,
+      codedBlockWidth: partition.codedWidth,
+      codedBlockHeight: partition.codedHeight,
+      depth: 1,
+      type: partition.type,
+      syntaxBits: syntax.partitionSyntaxBits[partitionIndex] || 0,
+      predictionDirection: partition.predictionDirection,
+      direct: partition.direct,
+      referenceIndexL0: syntax.referenceIndexL0[topLeftBlockIndex],
+      referenceIndexL1: syntax.referenceIndexL1[topLeftBlockIndex],
+      motionVectorDifferenceL0X: syntax.motionVectorDifferenceL0X[topLeftBlockIndex],
+      motionVectorDifferenceL0Y: syntax.motionVectorDifferenceL0Y[topLeftBlockIndex],
+      motionVectorDifferenceL1X: syntax.motionVectorDifferenceL1X[topLeftBlockIndex],
+      motionVectorDifferenceL1Y: syntax.motionVectorDifferenceL1Y[topLeftBlockIndex],
+      children: []
+    };
+  });
+}
+
+function flattenMacroblockDescendants(macroblock) {
+  const descendants = [];
+  const stack = Array.isArray(macroblock.children) ? macroblock.children.slice().reverse() : [];
+  while (stack.length) {
+    const block = stack.pop();
+    descendants.push(block);
+    const children = Array.isArray(block.children) ? block.children : [];
+    for (let index = children.length - 1; index >= 0; index -= 1) stack.push(children[index]);
+  }
+  return descendants;
 }
 
 export {
