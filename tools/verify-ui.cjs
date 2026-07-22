@@ -529,6 +529,32 @@ async function main() {
   if (!/id="frameInternalsTooltip"\s+class="frame-internals-tooltip"/.test(sourceHtml)) {
     throw new Error("Selected-frame internals must provide a custom tooltip element.");
   }
+  for (const stableFrameInternalsId of [
+    "frameInternalsLayout",
+    "frameInternalsSummary",
+    "frameInternalsStats",
+    "frameInternalsMapViewport",
+    "frameInternalsMap",
+    "frameInternalsFrameOverlayLayer",
+    "frameInternalsBlockLayer"
+  ]) {
+    if (!new RegExp('id="' + stableFrameInternalsId + '"').test(sourceHtml)) {
+      throw new Error("Selected-frame internals must keep the " + stableFrameInternalsId + " component mounted.");
+    }
+  }
+  const renderFrameInternalsSource = sourceUi.slice(
+    sourceUi.indexOf("function renderFrameInternals()"),
+    sourceUi.indexOf("function buildSelectedFrameInternalsModel()")
+  );
+  if (/frameInternalsBody\.innerHTML/.test(renderFrameInternalsSource)) {
+    throw new Error("Selected-frame internals must update stable component slots instead of replacing the whole view.");
+  }
+  if (!/model\.kind === "loading"[\s\S]{0,240}pendingFrameKey[\s\S]{0,120}return;/.test(renderFrameInternalsSource)) {
+    throw new Error("Selected-frame loading must retain the mounted component values until parsing finishes.");
+  }
+  if (/Reading and parsing the selected frame bitstream|frameInternals\.loading/.test(sourceHtml + sourceUi)) {
+    throw new Error("Selected-frame loading must not swap the component view for a transient parsing message.");
+  }
   if (!/id="openUrlButton"/.test(sourceHtml) || !/id="remoteUrlModal"/.test(sourceHtml) || !/id="remoteUrlInput"/.test(sourceHtml)) {
     throw new Error("Source HTML must expose the remote URL button and modal controls.");
   }

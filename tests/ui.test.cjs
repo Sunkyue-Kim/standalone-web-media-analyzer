@@ -688,6 +688,9 @@ test("frame internals view renders actual codec blocks, accounting, and tooltips
       imageUrl: "data:image/jpeg;base64,AA=="
     }
   });
+  const presentation = frameInternalsView.createVideoFrameInternalsPresentation(model, {
+    frameLabel: "T1 #1"
+  });
   const pendingOverlayHtml = frameInternalsView.renderVideoFrameInternals({
     ...model,
     title: "Pending overlay",
@@ -703,6 +706,9 @@ test("frame internals view renders actual codec blocks, accounting, and tooltips
   );
 
   assert.match(videoHtml, /block-cell block-cell-path i/);
+  assert.equal(presentation.stats.find(([statName]) => statName === "frame")[2], "T1 #1");
+  assert.equal(presentation.pathCount, 1);
+  assert.match(presentation.blockPathsHtml, /d="M0 16H16V32H0Z"/);
   assert.match(videoHtml, /block-map-viewport/);
   assert.match(videoHtml, /<svg class="block-map" viewBox="0 0 16 32"/);
   assert.match(videoHtml, /<image class="block-frame-overlay" href="data:image\/jpeg;base64,AA=="/);
@@ -1419,6 +1425,7 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   const sourceHtml = fs.readFileSync(path.join(rootDirectory, "src", "index.html"), "utf8");
   const sourceCss = fs.readFileSync(path.join(rootDirectory, "src", "styles.css"), "utf8");
   const sourceUi = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "analyzer-ui.js"), "utf8");
+  const sourceI18n = fs.readFileSync(path.join(rootDirectory, "src", "js", "i18n", "catalogs.js"), "utf8");
   const sourceBoxDetailModel = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "box-detail-model.js"), "utf8");
   const sourceFrameInternalsView = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "frame-internals-view.js"), "utf8");
   const sourceFrameInternalsMap = fs.readFileSync(path.join(rootDirectory, "src", "js", "ui", "frame-internals-map.js"), "utf8");
@@ -1446,7 +1453,12 @@ test("source HTML has required controls, tabs, and no external runtime assets af
     "warningsBody",
     "frameGraphButton", "frameTableButton", "autoPlaybackSynchronizationToggle",
     "fragmentPlaybackSynchronizationToggle", "fragmentCountText", "fragmentsBody",
-    "frameInternalsPanel", "frameInternalsOverlayToggle", "frameInternalsBody", "frameInternalsTooltip",
+    "frameInternalsPanel", "frameInternalsOverlayToggle", "frameInternalsBody", "frameInternalsLayout",
+    "frameInternalsSummary", "frameInternalsResultTitle", "frameInternalsFrameType",
+    "frameInternalsAccuracyNote", "frameInternalsStructureBudgetNote", "frameInternalsStats",
+    "frameInternalsMapComponent", "frameInternalsMapViewport", "frameInternalsMap",
+    "frameInternalsFrameOverlayLayer", "frameInternalsBlockLayer", "frameInternalsMapMessage",
+    "frameInternalsOverlayStatus", "frameInternalsLimitationsNote", "frameInternalsTooltip",
     "frameWrap", "frameHeader", "frameScroller", "graphScroller",
     "remoteUrlModal", "remoteUrlForm", "remoteUrlInput", "remoteUrlSubmitButton"
   ]) {
@@ -1459,6 +1471,9 @@ test("source HTML has required controls, tabs, and no external runtime assets af
 
   assert.match(sourceHtml, /<title>Standalone Web Media Analyzer<\/title>/);
   assert.match(sourceHtml, /data-i18n="frameInternals\.badge">Actual coded blocks<\/span>/);
+  assert.equal(Array.from(sourceHtml.matchAll(/data-frame-internals-stat-value="([^"]+)"/g)).length, 18);
+  assert.match(sourceHtml, /id="frameInternalsMapViewport"[^>]*tabindex="-1"[^>]*aria-disabled="true"/);
+  assert.doesNotMatch(sourceHtml + sourceUi + sourceI18n, /Reading and parsing the selected frame bitstream/);
   assert.match(sourceHtml, /WebM, AV1, MP3/);
   assert.match(sourceHtml, /id="mediaPreviewBar" class="media-preview-bar empty"/);
   assert.doesNotMatch(sourceHtml, /id="mediaPreviewBar"[^>]*hidden/);
@@ -1574,6 +1589,11 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceUi, /hasActiveFrameInternalsMapInteraction/);
   assert.match(sourceUi, /frameInternalsRenderPending/);
   assert.match(sourceUi, /frameInternalsModelKey/);
+  assert.doesNotMatch(renderFrameInternalsSource, /frameInternalsBody\.innerHTML/);
+  assert.match(renderFrameInternalsSource, /model\.kind === "loading"[\s\S]{0,240}pendingFrameKey[\s\S]{0,120}return;/);
+  assert.match(sourceUi, /updateVideoFrameInternalsDom/);
+  assert.match(sourceUi, /frameInternalsBlockLayer\.innerHTML = presentation\.blockPathsHtml/);
+  assert.match(sourceUi, /viewport\.tabIndex = 0;[\s\S]{0,100}viewport\.removeAttribute\("aria-disabled"\)/);
   assert.match(sourceUi, /createFrameInternalsSpatialIndex/);
   assert.match(sourceUi, /findFrameInternalsCell/);
   assert.match(sourceUi, /captureFrameInternalsFrameOverlay/);

@@ -201,8 +201,49 @@
                   <span data-i18n="frameInternals.badge">Actual coded blocks</span>
                 </div>
               </div>
-              <div id="frameInternalsBody" class="frame-internals-body">
-                <div class="empty compact" data-i18n="frameInternals.empty">Select a video frame to inspect its coded block structure.</div>
+              <div id="frameInternalsBody" class="frame-internals-body" aria-busy="false">
+                <div id="frameInternalsLayout" class="frame-internals-layout">
+                  <div id="frameInternalsSummary" class="frame-internals-summary">
+                    <div class="frame-internals-title-row">
+                      <strong id="frameInternalsResultTitle" data-i18n="frameInternals.title">Selected frame internals</strong>
+                      <span id="frameInternalsFrameType" class="pill" hidden></span>
+                    </div>
+                    <p id="frameInternalsAccuracyNote" class="frame-internals-note" data-i18n="frameInternals.empty">Select a video frame to inspect its coded block structure.</p>
+                    <p id="frameInternalsStructureBudgetNote" class="frame-internals-note" hidden></p>
+                    <div id="frameInternalsStats" class="frame-internals-stats">
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.codec">Codec</span><strong data-frame-internals-stat-value="codec">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.frame">Frame</span><strong data-frame-internals-stat-value="frame">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.unit">Unit</span><strong data-frame-internals-stat-value="unit">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.mediaSize">Media size</span><strong data-frame-internals-stat-value="mediaSize">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.blockGrid">Root block grid</span><strong data-frame-internals-stat-value="blockGrid">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.rootBlocks">Root blocks</span><strong data-frame-internals-stat-value="rootBlocks">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.codedBlocks">Tree nodes</span><strong data-frame-internals-stat-value="codedBlocks">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.leafBlocks">Leaf blocks</span><strong data-frame-internals-stat-value="leafBlocks">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.retainedNodes">Retained output nodes</span><strong data-frame-internals-stat-value="retainedNodes">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.renderedCells">Rendered map cells</span><strong data-frame-internals-stat-value="renderedCells">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.partitionModes">Partition / block modes</span><strong data-frame-internals-stat-value="partitionModes">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.partitionDepths">Partition tree depths</span><strong data-frame-internals-stat-value="partitionDepths">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.frameBits">Encoded frame bits</span><strong data-frame-internals-stat-value="frameBits">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.attributedBits">Block-attributed syntax bits</span><strong data-frame-internals-stat-value="attributedBits">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.overheadBits">Unattributed / overhead bits</span><strong data-frame-internals-stat-value="overheadBits">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.bitAccounting">Bit accounting</span><strong data-frame-internals-stat-value="bitAccounting">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.source">Source</span><strong data-frame-internals-stat-value="source">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.accuracy">Accuracy</span><strong data-frame-internals-stat-value="accuracy">—</strong></div>
+                    </div>
+                  </div>
+                  <div id="frameInternalsMapComponent" class="block-heatmap-wrap">
+                    <div id="frameInternalsMapViewport" class="block-map-viewport" tabindex="-1" role="region" aria-disabled="true" data-i18n-aria-label="frameInternals.zoomPlotAria" aria-label="Use mouse wheel or pinch to zoom the coded block map. Drag to pan while zoomed.">
+                      <svg id="frameInternalsMap" class="block-map" viewBox="0 0 16 9" data-media-width="16" data-media-height="9" data-block-count="0" data-path-count="0" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                        <g id="frameInternalsFrameOverlayLayer"></g>
+                        <g id="frameInternalsBlockLayer"></g>
+                        <rect class="block-hover-outline" visibility="hidden"></rect>
+                      </svg>
+                      <div id="frameInternalsMapMessage" class="frame-internals-map-message" data-i18n="frameInternals.empty">Select a video frame to inspect its coded block structure.</div>
+                      <div id="frameInternalsOverlayStatus" class="frame-overlay-status" hidden></div>
+                    </div>
+                    <p id="frameInternalsLimitationsNote" class="frame-internals-note" data-i18n="frameInternals.empty">Select a video frame to inspect its coded block structure.</p>
+                  </div>
+                </div>
               </div>
               <div id="frameInternalsTooltip" class="frame-internals-tooltip" role="tooltip" hidden></div>
             </section>

@@ -15,6 +15,33 @@ import {
 } from "./frame-internals-map.js";
 
 export function renderVideoFrameInternals(model, options = {}) {
+  const presentation = createVideoFrameInternalsPresentation(model, options);
+  return '<div class="frame-internals-layout">' +
+    '<div class="frame-internals-summary">' +
+    '<div class="frame-internals-title-row"><strong>' + escapeHtml(presentation.title) + '</strong><span class="pill ' + presentation.frameClass + '">' + escapeHtml(presentation.frameTypeLabel) + '</span></div>' +
+    '<p class="frame-internals-note">' + escapeHtml(presentation.accuracyNote) + '</p>' +
+    (presentation.structureBudgetNote
+      ? '<p class="frame-internals-note">' + escapeHtml(presentation.structureBudgetNote) + '</p>'
+      : '') +
+    renderFrameInternalsStats(presentation.stats) +
+    '</div>' +
+    '<div class="block-heatmap-wrap">' +
+    '<div class="' + presentation.viewportClass + '" tabindex="0" role="region" aria-label="' + escapeHtml(presentation.mapAriaLabel) + '" style="' + presentation.mapStyle + '">' +
+    '<svg class="block-map" viewBox="0 0 ' + formatSvgNumber(presentation.mediaWidth) + ' ' + formatSvgNumber(presentation.mediaHeight) + '" data-media-width="' + escapeHtml(String(presentation.mediaWidth)) + '" data-media-height="' + escapeHtml(String(presentation.mediaHeight)) + '" data-block-count="' + escapeHtml(String(presentation.displayCellCount)) + '" data-path-count="' + escapeHtml(String(presentation.pathCount)) + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' +
+      presentation.frameOverlayImageHtml +
+      presentation.blockPathsHtml +
+      '<rect class="block-hover-outline" visibility="hidden"></rect>' +
+    '</svg>' +
+    (presentation.frameOverlayStatus
+      ? '<div class="frame-overlay-status">' + escapeHtml(presentation.frameOverlayStatus) + '</div>'
+      : '') +
+    '</div>' +
+    '<p class="frame-internals-note">' + escapeHtml(presentation.limitationsNote) + '</p>' +
+    '</div>' +
+    '</div>';
+}
+
+export function createVideoFrameInternalsPresentation(model, options = {}) {
   const cells = Array.isArray(model.cells) ? model.cells : [];
   const frameClass = getFrameTypeClass(model.frameType);
   const frameOverlay = normalizeFrameOverlayOptions(options.frameOverlay);
@@ -26,44 +53,45 @@ export function renderVideoFrameInternals(model, options = {}) {
     frameOverlay.imageUrl ? "has-frame-image" : ""
   ].filter(Boolean).join(" ");
   const stats = [
-    [t("frameInternals.codec"), model.codecFamily],
-    [t("frameInternals.frame"), options.frameLabel || t("value.notAvailable")],
-    [t("frameInternals.unit"), formatCodingUnit(model)],
-    [t("frameInternals.mediaSize"), formatVideoMediaSize(model)],
-    [t("frameInternals.blockGrid"), formatBlockGrid(model)],
-    [t("frameInternals.rootBlocks"), formatMetricNumber(model.nominalUnitCount, 0)],
-    [t("frameInternals.codedBlocks"), formatMetricNumber(model.partitionBlockCount, 0)],
-    [t("frameInternals.leafBlocks"), formatMetricNumber(model.leafBlockCount, 0)],
-    [t("frameInternals.retainedNodes"), formatMetricNumber(model.retainedStructureRecordCount, 0)],
-    [t("frameInternals.renderedCells"), formatMetricNumber(model.displayCellCount, 0)],
-    [t("frameInternals.partitionModes"), formatPartitionModes(model.partitionModes)],
-    [t("frameInternals.partitionDepths"), formatPartitionDepths(model.partitionDepths)],
-    [t("frameInternals.frameBits"), formatBits(model.sampleBits)],
-    [t("frameInternals.attributedBits"), formatBits(model.attributedBits)],
-    [t("frameInternals.overheadBits"), formatBits(model.overheadBits)],
-    [t("frameInternals.bitAccounting"), formatFrameInternalsBitAccounting(model)],
-    [t("frameInternals.source"), formatFrameInternalsSource(model)],
-    [t("frameInternals.accuracy"), formatFrameInternalsAccuracy(model)]
+    ["codec", t("frameInternals.codec"), model.codecFamily],
+    ["frame", t("frameInternals.frame"), options.frameLabel || t("value.notAvailable")],
+    ["unit", t("frameInternals.unit"), formatCodingUnit(model)],
+    ["mediaSize", t("frameInternals.mediaSize"), formatVideoMediaSize(model)],
+    ["blockGrid", t("frameInternals.blockGrid"), formatBlockGrid(model)],
+    ["rootBlocks", t("frameInternals.rootBlocks"), formatMetricNumber(model.nominalUnitCount, 0)],
+    ["codedBlocks", t("frameInternals.codedBlocks"), formatMetricNumber(model.partitionBlockCount, 0)],
+    ["leafBlocks", t("frameInternals.leafBlocks"), formatMetricNumber(model.leafBlockCount, 0)],
+    ["retainedNodes", t("frameInternals.retainedNodes"), formatMetricNumber(model.retainedStructureRecordCount, 0)],
+    ["renderedCells", t("frameInternals.renderedCells"), formatMetricNumber(model.displayCellCount, 0)],
+    ["partitionModes", t("frameInternals.partitionModes"), formatPartitionModes(model.partitionModes)],
+    ["partitionDepths", t("frameInternals.partitionDepths"), formatPartitionDepths(model.partitionDepths)],
+    ["frameBits", t("frameInternals.frameBits"), formatBits(model.sampleBits)],
+    ["attributedBits", t("frameInternals.attributedBits"), formatBits(model.attributedBits)],
+    ["overheadBits", t("frameInternals.overheadBits"), formatBits(model.overheadBits)],
+    ["bitAccounting", t("frameInternals.bitAccounting"), formatFrameInternalsBitAccounting(model)],
+    ["source", t("frameInternals.source"), formatFrameInternalsSource(model)],
+    ["accuracy", t("frameInternals.accuracy"), formatFrameInternalsAccuracy(model)]
   ];
-  return '<div class="frame-internals-layout">' +
-    '<div class="frame-internals-summary">' +
-    '<div class="frame-internals-title-row"><strong>' + escapeHtml(formatFrameInternalsTitle(model)) + '</strong><span class="pill ' + frameClass + '">' + escapeHtml(formatFrameTypeLabel(model.frameType)) + '</span></div>' +
-    '<p class="frame-internals-note">' + escapeHtml(t(model.granularity === "root-units" ? "frameInternals.rootGridAccuracy" : "frameInternals.bitstreamSyntaxAccuracy")) + '</p>' +
-    renderStructureBudgetNote(model) +
-    renderFrameInternalsStats(stats) +
-    '</div>' +
-    '<div class="block-heatmap-wrap">' +
-    '<div class="' + viewportClass + '" tabindex="0" role="region" aria-label="' + escapeHtml(t("frameInternals.zoomPlotAria")) + '" style="' + renderVideoBlockMapStyle(model) + '">' +
-    '<svg class="block-map" viewBox="0 0 ' + formatSvgNumber(model.mediaWidth) + ' ' + formatSvgNumber(model.mediaHeight) + '" data-media-width="' + escapeHtml(String(model.mediaWidth)) + '" data-media-height="' + escapeHtml(String(model.mediaHeight)) + '" data-block-count="' + escapeHtml(String(displayCellCount)) + '" data-path-count="' + escapeHtml(String(pathGroups.length)) + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' +
-      renderFrameOverlayImage(model, frameOverlay) +
-      pathGroups.map((group) => renderVideoBlockPathGroup(group, frameClass)).join("") +
-      '<rect class="block-hover-outline" visibility="hidden"></rect>' +
-    '</svg>' +
-    renderFrameOverlayStatus(frameOverlay) +
-    '</div>' +
-    '<p class="frame-internals-note">' + escapeHtml(t(model.granularity === "root-units" ? "frameInternals.rootGridLimitations" : "frameInternals.videoLimitations")) + '</p>' +
-    '</div>' +
-    '</div>';
+  return {
+    title: formatFrameInternalsTitle(model),
+    frameClass,
+    frameTypeLabel: formatFrameTypeLabel(model.frameType),
+    accuracyNote: t(model.granularity === "root-units" ? "frameInternals.rootGridAccuracy" : "frameInternals.bitstreamSyntaxAccuracy"),
+    structureBudgetNote: formatStructureBudgetNote(model),
+    stats,
+    viewportClass,
+    mapAriaLabel: t("frameInternals.zoomPlotAria"),
+    mapStyle: renderVideoBlockMapStyle(model),
+    mediaWidth: model.mediaWidth,
+    mediaHeight: model.mediaHeight,
+    displayCellCount,
+    pathCount: pathGroups.length,
+    frameOverlay,
+    frameOverlayImageHtml: renderFrameOverlayImage(model, frameOverlay),
+    frameOverlayStatus: formatFrameOverlayStatus(frameOverlay),
+    blockPathsHtml: pathGroups.map((group) => renderVideoBlockPathGroup(group, frameClass)).join(""),
+    limitationsNote: t(model.granularity === "root-units" ? "frameInternals.rootGridLimitations" : "frameInternals.videoLimitations")
+  };
 }
 
 function getFrameInternalsPathGroups(model, cells, options) {
@@ -84,13 +112,13 @@ function getFrameInternalsDisplayCellCount(model, cells, pathGroups) {
   );
 }
 
-function renderStructureBudgetNote(model) {
+function formatStructureBudgetNote(model) {
   if (!model.structureTruncated) return "";
-  return '<p class="frame-internals-note">' + escapeHtml(t("frameInternals.structureBudgetNote", {
+  return t("frameInternals.structureBudgetNote", {
     decoded: formatMetricNumber(model.partitionBlockCount, 0),
     retained: formatMetricNumber(model.retainedStructureRecordCount, 0),
     omitted: formatMetricNumber(model.omittedPartitionCount, 0)
-  })) + '</p>';
+  });
 }
 
 function formatFrameInternalsTitle(model) {
@@ -116,11 +144,9 @@ function renderFrameOverlayImage(model, frameOverlay) {
     ' preserveAspectRatio="xMidYMid meet"></image>';
 }
 
-function renderFrameOverlayStatus(frameOverlay) {
+function formatFrameOverlayStatus(frameOverlay) {
   if (!frameOverlay.enabled || frameOverlay.imageUrl) return "";
-  return '<div class="frame-overlay-status">' +
-    escapeHtml(t(frameOverlay.unavailable ? "frameInternals.frameOverlayUnavailable" : "frameInternals.frameOverlayPending")) +
-  '</div>';
+  return t(frameOverlay.unavailable ? "frameInternals.frameOverlayUnavailable" : "frameInternals.frameOverlayPending");
 }
 
 function renderVideoBlockMapStyle(model) {
@@ -311,7 +337,7 @@ export function renderFrameInternalsTooltip(payload) {
 }
 
 function renderFrameInternalsStats(stats) {
-  return '<div class="frame-internals-stats">' + stats.map(([label, value]) =>
+  return '<div class="frame-internals-stats">' + stats.map(([, label, value]) =>
     '<div class="frame-internals-stat"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(String(value)) + '</strong></div>'
   ).join("") + '</div>';
 }

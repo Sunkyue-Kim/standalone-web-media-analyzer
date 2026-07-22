@@ -67,11 +67,10 @@ import {
   getDerivedBoxFields
 } from "./box-detail-model.js";
 import {
+  createVideoFrameInternalsPresentation,
   createVideoBlockTooltipPayload,
   formatFrameTypeLabel,
-  renderAudioFrameInternals,
-  renderFrameInternalsTooltip,
-  renderVideoFrameInternals
+  renderFrameInternalsTooltip
 } from "./frame-internals-view.js";
 import {
   createFrameInternalsSpatialIndex,
@@ -97,6 +96,7 @@ const FRAME_INTERNALS_MAP_MAXIMUM_SCALE = 32;
 const FRAME_INTERNALS_PREFETCH_COUNT = 8;
 const FRAME_INTERNALS_ANALYSIS_CACHE_LIMIT = 32;
 const FRAME_INTERNALS_ANALYSIS_CACHE_RECORD_LIMIT = 200_000;
+const FRAME_INTERNALS_STAT_PLACEHOLDER = "—";
 const METRIC_PLAYBACK_CURSOR_INTERVAL_MS = 100;
 const state = {
   analysis: null,
@@ -206,6 +206,21 @@ const elements = {
   frameInternalsPanel: document.getElementById("frameInternalsPanel"),
   frameInternalsOverlayToggle: document.getElementById("frameInternalsOverlayToggle"),
   frameInternalsBody: document.getElementById("frameInternalsBody"),
+  frameInternalsResultTitle: document.getElementById("frameInternalsResultTitle"),
+  frameInternalsFrameType: document.getElementById("frameInternalsFrameType"),
+  frameInternalsAccuracyNote: document.getElementById("frameInternalsAccuracyNote"),
+  frameInternalsStructureBudgetNote: document.getElementById("frameInternalsStructureBudgetNote"),
+  frameInternalsStatValues: new Map(Array.from(document.querySelectorAll("[data-frame-internals-stat-value]"), (element) => [
+    element.dataset.frameInternalsStatValue,
+    element
+  ])),
+  frameInternalsMapViewport: document.getElementById("frameInternalsMapViewport"),
+  frameInternalsMap: document.getElementById("frameInternalsMap"),
+  frameInternalsFrameOverlayLayer: document.getElementById("frameInternalsFrameOverlayLayer"),
+  frameInternalsBlockLayer: document.getElementById("frameInternalsBlockLayer"),
+  frameInternalsMapMessage: document.getElementById("frameInternalsMapMessage"),
+  frameInternalsOverlayStatus: document.getElementById("frameInternalsOverlayStatus"),
+  frameInternalsLimitationsNote: document.getElementById("frameInternalsLimitationsNote"),
   frameInternalsTooltip: document.getElementById("frameInternalsTooltip"),
   frameWrap: document.getElementById("frameWrap"),
   frameHeader: document.getElementById("frameHeader"),
@@ -2118,20 +2133,23 @@ function renderFrameInternals() {
   state.frameInternalsRenderPending = false;
   hideFrameInternalsTooltip();
   const model = buildSelectedFrameInternalsModel();
-  if (model.kind === "empty") {
-    elements.frameInternalsBody.innerHTML = emptyHtml("frameInternals.empty");
+  const isLoading = model.kind === "loading";
+  elements.frameInternalsBody.setAttribute("aria-busy", String(isLoading));
+  if (isLoading) {
+    elements.frameInternalsBody.dataset.pendingFrameKey = state.selectedFrameKey;
     return;
   }
-  if (model.kind === "loading") {
-    elements.frameInternalsBody.innerHTML = emptyHtml("frameInternals.loading");
+  delete elements.frameInternalsBody.dataset.pendingFrameKey;
+  if (model.kind === "empty") {
+    updateUnavailableFrameInternalsDom("frameInternals.empty");
     return;
   }
   if (model.kind === "cancelled") {
-    elements.frameInternalsBody.innerHTML = emptyHtml("frameInternals.cancelled");
+    updateUnavailableFrameInternalsDom("frameInternals.cancelled");
     return;
   }
   if (model.kind === "video-grid") {
-    elements.frameInternalsBody.innerHTML = renderVideoFrameInternals(model, {
+    updateVideoFrameInternalsDom(model, {
       frameLabel: formatSelectedFrameLabel(),
       frameOverlay: getFrameInternalsFrameOverlayRenderOptions()
     });
@@ -2140,10 +2158,93 @@ function renderFrameInternals() {
     return;
   }
   if (model.kind === "audio-bands") {
-    elements.frameInternalsBody.innerHTML = renderAudioFrameInternals(model, { frameLabel: formatSelectedFrameLabel() });
+    updateUnavailableFrameInternalsDom("frameInternals.audioUnsupported");
     return;
   }
-  elements.frameInternalsBody.innerHTML = '<div class="empty compact">' + escapeHtml(t("frameInternals.unsupported")) + '</div>';
+  updateUnavailableFrameInternalsDom("frameInternals.unsupported");
+}
+
+function updateVideoFrameInternalsDom(model, options = {}) {
+  const presentation = createVideoFrameInternalsPresentation(model, options);
+  detachFrameInternalsDynamicTranslations();
+  elements.frameInternalsResultTitle.textContent = presentation.title;
+  elements.frameInternalsFrameType.className = "pill " + presentation.frameClass;
+  elements.frameInternalsFrameType.textContent = presentation.frameTypeLabel;
+  elements.frameInternalsFrameType.hidden = false;
+  elements.frameInternalsAccuracyNote.textContent = presentation.accuracyNote;
+  elements.frameInternalsStructureBudgetNote.textContent = presentation.structureBudgetNote;
+  elements.frameInternalsStructureBudgetNote.hidden = !presentation.structureBudgetNote;
+  for (const [statName, , value] of presentation.stats) {
+    const valueElement = elements.frameInternalsStatValues.get(statName);
+    if (valueElement) valueElement.textContent = String(value);
+  }
+
+  const viewport = elements.frameInternalsMapViewport;
+  const svg = elements.frameInternalsMap;
+  viewport.tabIndex = 0;
+  viewport.removeAttribute("aria-disabled");
+  viewport.setAttribute("aria-label", presentation.mapAriaLabel);
+  viewport.setAttribute("style", presentation.mapStyle);
+  svg.setAttribute("viewBox", "0 0 " + presentation.mediaWidth + " " + presentation.mediaHeight);
+  svg.dataset.mediaWidth = String(presentation.mediaWidth);
+  svg.dataset.mediaHeight = String(presentation.mediaHeight);
+  svg.dataset.blockCount = String(presentation.displayCellCount);
+  svg.dataset.pathCount = String(presentation.pathCount);
+  elements.frameInternalsBlockLayer.innerHTML = presentation.blockPathsHtml;
+  elements.frameInternalsMapMessage.hidden = true;
+  elements.frameInternalsLimitationsNote.textContent = presentation.limitationsNote;
+  elements.frameInternalsBody.dataset.renderedFrameKey = state.selectedFrameKey;
+  updateFrameInternalsFrameOverlayDom();
+}
+
+function updateUnavailableFrameInternalsDom(messageKey) {
+  const message = t(messageKey);
+  detachFrameInternalsDynamicTranslations();
+  elements.frameInternalsResultTitle.textContent = t("frameInternals.title");
+  elements.frameInternalsFrameType.className = "pill";
+  elements.frameInternalsFrameType.textContent = "";
+  elements.frameInternalsFrameType.hidden = true;
+  elements.frameInternalsAccuracyNote.textContent = message;
+  elements.frameInternalsStructureBudgetNote.textContent = "";
+  elements.frameInternalsStructureBudgetNote.hidden = true;
+  for (const valueElement of elements.frameInternalsStatValues.values()) {
+    valueElement.textContent = FRAME_INTERNALS_STAT_PLACEHOLDER;
+  }
+
+  const viewport = elements.frameInternalsMapViewport;
+  const svg = elements.frameInternalsMap;
+  viewport.tabIndex = -1;
+  viewport.setAttribute("aria-disabled", "true");
+  viewport.removeAttribute("style");
+  for (const className of ["frame-overlay-enabled", "has-frame-image", "is-scaled", "dragging"]) {
+    viewport.classList.remove(className);
+  }
+  svg.setAttribute("viewBox", "0 0 16 9");
+  svg.dataset.mediaWidth = "16";
+  svg.dataset.mediaHeight = "9";
+  svg.dataset.blockCount = "0";
+  svg.dataset.pathCount = "0";
+  elements.frameInternalsFrameOverlayLayer.innerHTML = "";
+  elements.frameInternalsBlockLayer.innerHTML = "";
+  const hoverOutline = svg.querySelector(".block-hover-outline");
+  if (hoverOutline) hoverOutline.setAttribute("visibility", "hidden");
+  elements.frameInternalsMapMessage.textContent = message;
+  elements.frameInternalsMapMessage.hidden = false;
+  elements.frameInternalsOverlayStatus.textContent = "";
+  elements.frameInternalsOverlayStatus.hidden = true;
+  elements.frameInternalsLimitationsNote.textContent = message;
+  delete elements.frameInternalsBody.dataset.renderedFrameKey;
+}
+
+function detachFrameInternalsDynamicTranslations() {
+  for (const element of [
+    elements.frameInternalsResultTitle,
+    elements.frameInternalsAccuracyNote,
+    elements.frameInternalsMapMessage,
+    elements.frameInternalsLimitationsNote
+  ]) {
+    element.removeAttribute("data-i18n");
+  }
 }
 
 function buildSelectedFrameInternalsModel() {
@@ -2381,6 +2482,12 @@ function getFrameInternalsPrefetchRows(selectedRow) {
 function handleFrameInternalsOverlayToggleChange() {
   state.frameInternalsFrameOverlayEnabled = Boolean(elements.frameInternalsOverlayToggle.checked);
   clearFrameInternalsFrameOverlay();
+  if (!state.frameInternalsFrameOverlayEnabled) {
+    elements.frameInternalsFrameOverlayLayer.innerHTML = "";
+    elements.frameInternalsMapViewport.classList.remove("frame-overlay-enabled");
+    elements.frameInternalsMapViewport.classList.remove("has-frame-image");
+    updateFrameInternalsFrameOverlayStatus({ enabled: false, imageUrl: "", unavailable: false });
+  }
   renderFrameInternals();
   if (state.frameInternalsFrameOverlayEnabled) scheduleFrameInternalsFrameOverlayCapture({ force: true });
 }
@@ -2484,16 +2591,16 @@ function markFrameInternalsFrameOverlayUnavailable(frameKey = state.selectedFram
 
 function updateFrameInternalsFrameOverlayDom() {
   const model = state.frameInternalsModel;
-  const viewport = elements.frameInternalsBody.querySelector(".block-map-viewport");
-  const svg = viewport && viewport.querySelector("svg.block-map");
-  if (!model || model.kind !== "video-grid" || !viewport || !svg) return false;
+  const viewport = elements.frameInternalsMapViewport;
+  const overlayLayer = elements.frameInternalsFrameOverlayLayer;
+  if (!model || model.kind !== "video-grid" || !viewport || !overlayLayer) return false;
   const frameOverlay = getFrameInternalsFrameOverlayRenderOptions();
-  let overlayImage = svg.querySelector(".block-frame-overlay");
+  let overlayImage = overlayLayer.querySelector(".block-frame-overlay");
   if (frameOverlay.enabled && frameOverlay.imageUrl) {
     if (!overlayImage) {
       overlayImage = document.createElementNS("http://www.w3.org/2000/svg", "image");
       overlayImage.setAttribute("class", "block-frame-overlay");
-      svg.insertBefore(overlayImage, svg.firstChild);
+      overlayLayer.appendChild(overlayImage);
     }
     overlayImage.setAttribute("href", frameOverlay.imageUrl);
     overlayImage.setAttribute("x", "0");
@@ -2501,31 +2608,28 @@ function updateFrameInternalsFrameOverlayDom() {
     overlayImage.setAttribute("width", String(model.mediaWidth));
     overlayImage.setAttribute("height", String(model.mediaHeight));
     overlayImage.setAttribute("preserveAspectRatio", "xMidYMid meet");
-  } else if (overlayImage) {
-    overlayImage.remove();
+  } else {
+    overlayLayer.innerHTML = "";
   }
   viewport.classList.toggle("frame-overlay-enabled", frameOverlay.enabled);
   viewport.classList.toggle("has-frame-image", Boolean(frameOverlay.imageUrl));
-  updateFrameInternalsFrameOverlayStatus(viewport, frameOverlay);
+  updateFrameInternalsFrameOverlayStatus(frameOverlay);
   return true;
 }
 
-function updateFrameInternalsFrameOverlayStatus(viewport, frameOverlay) {
-  let status = viewport.querySelector(".frame-overlay-status");
+function updateFrameInternalsFrameOverlayStatus(frameOverlay) {
+  const status = elements.frameInternalsOverlayStatus;
   if (!frameOverlay.enabled || frameOverlay.imageUrl) {
-    if (status) status.remove();
+    status.textContent = "";
+    status.hidden = true;
     return;
-  }
-  if (!status) {
-    status = document.createElement("div");
-    status.className = "frame-overlay-status";
-    viewport.appendChild(status);
   }
   status.textContent = t(
     frameOverlay.unavailable
       ? "frameInternals.frameOverlayUnavailable"
       : "frameInternals.frameOverlayPending"
   );
+  status.hidden = false;
 }
 
 function handleFrameInternalsTooltipPointerOver(event) {

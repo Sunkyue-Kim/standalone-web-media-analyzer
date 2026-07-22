@@ -2155,6 +2155,25 @@
       opacity: 0.94;
     }
 
+    .frame-internals-map-message {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.72);
+      font-size: 12px;
+      line-height: 1.45;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .frame-internals-map-message[hidden],
+    .frame-overlay-status[hidden] {
+      display: none;
+    }
+
     .frame-overlay-status {
       position: absolute;
       left: 10px;

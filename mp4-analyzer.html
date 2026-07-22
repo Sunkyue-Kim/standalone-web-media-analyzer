@@ -1946,6 +1946,23 @@ button:disabled {
   pointer-events: none;
   opacity: 0.94;
 }
+.frame-internals-map-message {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  pointer-events: none;
+}
+.frame-internals-map-message[hidden],
+.frame-overlay-status[hidden] {
+  display: none;
+}
 .frame-overlay-status {
   position: absolute;
   left: 10px;
@@ -2692,8 +2709,49 @@ button:disabled {
                   <span data-i18n="frameInternals.badge">Actual coded blocks</span>
                 </div>
               </div>
-              <div id="frameInternalsBody" class="frame-internals-body">
-                <div class="empty compact" data-i18n="frameInternals.empty">Select a video frame to inspect its coded block structure.</div>
+              <div id="frameInternalsBody" class="frame-internals-body" aria-busy="false">
+                <div id="frameInternalsLayout" class="frame-internals-layout">
+                  <div id="frameInternalsSummary" class="frame-internals-summary">
+                    <div class="frame-internals-title-row">
+                      <strong id="frameInternalsResultTitle" data-i18n="frameInternals.title">Selected frame internals</strong>
+                      <span id="frameInternalsFrameType" class="pill" hidden></span>
+                    </div>
+                    <p id="frameInternalsAccuracyNote" class="frame-internals-note" data-i18n="frameInternals.empty">Select a video frame to inspect its coded block structure.</p>
+                    <p id="frameInternalsStructureBudgetNote" class="frame-internals-note" hidden></p>
+                    <div id="frameInternalsStats" class="frame-internals-stats">
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.codec">Codec</span><strong data-frame-internals-stat-value="codec">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.frame">Frame</span><strong data-frame-internals-stat-value="frame">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.unit">Unit</span><strong data-frame-internals-stat-value="unit">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.mediaSize">Media size</span><strong data-frame-internals-stat-value="mediaSize">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.blockGrid">Root block grid</span><strong data-frame-internals-stat-value="blockGrid">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.rootBlocks">Root blocks</span><strong data-frame-internals-stat-value="rootBlocks">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.codedBlocks">Tree nodes</span><strong data-frame-internals-stat-value="codedBlocks">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.leafBlocks">Leaf blocks</span><strong data-frame-internals-stat-value="leafBlocks">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.retainedNodes">Retained output nodes</span><strong data-frame-internals-stat-value="retainedNodes">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.renderedCells">Rendered map cells</span><strong data-frame-internals-stat-value="renderedCells">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.partitionModes">Partition / block modes</span><strong data-frame-internals-stat-value="partitionModes">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.partitionDepths">Partition tree depths</span><strong data-frame-internals-stat-value="partitionDepths">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.frameBits">Encoded frame bits</span><strong data-frame-internals-stat-value="frameBits">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.attributedBits">Block-attributed syntax bits</span><strong data-frame-internals-stat-value="attributedBits">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.overheadBits">Unattributed / overhead bits</span><strong data-frame-internals-stat-value="overheadBits">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.bitAccounting">Bit accounting</span><strong data-frame-internals-stat-value="bitAccounting">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.source">Source</span><strong data-frame-internals-stat-value="source">—</strong></div>
+                      <div class="frame-internals-stat"><span data-i18n="frameInternals.accuracy">Accuracy</span><strong data-frame-internals-stat-value="accuracy">—</strong></div>
+                    </div>
+                  </div>
+                  <div id="frameInternalsMapComponent" class="block-heatmap-wrap">
+                    <div id="frameInternalsMapViewport" class="block-map-viewport" tabindex="-1" role="region" aria-disabled="true" data-i18n-aria-label="frameInternals.zoomPlotAria" aria-label="Use mouse wheel or pinch to zoom the coded block map. Drag to pan while zoomed.">
+                      <svg id="frameInternalsMap" class="block-map" viewBox="0 0 16 9" data-media-width="16" data-media-height="9" data-block-count="0" data-path-count="0" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                        <g id="frameInternalsFrameOverlayLayer"></g>
+                        <g id="frameInternalsBlockLayer"></g>
+                        <rect class="block-hover-outline" visibility="hidden"></rect>
+                      </svg>
+                      <div id="frameInternalsMapMessage" class="frame-internals-map-message" data-i18n="frameInternals.empty">Select a video frame to inspect its coded block structure.</div>
+                      <div id="frameInternalsOverlayStatus" class="frame-overlay-status" hidden></div>
+                    </div>
+                    <p id="frameInternalsLimitationsNote" class="frame-internals-note" data-i18n="frameInternals.empty">Select a video frame to inspect its coded block structure.</p>
+                  </div>
+                </div>
               </div>
               <div id="frameInternalsTooltip" class="frame-internals-tooltip" role="tooltip" hidden></div>
             </section>
@@ -15178,7 +15236,6 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
           "frameInternals.videoTitle": "{codec} actual block structure",
           "frameInternals.rootTitle": "{codec} actual root block grid",
           "frameInternals.empty": "Select a video frame to inspect its coded block structure.",
-          "frameInternals.loading": "Reading and parsing the selected frame bitstream...",
           "frameInternals.cancelled": "Frame-internals parsing was cancelled. Select a frame to resume.",
           "frameInternals.overlayFrame": "Overlay source frame",
           "frameInternals.frameOverlayPending": "Frame overlay pending",
@@ -15422,7 +15479,6 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
           "frameInternals.videoTitle": "{codec} \uC2E4\uC81C block \uAD6C\uC870",
           "frameInternals.rootTitle": "{codec} \uC2E4\uC81C root block \uACA9\uC790",
           "frameInternals.empty": "\uBE44\uB514\uC624 \uD504\uB808\uC784\uC744 \uC120\uD0DD\uD558\uBA74 coded block \uAD6C\uC870\uB97C \uD655\uC778\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.",
-          "frameInternals.loading": "\uC120\uD0DD \uD504\uB808\uC784\uC758 \uBE44\uD2B8\uC2A4\uD2B8\uB9BC\uC744 \uC77D\uACE0 \uAD6C\uBB38\uC744 \uD574\uC11D\uD558\uB294 \uC911\uC785\uB2C8\uB2E4...",
           "frameInternals.cancelled": "\uD504\uB808\uC784 \uB0B4\uBD80 \uAD6C\uBB38 \uBD84\uC11D\uC774 \uCDE8\uC18C\uB418\uC5C8\uC2B5\uB2C8\uB2E4. \uD504\uB808\uC784\uC744 \uC120\uD0DD\uD558\uBA74 \uB2E4\uC2DC \uC2DC\uC791\uD569\uB2C8\uB2E4.",
           "frameInternals.overlayFrame": "\uC6D0\uBCF8 \uD504\uB808\uC784 \uC624\uBC84\uB808\uC774",
           "frameInternals.frameOverlayPending": "\uD504\uB808\uC784 \uC624\uBC84\uB808\uC774 \uC900\uBE44 \uC911",
@@ -17480,7 +17536,7 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
   });
 
   // local-source:C:\Users\user\Documents\Codex\2026-07-08\js-html-mp4-html-mp4-i\src\js\ui\frame-internals-view.js
-  function renderVideoFrameInternals(model, options = {}) {
+  function createVideoFrameInternalsPresentation(model, options = {}) {
     const cells = Array.isArray(model.cells) ? model.cells : [];
     const frameClass = getFrameTypeClass(model.frameType);
     const frameOverlay = normalizeFrameOverlayOptions(options.frameOverlay);
@@ -17492,26 +17548,45 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
       frameOverlay.imageUrl ? "has-frame-image" : ""
     ].filter(Boolean).join(" ");
     const stats = [
-      [t("frameInternals.codec"), model.codecFamily],
-      [t("frameInternals.frame"), options.frameLabel || t("value.notAvailable")],
-      [t("frameInternals.unit"), formatCodingUnit(model)],
-      [t("frameInternals.mediaSize"), formatVideoMediaSize(model)],
-      [t("frameInternals.blockGrid"), formatBlockGrid(model)],
-      [t("frameInternals.rootBlocks"), formatMetricNumber(model.nominalUnitCount, 0)],
-      [t("frameInternals.codedBlocks"), formatMetricNumber(model.partitionBlockCount, 0)],
-      [t("frameInternals.leafBlocks"), formatMetricNumber(model.leafBlockCount, 0)],
-      [t("frameInternals.retainedNodes"), formatMetricNumber(model.retainedStructureRecordCount, 0)],
-      [t("frameInternals.renderedCells"), formatMetricNumber(model.displayCellCount, 0)],
-      [t("frameInternals.partitionModes"), formatPartitionModes(model.partitionModes)],
-      [t("frameInternals.partitionDepths"), formatPartitionDepths(model.partitionDepths)],
-      [t("frameInternals.frameBits"), formatBits(model.sampleBits)],
-      [t("frameInternals.attributedBits"), formatBits(model.attributedBits)],
-      [t("frameInternals.overheadBits"), formatBits(model.overheadBits)],
-      [t("frameInternals.bitAccounting"), formatFrameInternalsBitAccounting(model)],
-      [t("frameInternals.source"), formatFrameInternalsSource(model)],
-      [t("frameInternals.accuracy"), formatFrameInternalsAccuracy(model)]
+      ["codec", t("frameInternals.codec"), model.codecFamily],
+      ["frame", t("frameInternals.frame"), options.frameLabel || t("value.notAvailable")],
+      ["unit", t("frameInternals.unit"), formatCodingUnit(model)],
+      ["mediaSize", t("frameInternals.mediaSize"), formatVideoMediaSize(model)],
+      ["blockGrid", t("frameInternals.blockGrid"), formatBlockGrid(model)],
+      ["rootBlocks", t("frameInternals.rootBlocks"), formatMetricNumber(model.nominalUnitCount, 0)],
+      ["codedBlocks", t("frameInternals.codedBlocks"), formatMetricNumber(model.partitionBlockCount, 0)],
+      ["leafBlocks", t("frameInternals.leafBlocks"), formatMetricNumber(model.leafBlockCount, 0)],
+      ["retainedNodes", t("frameInternals.retainedNodes"), formatMetricNumber(model.retainedStructureRecordCount, 0)],
+      ["renderedCells", t("frameInternals.renderedCells"), formatMetricNumber(model.displayCellCount, 0)],
+      ["partitionModes", t("frameInternals.partitionModes"), formatPartitionModes(model.partitionModes)],
+      ["partitionDepths", t("frameInternals.partitionDepths"), formatPartitionDepths(model.partitionDepths)],
+      ["frameBits", t("frameInternals.frameBits"), formatBits(model.sampleBits)],
+      ["attributedBits", t("frameInternals.attributedBits"), formatBits(model.attributedBits)],
+      ["overheadBits", t("frameInternals.overheadBits"), formatBits(model.overheadBits)],
+      ["bitAccounting", t("frameInternals.bitAccounting"), formatFrameInternalsBitAccounting(model)],
+      ["source", t("frameInternals.source"), formatFrameInternalsSource(model)],
+      ["accuracy", t("frameInternals.accuracy"), formatFrameInternalsAccuracy(model)]
     ];
-    return '<div class="frame-internals-layout"><div class="frame-internals-summary"><div class="frame-internals-title-row"><strong>' + escapeHtml2(formatFrameInternalsTitle(model)) + '</strong><span class="pill ' + frameClass + '">' + escapeHtml2(formatFrameTypeLabel(model.frameType)) + '</span></div><p class="frame-internals-note">' + escapeHtml2(t(model.granularity === "root-units" ? "frameInternals.rootGridAccuracy" : "frameInternals.bitstreamSyntaxAccuracy")) + "</p>" + renderStructureBudgetNote(model) + renderFrameInternalsStats(stats) + '</div><div class="block-heatmap-wrap"><div class="' + viewportClass + '" tabindex="0" role="region" aria-label="' + escapeHtml2(t("frameInternals.zoomPlotAria")) + '" style="' + renderVideoBlockMapStyle(model) + '"><svg class="block-map" viewBox="0 0 ' + formatSvgNumber2(model.mediaWidth) + " " + formatSvgNumber2(model.mediaHeight) + '" data-media-width="' + escapeHtml2(String(model.mediaWidth)) + '" data-media-height="' + escapeHtml2(String(model.mediaHeight)) + '" data-block-count="' + escapeHtml2(String(displayCellCount)) + '" data-path-count="' + escapeHtml2(String(pathGroups.length)) + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' + renderFrameOverlayImage(model, frameOverlay) + pathGroups.map((group) => renderVideoBlockPathGroup(group, frameClass)).join("") + '<rect class="block-hover-outline" visibility="hidden"></rect></svg>' + renderFrameOverlayStatus(frameOverlay) + '</div><p class="frame-internals-note">' + escapeHtml2(t(model.granularity === "root-units" ? "frameInternals.rootGridLimitations" : "frameInternals.videoLimitations")) + "</p></div></div>";
+    return {
+      title: formatFrameInternalsTitle(model),
+      frameClass,
+      frameTypeLabel: formatFrameTypeLabel(model.frameType),
+      accuracyNote: t(model.granularity === "root-units" ? "frameInternals.rootGridAccuracy" : "frameInternals.bitstreamSyntaxAccuracy"),
+      structureBudgetNote: formatStructureBudgetNote(model),
+      stats,
+      viewportClass,
+      mapAriaLabel: t("frameInternals.zoomPlotAria"),
+      mapStyle: renderVideoBlockMapStyle(model),
+      mediaWidth: model.mediaWidth,
+      mediaHeight: model.mediaHeight,
+      displayCellCount,
+      pathCount: pathGroups.length,
+      frameOverlay,
+      frameOverlayImageHtml: renderFrameOverlayImage(model, frameOverlay),
+      frameOverlayStatus: formatFrameOverlayStatus(frameOverlay),
+      blockPathsHtml: pathGroups.map((group) => renderVideoBlockPathGroup(group, frameClass)).join(""),
+      limitationsNote: t(model.granularity === "root-units" ? "frameInternals.rootGridLimitations" : "frameInternals.videoLimitations")
+    };
   }
   function getFrameInternalsPathGroups(model, cells, options) {
     if (Array.isArray(options.pathGroups)) return options.pathGroups;
@@ -17529,13 +17604,13 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
       0
     );
   }
-  function renderStructureBudgetNote(model) {
+  function formatStructureBudgetNote(model) {
     if (!model.structureTruncated) return "";
-    return '<p class="frame-internals-note">' + escapeHtml2(t("frameInternals.structureBudgetNote", {
+    return t("frameInternals.structureBudgetNote", {
       decoded: formatMetricNumber(model.partitionBlockCount, 0),
       retained: formatMetricNumber(model.retainedStructureRecordCount, 0),
       omitted: formatMetricNumber(model.omittedPartitionCount, 0)
-    })) + "</p>";
+    });
   }
   function formatFrameInternalsTitle(model) {
     return t(model.granularity === "root-units" ? "frameInternals.rootTitle" : "frameInternals.videoTitle", {
@@ -17553,9 +17628,9 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
     if (!frameOverlay.enabled || !frameOverlay.imageUrl) return "";
     return '<image class="block-frame-overlay" href="' + escapeHtml2(frameOverlay.imageUrl) + '" x="0" y="0" width="' + formatSvgNumber2(model.mediaWidth) + '" height="' + formatSvgNumber2(model.mediaHeight) + '" preserveAspectRatio="xMidYMid meet"></image>';
   }
-  function renderFrameOverlayStatus(frameOverlay) {
+  function formatFrameOverlayStatus(frameOverlay) {
     if (!frameOverlay.enabled || frameOverlay.imageUrl) return "";
-    return '<div class="frame-overlay-status">' + escapeHtml2(t(frameOverlay.unavailable ? "frameInternals.frameOverlayUnavailable" : "frameInternals.frameOverlayPending")) + "</div>";
+    return t(frameOverlay.unavailable ? "frameInternals.frameOverlayUnavailable" : "frameInternals.frameOverlayPending");
   }
   function renderVideoBlockMapStyle(model) {
     const mediaWidth = Math.max(1, Number(model.mediaWidth) || 1);
@@ -17683,9 +17758,6 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
     }
     return null;
   }
-  function renderAudioFrameInternals() {
-    return '<div class="empty compact">' + escapeHtml2(t("frameInternals.audioUnsupported")) + "</div>";
-  }
   function renderFrameInternalsTooltip(payload) {
     const rows = payload.rows.map((row) => {
       const label = row && row[0] !== void 0 ? String(row[0]) : "";
@@ -17694,11 +17766,6 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
       return '<div class="tooltip-row"><span>' + escapeHtml2(label) + "</span><strong>" + escapeHtml2(value) + "</strong></div>";
     }).join("");
     return '<div class="tooltip-title">' + escapeHtml2(payload.title) + '</div><div class="tooltip-rows">' + rows + "</div>" + (payload.note ? '<div class="tooltip-note">' + escapeHtml2(payload.note) + "</div>" : "");
-  }
-  function renderFrameInternalsStats(stats) {
-    return '<div class="frame-internals-stats">' + stats.map(
-      ([label, value]) => '<div class="frame-internals-stat"><span>' + escapeHtml2(label) + "</span><strong>" + escapeHtml2(String(value)) + "</strong></div>"
-    ).join("") + "</div>";
   }
   function formatBits(value) {
     if (value === null || value === void 0 || value === "" || !Number.isFinite(Number(value))) return t("value.notAvailable");
@@ -17788,6 +17855,7 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
     const FRAME_INTERNALS_PREFETCH_COUNT = 8;
     const FRAME_INTERNALS_ANALYSIS_CACHE_LIMIT = 32;
     const FRAME_INTERNALS_ANALYSIS_CACHE_RECORD_LIMIT = 2e5;
+    const FRAME_INTERNALS_STAT_PLACEHOLDER = "\u2014";
     const METRIC_PLAYBACK_CURSOR_INTERVAL_MS = 100;
     const state = {
       analysis: null,
@@ -17896,6 +17964,21 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
       frameInternalsPanel: document.getElementById("frameInternalsPanel"),
       frameInternalsOverlayToggle: document.getElementById("frameInternalsOverlayToggle"),
       frameInternalsBody: document.getElementById("frameInternalsBody"),
+      frameInternalsResultTitle: document.getElementById("frameInternalsResultTitle"),
+      frameInternalsFrameType: document.getElementById("frameInternalsFrameType"),
+      frameInternalsAccuracyNote: document.getElementById("frameInternalsAccuracyNote"),
+      frameInternalsStructureBudgetNote: document.getElementById("frameInternalsStructureBudgetNote"),
+      frameInternalsStatValues: new Map(Array.from(document.querySelectorAll("[data-frame-internals-stat-value]"), (element) => [
+        element.dataset.frameInternalsStatValue,
+        element
+      ])),
+      frameInternalsMapViewport: document.getElementById("frameInternalsMapViewport"),
+      frameInternalsMap: document.getElementById("frameInternalsMap"),
+      frameInternalsFrameOverlayLayer: document.getElementById("frameInternalsFrameOverlayLayer"),
+      frameInternalsBlockLayer: document.getElementById("frameInternalsBlockLayer"),
+      frameInternalsMapMessage: document.getElementById("frameInternalsMapMessage"),
+      frameInternalsOverlayStatus: document.getElementById("frameInternalsOverlayStatus"),
+      frameInternalsLimitationsNote: document.getElementById("frameInternalsLimitationsNote"),
       frameInternalsTooltip: document.getElementById("frameInternalsTooltip"),
       frameWrap: document.getElementById("frameWrap"),
       frameHeader: document.getElementById("frameHeader"),
@@ -19584,20 +19667,23 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
       state.frameInternalsRenderPending = false;
       hideFrameInternalsTooltip();
       const model = buildSelectedFrameInternalsModel();
-      if (model.kind === "empty") {
-        elements.frameInternalsBody.innerHTML = emptyHtml("frameInternals.empty");
+      const isLoading = model.kind === "loading";
+      elements.frameInternalsBody.setAttribute("aria-busy", String(isLoading));
+      if (isLoading) {
+        elements.frameInternalsBody.dataset.pendingFrameKey = state.selectedFrameKey;
         return;
       }
-      if (model.kind === "loading") {
-        elements.frameInternalsBody.innerHTML = emptyHtml("frameInternals.loading");
+      delete elements.frameInternalsBody.dataset.pendingFrameKey;
+      if (model.kind === "empty") {
+        updateUnavailableFrameInternalsDom("frameInternals.empty");
         return;
       }
       if (model.kind === "cancelled") {
-        elements.frameInternalsBody.innerHTML = emptyHtml("frameInternals.cancelled");
+        updateUnavailableFrameInternalsDom("frameInternals.cancelled");
         return;
       }
       if (model.kind === "video-grid") {
-        elements.frameInternalsBody.innerHTML = renderVideoFrameInternals(model, {
+        updateVideoFrameInternalsDom(model, {
           frameLabel: formatSelectedFrameLabel(),
           frameOverlay: getFrameInternalsFrameOverlayRenderOptions()
         });
@@ -19606,10 +19692,88 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
         return;
       }
       if (model.kind === "audio-bands") {
-        elements.frameInternalsBody.innerHTML = renderAudioFrameInternals(model, { frameLabel: formatSelectedFrameLabel() });
+        updateUnavailableFrameInternalsDom("frameInternals.audioUnsupported");
         return;
       }
-      elements.frameInternalsBody.innerHTML = '<div class="empty compact">' + escapeHtml2(t("frameInternals.unsupported")) + "</div>";
+      updateUnavailableFrameInternalsDom("frameInternals.unsupported");
+    }
+    function updateVideoFrameInternalsDom(model, options2 = {}) {
+      const presentation = createVideoFrameInternalsPresentation(model, options2);
+      detachFrameInternalsDynamicTranslations();
+      elements.frameInternalsResultTitle.textContent = presentation.title;
+      elements.frameInternalsFrameType.className = "pill " + presentation.frameClass;
+      elements.frameInternalsFrameType.textContent = presentation.frameTypeLabel;
+      elements.frameInternalsFrameType.hidden = false;
+      elements.frameInternalsAccuracyNote.textContent = presentation.accuracyNote;
+      elements.frameInternalsStructureBudgetNote.textContent = presentation.structureBudgetNote;
+      elements.frameInternalsStructureBudgetNote.hidden = !presentation.structureBudgetNote;
+      for (const [statName, , value] of presentation.stats) {
+        const valueElement = elements.frameInternalsStatValues.get(statName);
+        if (valueElement) valueElement.textContent = String(value);
+      }
+      const viewport = elements.frameInternalsMapViewport;
+      const svg = elements.frameInternalsMap;
+      viewport.tabIndex = 0;
+      viewport.removeAttribute("aria-disabled");
+      viewport.setAttribute("aria-label", presentation.mapAriaLabel);
+      viewport.setAttribute("style", presentation.mapStyle);
+      svg.setAttribute("viewBox", "0 0 " + presentation.mediaWidth + " " + presentation.mediaHeight);
+      svg.dataset.mediaWidth = String(presentation.mediaWidth);
+      svg.dataset.mediaHeight = String(presentation.mediaHeight);
+      svg.dataset.blockCount = String(presentation.displayCellCount);
+      svg.dataset.pathCount = String(presentation.pathCount);
+      elements.frameInternalsBlockLayer.innerHTML = presentation.blockPathsHtml;
+      elements.frameInternalsMapMessage.hidden = true;
+      elements.frameInternalsLimitationsNote.textContent = presentation.limitationsNote;
+      elements.frameInternalsBody.dataset.renderedFrameKey = state.selectedFrameKey;
+      updateFrameInternalsFrameOverlayDom();
+    }
+    function updateUnavailableFrameInternalsDom(messageKey) {
+      const message = t(messageKey);
+      detachFrameInternalsDynamicTranslations();
+      elements.frameInternalsResultTitle.textContent = t("frameInternals.title");
+      elements.frameInternalsFrameType.className = "pill";
+      elements.frameInternalsFrameType.textContent = "";
+      elements.frameInternalsFrameType.hidden = true;
+      elements.frameInternalsAccuracyNote.textContent = message;
+      elements.frameInternalsStructureBudgetNote.textContent = "";
+      elements.frameInternalsStructureBudgetNote.hidden = true;
+      for (const valueElement of elements.frameInternalsStatValues.values()) {
+        valueElement.textContent = FRAME_INTERNALS_STAT_PLACEHOLDER;
+      }
+      const viewport = elements.frameInternalsMapViewport;
+      const svg = elements.frameInternalsMap;
+      viewport.tabIndex = -1;
+      viewport.setAttribute("aria-disabled", "true");
+      viewport.removeAttribute("style");
+      for (const className of ["frame-overlay-enabled", "has-frame-image", "is-scaled", "dragging"]) {
+        viewport.classList.remove(className);
+      }
+      svg.setAttribute("viewBox", "0 0 16 9");
+      svg.dataset.mediaWidth = "16";
+      svg.dataset.mediaHeight = "9";
+      svg.dataset.blockCount = "0";
+      svg.dataset.pathCount = "0";
+      elements.frameInternalsFrameOverlayLayer.innerHTML = "";
+      elements.frameInternalsBlockLayer.innerHTML = "";
+      const hoverOutline = svg.querySelector(".block-hover-outline");
+      if (hoverOutline) hoverOutline.setAttribute("visibility", "hidden");
+      elements.frameInternalsMapMessage.textContent = message;
+      elements.frameInternalsMapMessage.hidden = false;
+      elements.frameInternalsOverlayStatus.textContent = "";
+      elements.frameInternalsOverlayStatus.hidden = true;
+      elements.frameInternalsLimitationsNote.textContent = message;
+      delete elements.frameInternalsBody.dataset.renderedFrameKey;
+    }
+    function detachFrameInternalsDynamicTranslations() {
+      for (const element of [
+        elements.frameInternalsResultTitle,
+        elements.frameInternalsAccuracyNote,
+        elements.frameInternalsMapMessage,
+        elements.frameInternalsLimitationsNote
+      ]) {
+        element.removeAttribute("data-i18n");
+      }
     }
     function buildSelectedFrameInternalsModel() {
       if (!state.analysis || !state.selectedFrameKey) {
@@ -19794,6 +19958,12 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
     function handleFrameInternalsOverlayToggleChange() {
       state.frameInternalsFrameOverlayEnabled = Boolean(elements.frameInternalsOverlayToggle.checked);
       clearFrameInternalsFrameOverlay();
+      if (!state.frameInternalsFrameOverlayEnabled) {
+        elements.frameInternalsFrameOverlayLayer.innerHTML = "";
+        elements.frameInternalsMapViewport.classList.remove("frame-overlay-enabled");
+        elements.frameInternalsMapViewport.classList.remove("has-frame-image");
+        updateFrameInternalsFrameOverlayStatus({ enabled: false, imageUrl: "", unavailable: false });
+      }
       renderFrameInternals();
       if (state.frameInternalsFrameOverlayEnabled) scheduleFrameInternalsFrameOverlayCapture({ force: true });
     }
@@ -19883,16 +20053,16 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
     }
     function updateFrameInternalsFrameOverlayDom() {
       const model = state.frameInternalsModel;
-      const viewport = elements.frameInternalsBody.querySelector(".block-map-viewport");
-      const svg = viewport && viewport.querySelector("svg.block-map");
-      if (!model || model.kind !== "video-grid" || !viewport || !svg) return false;
+      const viewport = elements.frameInternalsMapViewport;
+      const overlayLayer = elements.frameInternalsFrameOverlayLayer;
+      if (!model || model.kind !== "video-grid" || !viewport || !overlayLayer) return false;
       const frameOverlay = getFrameInternalsFrameOverlayRenderOptions();
-      let overlayImage = svg.querySelector(".block-frame-overlay");
+      let overlayImage = overlayLayer.querySelector(".block-frame-overlay");
       if (frameOverlay.enabled && frameOverlay.imageUrl) {
         if (!overlayImage) {
           overlayImage = document.createElementNS("http://www.w3.org/2000/svg", "image");
           overlayImage.setAttribute("class", "block-frame-overlay");
-          svg.insertBefore(overlayImage, svg.firstChild);
+          overlayLayer.appendChild(overlayImage);
         }
         overlayImage.setAttribute("href", frameOverlay.imageUrl);
         overlayImage.setAttribute("x", "0");
@@ -19900,28 +20070,25 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
         overlayImage.setAttribute("width", String(model.mediaWidth));
         overlayImage.setAttribute("height", String(model.mediaHeight));
         overlayImage.setAttribute("preserveAspectRatio", "xMidYMid meet");
-      } else if (overlayImage) {
-        overlayImage.remove();
+      } else {
+        overlayLayer.innerHTML = "";
       }
       viewport.classList.toggle("frame-overlay-enabled", frameOverlay.enabled);
       viewport.classList.toggle("has-frame-image", Boolean(frameOverlay.imageUrl));
-      updateFrameInternalsFrameOverlayStatus(viewport, frameOverlay);
+      updateFrameInternalsFrameOverlayStatus(frameOverlay);
       return true;
     }
-    function updateFrameInternalsFrameOverlayStatus(viewport, frameOverlay) {
-      let status = viewport.querySelector(".frame-overlay-status");
+    function updateFrameInternalsFrameOverlayStatus(frameOverlay) {
+      const status = elements.frameInternalsOverlayStatus;
       if (!frameOverlay.enabled || frameOverlay.imageUrl) {
-        if (status) status.remove();
+        status.textContent = "";
+        status.hidden = true;
         return;
-      }
-      if (!status) {
-        status = document.createElement("div");
-        status.className = "frame-overlay-status";
-        viewport.appendChild(status);
       }
       status.textContent = t(
         frameOverlay.unavailable ? "frameInternals.frameOverlayUnavailable" : "frameInternals.frameOverlayPending"
       );
+      status.hidden = false;
     }
     function handleFrameInternalsTooltipPointerOver(event) {
       if (state.frameInternalsMapDrag || state.frameInternalsMapGesture) return;
