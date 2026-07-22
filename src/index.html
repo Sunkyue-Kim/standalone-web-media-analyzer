@@ -57,6 +57,28 @@
         <span id="mediaPreviewStatus" data-i18n="preview.placeholderTitle">Media preview</span>
         <strong id="mediaPreviewName" data-i18n="preview.placeholderName">No media loaded</strong>
         <small id="mediaPreviewMeta" data-i18n="preview.placeholderMeta">Open a file or URL to reserve playback and media metadata here.</small>
+        <div id="playbackRateControl" class="playback-rate-control disabled" aria-disabled="true">
+          <div class="playback-rate-heading">
+            <span id="playbackRateLabel" data-i18n="preview.playbackRate">Playback speed</span>
+          </div>
+          <div class="playback-rate-presets" role="group" aria-labelledby="playbackRateLabel">
+            <button type="button" class="playback-rate-preset" data-playback-rate="0.25" aria-pressed="false" disabled>0.25×</button>
+            <button type="button" class="playback-rate-preset" data-playback-rate="0.5" aria-pressed="false" disabled>0.5×</button>
+            <button type="button" class="playback-rate-preset active" data-playback-rate="1" aria-pressed="true" disabled>1×</button>
+            <button type="button" class="playback-rate-preset" data-playback-rate="1.25" aria-pressed="false" disabled>1.25×</button>
+            <button type="button" class="playback-rate-preset" data-playback-rate="1.5" aria-pressed="false" disabled>1.5×</button>
+            <button type="button" class="playback-rate-preset" data-playback-rate="2" aria-pressed="false" disabled>2×</button>
+          </div>
+          <div class="playback-rate-slider-row">
+            <span aria-hidden="true">0.1×</span>
+            <input id="playbackRateSlider" type="range" min="0.1" max="5" step="0.01" value="1" aria-labelledby="playbackRateLabel" aria-valuetext="1×" disabled>
+            <span aria-hidden="true">5×</span>
+            <label class="playback-rate-number-field">
+              <input id="playbackRateNumberInput" type="number" min="0.1" max="5" step="0.01" value="1" inputmode="decimal" aria-labelledby="playbackRateLabel" disabled>
+              <span aria-hidden="true">×</span>
+            </label>
+          </div>
+        </div>
       </div>
     </section>
 

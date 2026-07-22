@@ -398,7 +398,7 @@ button:disabled {
   gap: 8px;
   min-width: 0;
   padding: 2px 2px 0;
-  grid-template-rows: 18px minmax(26px, auto) minmax(36px, auto);
+  grid-template-rows: 18px minmax(26px, auto) minmax(36px, auto) auto;
 }
 .media-preview-meta span {
   color: var(--muted);
@@ -413,6 +413,83 @@ button:disabled {
   color: var(--muted);
   line-height: 1.45;
   min-height: 36px;
+}
+.playback-rate-control {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.playback-rate-control.disabled {
+  opacity: 0.62;
+}
+.playback-rate-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.playback-rate-presets {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+}
+.playback-rate-preset {
+  min-width: 0;
+  padding: 6px 4px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.playback-rate-preset.active {
+  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.playback-rate-slider-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content 86px;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.playback-rate-slider-row input[type=range] {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.playback-rate-slider-row input[type=range]:disabled {
+  cursor: not-allowed;
+}
+.playback-rate-number-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.playback-rate-number-field input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 3px 5px 7px;
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.playback-rate-number-field input:focus {
+  border-color: var(--accent);
+  outline: 2px solid rgba(31, 122, 140, 0.18);
+  outline-offset: 1px;
 }
 .media-preview-bar.empty .media-preview-meta strong,
 .media-preview-bar.empty .media-preview-meta small {
@@ -2179,6 +2256,9 @@ button:disabled {
   .media-preview-stage {
     max-height: 210px;
   }
+  .playback-rate-presets {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
   .tabs {
     position: sticky;
     top: 0;
@@ -2468,6 +2548,28 @@ button:disabled {
         <span id="mediaPreviewStatus" data-i18n="preview.placeholderTitle">Media preview</span>
         <strong id="mediaPreviewName" data-i18n="preview.placeholderName">No media loaded</strong>
         <small id="mediaPreviewMeta" data-i18n="preview.placeholderMeta">Open a file or URL to reserve playback and media metadata here.</small>
+        <div id="playbackRateControl" class="playback-rate-control disabled" aria-disabled="true">
+          <div class="playback-rate-heading">
+            <span id="playbackRateLabel" data-i18n="preview.playbackRate">Playback speed</span>
+          </div>
+          <div class="playback-rate-presets" role="group" aria-labelledby="playbackRateLabel">
+            <button type="button" class="playback-rate-preset" data-playback-rate="0.25" aria-pressed="false" disabled>0.25×</button>
+            <button type="button" class="playback-rate-preset" data-playback-rate="0.5" aria-pressed="false" disabled>0.5×</button>
+            <button type="button" class="playback-rate-preset active" data-playback-rate="1" aria-pressed="true" disabled>1×</button>
+            <button type="button" class="playback-rate-preset" data-playback-rate="1.25" aria-pressed="false" disabled>1.25×</button>
+            <button type="button" class="playback-rate-preset" data-playback-rate="1.5" aria-pressed="false" disabled>1.5×</button>
+            <button type="button" class="playback-rate-preset" data-playback-rate="2" aria-pressed="false" disabled>2×</button>
+          </div>
+          <div class="playback-rate-slider-row">
+            <span aria-hidden="true">0.1×</span>
+            <input id="playbackRateSlider" type="range" min="0.1" max="5" step="0.01" value="1" aria-labelledby="playbackRateLabel" aria-valuetext="1×" disabled>
+            <span aria-hidden="true">5×</span>
+            <label class="playback-rate-number-field">
+              <input id="playbackRateNumberInput" type="number" min="0.1" max="5" step="0.01" value="1" inputmode="decimal" aria-labelledby="playbackRateLabel" disabled>
+              <span aria-hidden="true">×</span>
+            </label>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -14997,6 +15099,7 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
           "preview.placeholderName": "No media loaded",
           "preview.placeholderMeta": "Open or drop a file to reserve playback and media metadata here.",
           "preview.loadedMedia": "Loaded media",
+          "preview.playbackRate": "Playback speed",
           "preview.remoteFetchDeferred": "preview uses metadata preload",
           "tab.summary": "Summary",
           "tab.boxes": "Boxes",
@@ -15240,6 +15343,7 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
           "preview.placeholderName": "\uB85C\uB4DC\uB41C \uBBF8\uB514\uC5B4 \uC5C6\uC74C",
           "preview.placeholderMeta": "\uD30C\uC77C\uC744 \uC5F4\uAC70\uB098 \uB04C\uC5B4\uB2E4 \uB193\uC73C\uBA74 \uC774 \uC601\uC5ED\uC5D0\uC11C \uC7AC\uC0DD\uACFC \uBBF8\uB514\uC5B4 \uC815\uBCF4\uB97C \uD655\uC778\uD569\uB2C8\uB2E4.",
           "preview.loadedMedia": "\uB85C\uB4DC\uB41C \uBBF8\uB514\uC5B4",
+          "preview.playbackRate": "\uC7AC\uC0DD \uC18D\uB3C4",
           "preview.remoteFetchDeferred": "preview metadata preload \uC0AC\uC6A9",
           "tab.summary": "\uC694\uC57D",
           "tab.boxes": "\uBC15\uC2A4",
@@ -16647,6 +16751,31 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
     }
   });
 
+  // local-source:C:\Users\user\Documents\Codex\2026-07-08\js-html-mp4-html-mp4-i\src\js\ui\playback-rate.js
+  function normalizePlaybackRate(value, fallback = DEFAULT_PLAYBACK_RATE) {
+    const numericValue = Number(value);
+    const numericFallback = Number(fallback);
+    const resolvedValue = Number.isFinite(numericValue) ? numericValue : Number.isFinite(numericFallback) ? numericFallback : DEFAULT_PLAYBACK_RATE;
+    const boundedValue = Math.min(PLAYBACK_RATE_MAXIMUM, Math.max(PLAYBACK_RATE_MINIMUM, resolvedValue));
+    return Number((Math.round(boundedValue / PLAYBACK_RATE_SLIDER_STEP) * PLAYBACK_RATE_SLIDER_STEP).toFixed(2));
+  }
+  function formatPlaybackRate(value) {
+    return normalizePlaybackRate(value).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1") + "\xD7";
+  }
+  function isPlaybackRatePresetActive(value, preset) {
+    return Math.abs(normalizePlaybackRate(value) - normalizePlaybackRate(preset)) < PLAYBACK_RATE_SLIDER_STEP / 2;
+  }
+  var DEFAULT_PLAYBACK_RATE, PLAYBACK_RATE_MINIMUM, PLAYBACK_RATE_MAXIMUM, PLAYBACK_RATE_SLIDER_STEP, PLAYBACK_RATE_PRESETS;
+  var init_playback_rate = __esm({
+    "local-source:C:\\Users\\user\\Documents\\Codex\\2026-07-08\\js-html-mp4-html-mp4-i\\src\\js\\ui\\playback-rate.js"() {
+      DEFAULT_PLAYBACK_RATE = 1;
+      PLAYBACK_RATE_MINIMUM = 0.1;
+      PLAYBACK_RATE_MAXIMUM = 5;
+      PLAYBACK_RATE_SLIDER_STEP = 0.01;
+      PLAYBACK_RATE_PRESETS = Object.freeze([0.25, 0.5, 1, 1.25, 1.5, 2]);
+    }
+  });
+
   // local-source:C:\Users\user\Documents\Codex\2026-07-08\js-html-mp4-html-mp4-i\src\js\ui\json-viewer.js
   function renderJsonViewer(value, options = {}) {
     const normalizedValue = normalizeJsonValue(value);
@@ -17675,6 +17804,7 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
       graphMaxSize: 1,
       filePreviewUrl: "",
       filePreviewObjectUrl: false,
+      playbackRate: DEFAULT_PLAYBACK_RATE,
       dropHintHideTimer: 0,
       remoteAbortController: null,
       transientWarnings: [],
@@ -17727,6 +17857,10 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
       mediaPreviewStatus: document.getElementById("mediaPreviewStatus"),
       mediaPreviewName: document.getElementById("mediaPreviewName"),
       mediaPreviewMeta: document.getElementById("mediaPreviewMeta"),
+      playbackRateControl: document.getElementById("playbackRateControl"),
+      playbackRatePresetButtons: Array.from(document.querySelectorAll("[data-playback-rate]")),
+      playbackRateSlider: document.getElementById("playbackRateSlider"),
+      playbackRateNumberInput: document.getElementById("playbackRateNumberInput"),
       dropOverlay: document.getElementById("dropOverlay"),
       boxTree: document.getElementById("boxTree"),
       boxDetail: document.getElementById("boxDetail"),
@@ -17835,6 +17969,8 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
         hasVideoTrack: hasVideoPlaybackSynchronizationTrack(),
         shouldRun: shouldRunPlaybackSynchronizationLoop()
       }),
+      getPlaybackRate: () => state.playbackRate,
+      setPlaybackRate: (playbackRate) => applyPlaybackRate(playbackRate),
       synchronizeFrameSelectionToPlayback: (playbackSeconds) => {
         if (Number.isFinite(Number(playbackSeconds))) elements.filePreview.currentTime = Number(playbackSeconds);
         elements.autoPlaybackSynchronizationToggle.checked = true;
@@ -18024,6 +18160,14 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
       synchronizeSelectionsToPlayback({ force: true });
       scheduleFrameInternalsFrameOverlayCapture({ force: true });
     });
+    elements.filePreview.addEventListener("ratechange", synchronizePlaybackRateFromMedia);
+    for (const playbackRateButton of elements.playbackRatePresetButtons) {
+      playbackRateButton.addEventListener("click", () => applyPlaybackRate(playbackRateButton.dataset.playbackRate));
+    }
+    elements.playbackRateSlider.addEventListener("input", () => applyPlaybackRate(elements.playbackRateSlider.value));
+    elements.playbackRateNumberInput.addEventListener("input", synchronizePlaybackRateFromNumberInput);
+    elements.playbackRateNumberInput.addEventListener("change", commitPlaybackRateFromNumberInput);
+    elements.playbackRateNumberInput.addEventListener("keydown", adjustPlaybackRateFromNumberInputKey);
     for (const input of [elements.trackFilter, elements.typeFilter, elements.syncFilter, elements.minSizeFilter, elements.maxSizeFilter, elements.warningOnlyFilter]) {
       input.addEventListener("input", renderFrames);
       input.addEventListener("change", renderFrames);
@@ -18041,6 +18185,8 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
       elements.warningOnlyFilter.checked = false;
       renderFrames();
     });
+    updatePlaybackRateControls();
+    setPlaybackRateControlsEnabled(false);
     setLanguage2(options.initialLanguage || elements.languageSelect.value || "en");
     if (options.initialActiveTab) setActiveTab(options.initialActiveTab);
     if (options.initialFile) Promise.resolve().then(() => startAnalysis(options.initialFile));
@@ -18702,8 +18848,11 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
       elements.filePreview.controls = true;
       elements.filePreview.preload = previewPlan.preload;
       elements.filePreview.title = previewPlan.title;
+      elements.filePreview.defaultPlaybackRate = state.playbackRate;
       elements.filePreview.src = state.filePreviewUrl;
       elements.filePreview.load();
+      setPlaybackRateControlsEnabled(true);
+      applyPlaybackRate(state.playbackRate);
       elements.mediaPreviewStatus.removeAttribute("data-i18n");
       elements.mediaPreviewName.removeAttribute("data-i18n");
       elements.mediaPreviewMeta.removeAttribute("data-i18n");
@@ -18713,17 +18862,83 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
     }
     function renderMediaPreviewPlaceholder() {
       if (state.filePreviewUrl) {
+        setPlaybackRateControlsEnabled(true);
+        updatePlaybackRateControls();
         elements.mediaPreviewStatus.textContent = t("preview.loadedMedia");
         return;
       }
       elements.mediaPreviewBar.classList.add("empty");
       elements.filePreview.controls = false;
+      setPlaybackRateControlsEnabled(false);
+      updatePlaybackRateControls();
       elements.mediaPreviewStatus.dataset.i18n = "preview.placeholderTitle";
       elements.mediaPreviewName.dataset.i18n = "preview.placeholderName";
       elements.mediaPreviewMeta.dataset.i18n = "preview.placeholderMeta";
       elements.mediaPreviewStatus.textContent = t("preview.placeholderTitle");
       elements.mediaPreviewName.textContent = t("preview.placeholderName");
       elements.mediaPreviewMeta.textContent = t("preview.placeholderMeta");
+    }
+    function applyPlaybackRate(value) {
+      const playbackRate = normalizePlaybackRate(value, state.playbackRate);
+      state.playbackRate = playbackRate;
+      elements.filePreview.defaultPlaybackRate = playbackRate;
+      if (Number(elements.filePreview.playbackRate) !== playbackRate) {
+        elements.filePreview.playbackRate = playbackRate;
+      }
+      updatePlaybackRateControls();
+      return playbackRate;
+    }
+    function synchronizePlaybackRateFromMedia() {
+      const playbackRate = normalizePlaybackRate(elements.filePreview.playbackRate, state.playbackRate);
+      state.playbackRate = playbackRate;
+      elements.filePreview.defaultPlaybackRate = playbackRate;
+      if (Number(elements.filePreview.playbackRate) !== playbackRate) {
+        elements.filePreview.playbackRate = playbackRate;
+      }
+      updatePlaybackRateControls();
+    }
+    function synchronizePlaybackRateFromNumberInput() {
+      const playbackRate = readPlaybackRateNumberInput();
+      if (playbackRate === null || playbackRate < PLAYBACK_RATE_MINIMUM || playbackRate > PLAYBACK_RATE_MAXIMUM) return;
+      applyPlaybackRate(playbackRate);
+    }
+    function commitPlaybackRateFromNumberInput() {
+      applyPlaybackRate(readPlaybackRateNumberInput() ?? state.playbackRate);
+    }
+    function adjustPlaybackRateFromNumberInputKey(event) {
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+      event.preventDefault();
+      const inputPlaybackRate = readPlaybackRateNumberInput();
+      const currentPlaybackRate = normalizePlaybackRate(inputPlaybackRate ?? state.playbackRate, state.playbackRate);
+      const adjustment = event.key === "ArrowUp" ? PLAYBACK_RATE_SLIDER_STEP : -PLAYBACK_RATE_SLIDER_STEP;
+      applyPlaybackRate(currentPlaybackRate + adjustment);
+    }
+    function readPlaybackRateNumberInput() {
+      const inputValue = String(elements.playbackRateNumberInput.value).trim();
+      if (!inputValue) return null;
+      const playbackRate = Number(inputValue);
+      return Number.isFinite(playbackRate) ? playbackRate : null;
+    }
+    function updatePlaybackRateControls() {
+      const formattedPlaybackRate = formatPlaybackRate(state.playbackRate);
+      elements.playbackRateSlider.value = String(state.playbackRate);
+      elements.playbackRateSlider.setAttribute("aria-valuetext", formattedPlaybackRate);
+      elements.playbackRateNumberInput.value = String(state.playbackRate);
+      for (const playbackRateButton of elements.playbackRatePresetButtons) {
+        const isActive = isPlaybackRatePresetActive(state.playbackRate, playbackRateButton.dataset.playbackRate);
+        playbackRateButton.classList.toggle("active", isActive);
+        playbackRateButton.setAttribute("aria-pressed", String(isActive));
+      }
+    }
+    function setPlaybackRateControlsEnabled(enabled) {
+      const isEnabled = Boolean(enabled);
+      elements.playbackRateControl.classList.toggle("disabled", !isEnabled);
+      elements.playbackRateControl.setAttribute("aria-disabled", String(!isEnabled));
+      elements.playbackRateSlider.disabled = !isEnabled;
+      elements.playbackRateNumberInput.disabled = !isEnabled;
+      for (const playbackRateButton of elements.playbackRatePresetButtons) {
+        playbackRateButton.disabled = !isEnabled;
+      }
     }
     function updateMediaPreviewMeta(file, analysis) {
       const parts = [formatBytes(file.size)];
@@ -20603,6 +20818,7 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
       init_recycler_view();
       init_remote_loader();
       init_media_source();
+      init_playback_rate();
       init_json_viewer();
       init_media_row_model();
       init_metrics_model();
@@ -20663,6 +20879,7 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
       "button.exportJson": "Export JSON",
       "button.exportCsv": "Export CSV",
       "preview.loadedMedia": "Loaded media",
+      "preview.playbackRate": "Playback speed",
       "tab.summary": "Summary",
       "tab.boxes": "Boxes",
       "tab.tracks": "Tracks",
@@ -20702,6 +20919,7 @@ if (typeof window !== "undefined") { window.MP4AnalyzerWorkerSource = "(() => {\
       "button.exportJson": "JSON \uB0B4\uBCF4\uB0B4\uAE30",
       "button.exportCsv": "CSV \uB0B4\uBCF4\uB0B4\uAE30",
       "preview.loadedMedia": "\uB85C\uB4DC\uB41C \uBBF8\uB514\uC5B4",
+      "preview.playbackRate": "\uC7AC\uC0DD \uC18D\uB3C4",
       "tab.summary": "\uC694\uC57D",
       "tab.boxes": "\uBC15\uC2A4",
       "tab.tracks": "\uD2B8\uB799",

@@ -28,6 +28,29 @@ test("UI helpers keep sample catalog, media detection, escaping, CSV, and frame 
   assert.equal(helpers.csvCell(null), "");
 });
 
+test("playback rate model clamps, rounds, formats, and identifies presets", async () => {
+  const loader = await createSourceModuleLoader();
+  const playbackRate = await loader.import("src/js/ui/playback-rate.js");
+
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(playbackRate.PLAYBACK_RATE_PRESETS)),
+    [0.25, 0.5, 1, 1.25, 1.5, 2]
+  );
+  assert.equal(playbackRate.PLAYBACK_RATE_MINIMUM, 0.1);
+  assert.equal(playbackRate.PLAYBACK_RATE_MAXIMUM, 5);
+  assert.equal(playbackRate.PLAYBACK_RATE_SLIDER_STEP, 0.01);
+  assert.equal(playbackRate.normalizePlaybackRate(0), 0.1);
+  assert.equal(playbackRate.normalizePlaybackRate(6), 5);
+  assert.equal(playbackRate.normalizePlaybackRate(1.236), 1.24);
+  assert.equal(playbackRate.normalizePlaybackRate("invalid", 1.25), 1.25);
+  assert.equal(playbackRate.normalizePlaybackRate("invalid", "invalid"), 1);
+  assert.equal(playbackRate.formatPlaybackRate(1), "1×");
+  assert.equal(playbackRate.formatPlaybackRate(1.5), "1.5×");
+  assert.equal(playbackRate.formatPlaybackRate(0.25), "0.25×");
+  assert.equal(playbackRate.isPlaybackRatePresetActive(1.2501, 1.25), true);
+  assert.equal(playbackRate.isPlaybackRatePresetActive(1.26, 1.25), false);
+});
+
 test("sample manifest exposes generated media through the shared bootstrap catalog", async () => {
   const loader = await createSourceModuleLoader();
   const { SAMPLE_FILES } = await loader.import("src/js/samples/sample-manifest.js");
@@ -1417,7 +1440,8 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   for (const id of [
     "fileInput", "languageSelect", "sampleField", "sampleSelect", "openButton", "openUrlButton",
     "scanButton", "cancelButton", "exportJsonButton", "exportCsvButton",
-    "mediaPreviewBar", "summaryPanel", "summaryBody", "boxesPanel", "tracksPanel",
+    "mediaPreviewBar", "playbackRateControl", "playbackRateLabel", "playbackRateSlider",
+    "playbackRateNumberInput", "summaryPanel", "summaryBody", "boxesPanel", "tracksPanel",
     "tracksBody", "framesPanel", "metricsPanel", "fragmentsPanel", "warningsPanel",
     "warningsBody",
     "frameGraphButton", "frameTableButton", "autoPlaybackSynchronizationToggle",
@@ -1441,14 +1465,33 @@ test("source HTML has required controls, tabs, and no external runtime assets af
   assert.match(sourceHtml, /class="media-preview-stage"/);
   assert.match(sourceHtml, /class="media-preview-skeleton"/);
   assert.match(sourceHtml, /id="mediaPreviewStatus" data-i18n="preview\.placeholderTitle"/);
+  assert.deepEqual(
+    Array.from(sourceHtml.matchAll(/class="playback-rate-preset(?: active)?" data-playback-rate="([^"]+)"/g), (match) => Number(match[1])),
+    [0.25, 0.5, 1, 1.25, 1.5, 2]
+  );
+  assert.match(sourceHtml, /id="playbackRateSlider" type="range" min="0\.1" max="5" step="0\.01" value="1"/);
+  assert.match(sourceHtml, /id="playbackRateNumberInput" type="number" min="0\.1" max="5" step="0\.01" value="1" inputmode="decimal"/);
+  assert.match(sourceHtml, /id="playbackRateLabel" data-i18n="preview\.playbackRate">Playback speed<\/span>/);
   assert.match(sourceUi, /renderMediaPreviewPlaceholder/);
   assert.match(sourceUi, /mediaPreviewBar\.classList\.remove\("empty"\)/);
   assert.match(sourceUi, /mediaPreviewBar\.classList\.add\("empty"\)/);
+  assert.match(sourceUi, /from "\.\/playback-rate\.js"/);
+  assert.match(sourceUi, /filePreview\.addEventListener\("ratechange", synchronizePlaybackRateFromMedia\)/);
+  assert.match(sourceUi, /playbackRateSlider\.addEventListener\("input"/);
+  assert.match(sourceUi, /playbackRateNumberInput\.addEventListener\("input", synchronizePlaybackRateFromNumberInput\)/);
+  assert.match(sourceUi, /playbackRateNumberInput\.addEventListener\("change", commitPlaybackRateFromNumberInput\)/);
+  assert.match(sourceUi, /playbackRateNumberInput\.addEventListener\("keydown", adjustPlaybackRateFromNumberInputKey\)/);
+  assert.match(sourceUi, /defaultPlaybackRate = state\.playbackRate/);
+  assert.match(sourceUi, /setPlaybackRateControlsEnabled\(true\)/);
   assert.doesNotMatch(sourceUi, /mediaPreviewBar\.hidden\s*=\s*false/);
   assert.match(sourceCss, /\.media-preview-bar\s*\{[\s\S]*?min-height:\s*184px;/);
   assert.match(sourceCss, /\.media-preview-stage\s*\{[\s\S]*?aspect-ratio:\s*16\s*\/\s*9;/);
   assert.match(sourceCss, /\.media-preview-skeleton\s*\{[\s\S]*?position:\s*absolute;/);
   assert.match(sourceCss, /\.media-preview-bar:not\(\.empty\) \.media-preview-skeleton\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(sourceCss, /\.playback-rate-presets\s*\{[\s\S]*?grid-template-columns:\s*repeat\(6,\s*minmax\(0,\s*1fr\)\);/);
+  assert.match(sourceCss, /\.playback-rate-slider-row input\[type="range"\]\s*\{[\s\S]*?accent-color:\s*var\(--accent\);/);
+  assert.match(sourceCss, /\.playback-rate-number-field input\s*\{[\s\S]*?font-variant-numeric:\s*tabular-nums;/);
+  assert.match(sourceCss, /@media\s*\(max-width:\s*700px\)\s*\{[\s\S]*?\.playback-rate-presets\s*\{\s*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/);
   assert.match(sourceHtml, /id="autoPlaybackSynchronizationToggle" type="checkbox" checked/);
   assert.match(sourceUi, /requestVideoFrameCallback/);
   assert.match(sourceUi, /requestAnimationFrame\(runPlaybackSynchronizationStep\)/);
@@ -1693,8 +1736,10 @@ test("i18n catalog contains matching Korean and English keys for visible UI stri
   assert.equal(setLanguage("ko"), "ko");
   assert.equal(getLanguage(), "ko");
   assert.equal(t("app.title"), "스탠드얼론 웹 미디어 분석기");
+  assert.equal(t("preview.playbackRate"), "재생 속도");
   assert.equal(t("missing.key"), "missing.key");
   assert.equal(setLanguage("en"), "en");
+  assert.equal(t("preview.playbackRate"), "Playback speed");
   assert.equal(t("count.rows", { count: 12 }), "12 rows");
 });
 

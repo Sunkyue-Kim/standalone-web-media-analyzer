@@ -59,9 +59,10 @@ For local files:
 
 1. Drop a media file anywhere in the window, or click `Open file`.
 2. Inspect the summary, structure, tracks, frames, metrics, fragments, and warnings tabs.
-3. Use frame/fragment rows to seek the preview player when playback is available.
-4. In the Frames tab, select an AVC, HEVC, VP9, or AV1 row to inspect the exact syntax coverage available for that sample. Enable `Overlay source frame` to align the parsed boundaries with the browser-decoded preview frame.
-5. Export JSON or CSV when you need a durable analysis artifact.
+3. Set preview playback speed in any of four linked ways: click a 0.25×, 0.5×, 1×, 1.25×, 1.5×, or 2× preset; drag the 0.1× to 5× slider; type a number directly; or press Up/Down in the number input to adjust by 0.01×. The selected rate is retained when another file is opened.
+4. Use frame/fragment rows to seek the preview player when playback is available.
+5. In the Frames tab, select an AVC, HEVC, VP9, or AV1 row to inspect the exact syntax coverage available for that sample. Enable `Overlay source frame` to align the parsed boundaries with the browser-decoded preview frame.
+6. Export JSON or CSV when you need a durable analysis artifact.
 
 For hosted validation samples:
 
@@ -211,9 +212,9 @@ The catalog includes a moving high-detail AVC patch used to compare JavaScript m
 
 Current coverage snapshot from `npm run test:coverage`:
 
-- Tests: 106 passed, 0 failed
-- All files: 89.29% line coverage, 79.79% branch coverage, 94.02% function coverage
-- Strong coverage areas: binary readers, HTTP range readers and range failures, remote URL fallback/progress/abort handling, shared media-source preview/download policy, eight-worker frame-internals scheduling and cancellation, bitstream helpers, formatting edge cases, AAC/MP3/Opus parser branches, MP3 ID3v2/ID3v1/Info frame handling, H.264 I/P/B macroblock syntax/geometry/edge clipping, display-matrix rotation, HEVC CTU roots, VP9 partition syntax, AV1 superblock roots, batched vector block rendering, stable frame-internals interaction wiring, spatial hover lookup, codec registry, i18n, data grid/recycler helpers, UI box-detail/json-viewer/frame-internals/media-row/metrics model boundaries, ISO BMFF sample modeling, ISO BMFF rare/private box parsing, WebM Xiph/fixed/EBML lacing, source-map build wiring, and bundled sample container integration
+- Tests: 107 passed, 0 failed
+- All files: 89.30% line coverage, 79.77% branch coverage, 94.04% function coverage
+- Strong coverage areas: binary readers, HTTP range readers and range failures, remote URL fallback/progress/abort handling, shared media-source preview/download policy, playback-rate normalization and preset matching, eight-worker frame-internals scheduling and cancellation, bitstream helpers, formatting edge cases, AAC/MP3/Opus parser branches, MP3 ID3v2/ID3v1/Info frame handling, H.264 I/P/B macroblock syntax/geometry/edge clipping, display-matrix rotation, HEVC CTU roots, VP9 partition syntax, AV1 superblock roots, batched vector block rendering, stable frame-internals interaction wiring, spatial hover lookup, codec registry, i18n, data grid/recycler helpers, UI box-detail/json-viewer/frame-internals/media-row/metrics model boundaries, ISO BMFF sample modeling, ISO BMFF rare/private box parsing, WebM Xiph/fixed/EBML lacing, source-map build wiring, and bundled sample container integration
 - Lower branch coverage remains mainly in the separately executed FFmpeg validation CLI, browser-worker runtime branches, uncommon or unsupported codec syntax, and malformed/edge container branches such as oversized/invalid MP4 boxes, Ogg page edge cases, uncommon WebM element variants, and recycler/remote UI fallback paths that require live browser event timing
 
 ## Contribution Policy
