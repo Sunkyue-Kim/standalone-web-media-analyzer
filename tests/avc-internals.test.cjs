@@ -19,7 +19,7 @@ test("AVC internals parser is self-contained native JavaScript sourced to the H.
     "avc-internals.js"
   ), "utf8");
   assert.doesNotMatch(source, /^\s*import\s/m);
-  assert.match(source, /ITU-T H\.264 \(08\/2024\)/);
+  assert.match(source, /ITU-T H\.264 \(06\/2026\)/);
   assert.match(source, /H\.264 Table 9-44/);
   assert.match(source, /H\.264 clause 9\.2/);
 });
@@ -143,7 +143,12 @@ function createRbspNalUnit(nalHeader, writeSyntax) {
   return Uint8Array.from([nalHeader, ...escapedBytes]);
 }
 
-function createFullyCroppedEdgeFixture() {
+function createFullyCroppedEdgeFixture(
+  writeSliceData = (bitWriter) => {
+    bitWriter.writeUnsignedExpGolomb(4);
+  },
+  { sliceType = 0 } = {}
+) {
   const sequenceParameterSet = createRbspNalUnit(0x67, (bitWriter) => {
     bitWriter.writeBits(66, 8);
     bitWriter.writeBits(0, 8);
@@ -183,13 +188,16 @@ function createFullyCroppedEdgeFixture() {
   });
   const slice = createRbspNalUnit(0x61, (bitWriter) => {
     bitWriter.writeUnsignedExpGolomb(0);
-    bitWriter.writeUnsignedExpGolomb(0);
+    bitWriter.writeUnsignedExpGolomb(sliceType);
     bitWriter.writeUnsignedExpGolomb(0);
     bitWriter.writeBits(0, 4);
+    if (sliceType % 5 === 1) bitWriter.writeBit(1);
     bitWriter.writeBit(0);
     bitWriter.writeBit(0);
+    if (sliceType % 5 === 1) bitWriter.writeBit(0);
     bitWriter.writeBit(0);
     bitWriter.writeSignedExpGolomb(0);
+    writeSliceData(bitWriter);
   });
   const sampleBytes = new Uint8Array(4 + slice.byteLength);
   sampleBytes[3] = slice.byteLength;
@@ -391,29 +399,54 @@ test("AVC worker output preserves roots and caps the complete returned tree reco
   );
 });
 
-test("AVC inter slices expose only exact 16x16 roots without guessed partitions or bits", async () => {
+test("AVC CABAC P traversal matches FFmpeg macroblock classes for the rotated Android fixture", async () => {
   const { Core, result, sampleBytes, sampleRow, track } = await parseFixtureSample(
-    "avc_moving_detail_patch.mp4",
+    "1000024017.mp4",
     2
   );
 
   assert.equal(result.kind, "avc-frame-internals");
   assert.equal(result.complete, true);
-  assert.equal(result.granularity, "root-units");
-  assert.equal(result.reason, "inter-slice-syntax-unsupported");
-  assert.equal(result.accountingKind, "unavailable");
+  assert.equal(result.granularity, "partition-tree");
+  assert.equal(result.reason, undefined);
+  assert.equal(result.entropyCodingMode, "CABAC");
+  assert.equal(result.accountingKind, "cabac-renormalization-cursor-delta");
   assert.equal(result.frameType, "P");
   assert.equal(result.macroblockCount, 3600);
   assert.equal(result.macroblocks.length, 3600);
-  assert.equal(result.partitions.length, 0);
+  assert.deepEqual(countMacroblockTypes(result.macroblocks), {
+    P_L0_16x16: 1530,
+    P_Skip: 1962,
+    P_L0_L0_8x16: 43,
+    P_L0_L0_16x8: 36,
+    P_8x8: 27,
+    I_16x16: 2
+  });
+  assert.equal(result.partitions.length, 3760);
   assert.ok(result.macroblocks.every((macroblock) => (
-    macroblock.type === "macroblock-root" &&
-    macroblock.syntaxBits === null &&
-    macroblock.ownBits === null &&
-    macroblock.subtreeBits === null &&
-    macroblock.children.length === 0 &&
-    !("qpY" in macroblock)
+    Number.isInteger(macroblock.syntaxBits) &&
+    macroblock.syntaxBits >= 0 &&
+    macroblock.subtreeBits === macroblock.syntaxBits &&
+    macroblock.ownBits + macroblock.children.reduce((total, child) => total + child.syntaxBits, 0) ===
+      macroblock.syntaxBits
   )));
+  const horizontalPartitionMacroblock = result.macroblocks.find(
+    (macroblock) => macroblock.type === "P_L0_L0_16x8"
+  );
+  assert.ok(horizontalPartitionMacroblock);
+  assert.deepEqual(
+    Array.from(horizontalPartitionMacroblock.children, (partition) => [
+      partition.codedWidth,
+      partition.codedHeight,
+      partition.referenceIndexL0,
+      Number.isInteger(partition.motionVectorDifferenceL0X),
+      Number.isInteger(partition.motionVectorDifferenceL0Y)
+    ]),
+    [
+      [16, 8, 0, true, true],
+      [16, 8, 0, true, true]
+    ]
+  );
   assert.deepEqual(
     [
       result.macroblocks[3599].left,
@@ -424,19 +457,142 @@ test("AVC inter slices expose only exact 16x16 roots without guessed partitions 
     [1264, 704, 16, 16]
   );
   assert.equal(result.sampleBits, sampleBytes.byteLength * 8);
-  assert.equal(result.attributedBits, null);
-  assert.equal(result.overheadBits, null);
-  assert.ok(result.nals.every((nalUnit) => nalUnit.attributedBits === null && nalUnit.overheadBits === null));
-  assert.equal(result.warnings.length, 1);
+  assert.equal(result.sampleBits, 44120);
+  assert.equal(result.attributedBits, 43942);
+  assert.equal(result.overheadBits, 178);
+  assert.equal(result.sampleBits, result.attributedBits + result.overheadBits);
   assertNoSyntheticBitFields(result.macroblocks);
 
   const model = Core.buildFrameInternalsModel(sampleRow, track, { parsedFrameInternals: result });
   assert.equal(model.kind, "video-grid");
-  assert.equal(model.granularity, "root-units");
-  assert.equal(model.attributedBits, null);
-  assert.equal(model.overheadBits, null);
-  assert.equal(model.cells.length, 3600);
-  assert.ok(model.cells.every((cell) => cell.subtreeBits === null));
+  assert.equal(model.granularity, "partition-tree");
+  assert.equal(model.attributedBits, 43942);
+  assert.equal(model.overheadBits, 178);
+  assert.equal(model.displayRotationDegrees, -90);
+  assert.equal(model.mediaWidth, 720);
+  assert.equal(model.mediaHeight, 1280);
+  assert.equal(model.cells.length, 3760);
+  assert.deepEqual(
+    [
+      model.cells[0].displayPixelLeft,
+      model.cells[0].displayPixelTop,
+      model.cells[0].displayPixelRight,
+      model.cells[0].displayPixelBottom
+    ],
+    [704, 0, 720, 16]
+  );
+});
+
+test("AVC CABAC B traversal decodes actual macroblock partitions and syntax bits", async () => {
+  const { result, sampleBytes } = await parseFixtureSample("avc_bframes.mp4", 3);
+
+  assert.equal(result.complete, true);
+  assert.equal(result.frameType, "B");
+  assert.equal(result.granularity, "partition-tree");
+  assert.equal(result.accountingKind, "cabac-renormalization-cursor-delta");
+  assert.equal(result.sampleBits, sampleBytes.byteLength * 8);
+  assert.equal(result.sampleBits, 93336);
+  assert.equal(result.attributedBits, 93152);
+  assert.equal(result.overheadBits, 184);
+  assert.equal(result.sampleBits, result.attributedBits + result.overheadBits);
+  const macroblockTypes = countMacroblockTypes(result.macroblocks);
+  assert.equal(macroblockTypes.B_Skip, 3079);
+  assert.equal(macroblockTypes.B_8x8, 29);
+  assert.equal(macroblockTypes.B_Direct_16x16, 27);
+  assert.equal(macroblockTypes.B_L0_L0_16x8, 10);
+  assert.equal(macroblockTypes.B_L0_L1_8x16, 15);
+  assert.equal(result.partitions.length, 4269);
+  assert.ok(result.macroblocks.every((macroblock) => (
+    Number.isInteger(macroblock.syntaxBits) && macroblock.syntaxBits >= 0 &&
+    macroblock.children.length > 0
+  )));
+  assertNoSyntheticBitFields(result.macroblocks);
+});
+
+test("AVC CAVLC P traversal decodes explicit 16x8 geometry and skip runs", async () => {
+  const loader = await createSourceModuleLoader();
+  const avc = await loader.import("src/js/core/codecs/video/avc.js");
+  const { codecConfig, sampleBytes } = createFullyCroppedEdgeFixture((bitWriter) => {
+    bitWriter.writeUnsignedExpGolomb(0);
+    bitWriter.writeUnsignedExpGolomb(1);
+    bitWriter.writeSignedExpGolomb(0);
+    bitWriter.writeSignedExpGolomb(0);
+    bitWriter.writeSignedExpGolomb(0);
+    bitWriter.writeSignedExpGolomb(0);
+    bitWriter.writeUnsignedExpGolomb(0);
+    bitWriter.writeUnsignedExpGolomb(3);
+  });
+  const result = avc.parseAvcFrameInternals(sampleBytes, codecConfig, null);
+
+  assert.equal(result.complete, true);
+  assert.equal(result.granularity, "partition-tree");
+  assert.equal(result.entropyCodingMode, "CAVLC");
+  assert.deepEqual(countMacroblockTypes(result.macroblocks), {
+    P_L0_L0_16x8: 1,
+    P_Skip: 3
+  });
+  assert.equal(result.partitions.length, 5);
+  assert.deepEqual(
+    Array.from(result.macroblocks[0].children, (partition) => [
+      partition.codedLeft,
+      partition.codedTop,
+      partition.codedWidth,
+      partition.codedHeight,
+      partition.referenceIndexL0,
+      partition.motionVectorDifferenceL0X,
+      partition.motionVectorDifferenceL0Y
+    ]),
+    [
+      [0, 0, 16, 8, 0, 0, 0],
+      [0, 8, 16, 8, 0, 0, 0]
+    ]
+  );
+  assert.equal(result.macroblocks[0].syntaxBits, 8);
+  assert.equal(result.macroblocks[0].ownBits, 4);
+  assert.equal(result.macroblocks[1].syntaxBits, 0);
+  assert.equal(result.attributedBits, 8);
+  assert.equal(result.sampleBits, result.attributedBits + result.overheadBits);
+});
+
+test("AVC CAVLC B traversal keeps B mb_type 4 reference syntax distinct from P_8x8ref0", async () => {
+  const loader = await createSourceModuleLoader();
+  const avc = await loader.import("src/js/core/codecs/video/avc.js");
+  const { codecConfig, sampleBytes } = createFullyCroppedEdgeFixture((bitWriter) => {
+    bitWriter.writeUnsignedExpGolomb(0);
+    bitWriter.writeUnsignedExpGolomb(4);
+    bitWriter.writeSignedExpGolomb(0);
+    bitWriter.writeSignedExpGolomb(0);
+    bitWriter.writeSignedExpGolomb(0);
+    bitWriter.writeSignedExpGolomb(0);
+    bitWriter.writeUnsignedExpGolomb(0);
+    bitWriter.writeUnsignedExpGolomb(3);
+  }, { sliceType: 1 });
+  const result = avc.parseAvcFrameInternals(sampleBytes, codecConfig, null);
+
+  assert.equal(result.complete, true);
+  assert.equal(result.frameType, "B");
+  assert.equal(result.granularity, "partition-tree");
+  assert.equal(result.entropyCodingMode, "CAVLC");
+  assert.deepEqual(countMacroblockTypes(result.macroblocks), {
+    B_L0_L0_16x8: 1,
+    B_Skip: 3
+  });
+  assert.deepEqual(
+    Array.from(result.macroblocks[0].children, (partition) => [
+      partition.codedLeft,
+      partition.codedTop,
+      partition.codedWidth,
+      partition.codedHeight,
+      partition.referenceIndexL0,
+      partition.motionVectorDifferenceL0X,
+      partition.motionVectorDifferenceL0Y
+    ]),
+    [
+      [0, 0, 16, 8, 0, 0, 0],
+      [0, 8, 16, 8, 0, 0, 0]
+    ]
+  );
+  assert.equal(result.sampleBits, result.attributedBits + result.overheadBits);
 });
 
 test("AVC cropping retains fully cropped intrinsic macroblocks in root statistics", async () => {
@@ -447,13 +603,16 @@ test("AVC cropping retains fully cropped intrinsic macroblocks in root statistic
   const result = avc.parseAvcFrameInternals(sampleBytes, codecConfig, null);
 
   assert.equal(result.complete, true);
-  assert.equal(result.granularity, "root-units");
-  assert.equal(result.reason, "inter-slice-syntax-unsupported");
+  assert.equal(result.granularity, "partition-tree");
+  assert.equal(result.reason, undefined);
+  assert.equal(result.entropyCodingMode, "CAVLC");
   assert.equal(result.codedWidth, 32);
   assert.equal(result.codedHeight, 32);
   assert.equal(result.width, 16);
   assert.equal(result.height, 16);
   assert.equal(result.macroblockCount, 4);
+  assert.deepEqual(countMacroblockTypes(result.macroblocks), { P_Skip: 4 });
+  assert.equal(result.partitions.length, 4);
   assert.deepEqual(
     Array.from(result.macroblocks, (macroblock) => [
       macroblock.left,
@@ -484,7 +643,7 @@ test("AVC cropping retains fully cropped intrinsic macroblocks in root statistic
   );
   assert.equal(model.kind, "video-grid");
   assert.equal(model.nominalUnitCount, 4);
-  assert.equal(model.partitionBlockCount, 4);
+  assert.equal(model.partitionBlockCount, 8);
   assert.equal(model.cells.length, 4);
   assert.deepEqual(
     Array.from(model.roots, (macroblock) => [

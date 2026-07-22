@@ -71,6 +71,64 @@ test("actual frame internals model preserves parsed tree geometry and bit accoun
   assert.equal(budgetedCells.length, 2);
 });
 
+test("ISO BMFF rotation metadata maps intrinsic top-left cells to the correct screen edge", async () => {
+  const loader = await createSourceModuleLoader();
+  const { buildFrameInternalsModel } = await loader.import("src/js/core/codecs/frame-internals.js");
+  const row = { trackId: 1, sampleIndex: 1, size: 1, frameType: "P" };
+  const parsedFrameInternals = {
+    complete: true,
+    granularity: "partition-tree",
+    sampleBits: 8,
+    attributedBits: 1,
+    overheadBits: 7,
+    width: 4,
+    height: 2,
+    codedWidth: 4,
+    codedHeight: 2,
+    unitWidth: 1,
+    unitHeight: 1,
+    roots: [{ id: "top-left", left: 0, top: 0, width: 1, height: 1, syntaxBits: 1 }]
+  };
+  const baseTrack = {
+    trackId: 1,
+    handlerType: "vide",
+    codec: "avc1",
+    codecDescriptor: "avc",
+    encodedWidth: 4,
+    encodedHeight: 2
+  };
+
+  const counterClockwiseModel = buildFrameInternalsModel(row, {
+    ...baseTrack,
+    displayRotationDegrees: -90
+  }, { parsedFrameInternals });
+  assert.equal(counterClockwiseModel.mediaWidth, 2);
+  assert.equal(counterClockwiseModel.mediaHeight, 4);
+  assert.deepEqual(
+    [
+      counterClockwiseModel.cells[0].displayPixelLeft,
+      counterClockwiseModel.cells[0].displayPixelTop,
+      counterClockwiseModel.cells[0].displayPixelRight,
+      counterClockwiseModel.cells[0].displayPixelBottom
+    ],
+    [1, 0, 2, 1]
+  );
+
+  const clockwiseModel = buildFrameInternalsModel(row, {
+    ...baseTrack,
+    displayRotationDegrees: 90
+  }, { parsedFrameInternals });
+  assert.deepEqual(
+    [
+      clockwiseModel.cells[0].displayPixelLeft,
+      clockwiseModel.cells[0].displayPixelTop,
+      clockwiseModel.cells[0].displayPixelRight,
+      clockwiseModel.cells[0].displayPixelBottom
+    ],
+    [0, 3, 1, 4]
+  );
+});
+
 test("model never fabricates unsupported, loading, audio, or root-only block bits", async () => {
   const loader = await createSourceModuleLoader();
   const { buildFrameInternalsModel } = await loader.import("src/js/core/codecs/frame-internals.js");
@@ -151,6 +209,16 @@ test("AV1 sequence syntax produces exact 64x64 superblock roots for bundled MP4 
     assert.equal(model.cells.at(-1).blockHeight, 64, fileName);
     assert.equal(model.cells.at(-1).pixelRight, 160, fileName);
     assert.equal(model.cells.at(-1).pixelBottom, 90, fileName);
+
+    const fourthSampleRow = analysis.sampleRows.filter(
+      (row) => String(row.trackId) === String(videoTrack.trackId)
+    )[3];
+    const showExistingResult = await coreModule.Core.analyzeFrameInternals(analysis, fourthSampleRow);
+    assert.equal(showExistingResult.complete, false, fileName);
+    assert.match(showExistingResult.reason, /show_existing_frame/, fileName);
+    assert.equal(showExistingResult.sampleBits, fourthSampleRow.size * 8, fileName);
+    assert.equal(showExistingResult.attributedBits, null, fileName);
+    assert.equal(showExistingResult.overheadBits, null, fileName);
   }
 });
 
@@ -404,4 +472,7 @@ test("AV1 internals reject excessive OBU counts before retaining an unbounded st
 
   assert.equal(result.complete, false);
   assert.match(result.reason, /10,000-OBU safety limit/);
+  assert.equal(result.sampleBits, sampleBytes.byteLength * 8);
+  assert.equal(result.attributedBits, null);
+  assert.equal(result.overheadBits, null);
 });

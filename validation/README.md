@@ -20,9 +20,16 @@ Inspect FFmpeg's decoder diagnostics when the macroblock count or QP range needs
 ffmpeg -hide_banner -threads 1 -debug 'mb_type+qp' -i validation/generated/avc_moving_detail_patch.mp4 -frames:v 1 -an -f null NUL
 ```
 
-`AVVideoBlockParams` provides geometry and `delta_qp`; it does not provide a per-block encoded bit count. The native JavaScript parser independently traverses supported progressive intra CAVLC/CABAC syntax. For this fixture, FFmpeg reports 3,454 `I_16x16` and 146 `I_NxN` macroblocks with QP 3 through 34; JavaScript resolves those 146 roots into 96 `I_4x4` and 50 `I_8x8` roots with the same QP range.
+`AVVideoBlockParams` provides geometry and `delta_qp`; it does not provide a per-block encoded bit count. The native JavaScript parser independently traverses the implemented progressive I-, P-, and B-slice CAVLC/CABAC syntax. For this fixture's first frame, FFmpeg reports 3,454 `I_16x16` and 146 `I_NxN` macroblocks with QP 3 through 34; JavaScript resolves those 146 roots into 96 `I_4x4` and 50 `I_8x8` roots with the same QP range.
 
-CAVLC block values are exact RBSP syntax lengths. CABAC block values are the raw decoder-cursor consumption observed while the block's bins renormalize the arithmetic decoder; prefetch, termination, and trailing data remain unattributed. They must not be described as a uniquely separable physical contribution from that block. Unsupported inter or interlaced syntax is never filled with synthetic partitions or bits.
+`1000024017.mp4` independently checks a rotated Android AVC stream. FFprobe reports the ISO BMFF display matrix as `rotation=-90`; the intrinsic top-left macroblock therefore appears at the display's top-right, not bottom-left. For sample 2, FFmpeg's `-debug mb_type` map reports 1,962 `S` skip roots, 1,530 `>` 16x16 roots, 36 `>-` 16x8 roots, 43 `>|` 8x16 roots, 27 `>+` 8x8 roots, and 2 intra roots. The JavaScript CABAC walker is regression-tested against those exact 3,600 macroblock classes and expands their actual partitions.
+
+```powershell
+ffprobe -v error -export_side_data +venc_params -select_streams v:0 -show_frames -read_intervals "%+#2" -show_entries frame=pict_type:frame_side_data -of json validation/generated/1000024017.mp4
+ffmpeg -hide_banner -threads 1 -debug mb_type -i validation/generated/1000024017.mp4 -frames:v 2 -an -f null NUL
+```
+
+CAVLC block values are exact RBSP syntax lengths. A shared `mb_skip_run` codeword describes a run rather than one macroblock, so it remains unattributed overhead. CABAC block values are the raw decoder-cursor consumption observed while the block's bins renormalize the arithmetic decoder; prefetch, termination, and trailing data remain unattributed. They must not be described as a uniquely separable physical contribution from that block. Unsupported SP/SI, interlaced, or otherwise unimplemented syntax is never filled with synthetic partitions or bits.
 
 ```powershell
 ffmpeg -y -f lavfi -i "color=c=0x243447:s=1280x720:r=30:d=5" -f lavfi -i "testsrc2=s=192x192:r=30:d=5" -filter_complex "[0:v]format=yuv420p[background];[1:v]noise=alls=80:allf=t+u,eq=contrast=1.45:saturation=1.35,drawbox=x=0:y=0:w=iw:h=ih:color=white@0.9:t=3[detail];[background][detail]overlay=x='40+(W-w-80)*t/5':y='(H-h)/2+180*sin(2*PI*t/2.5)':shortest=1,format=yuv420p[video]" -map "[video]" -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -g 30 -keyint_min 30 -bf 2 -x264-params "scenecut=0" -movflags +faststart -an validation/generated/avc_moving_detail_patch.mp4
@@ -54,3 +61,18 @@ Use `ffprobe` to cross-check container dimensions, codec identity, and keyframe 
 ffprobe -v error -select_streams v:0 -show_streams -show_frames -read_intervals "%+#2" validation/generated/webm_vp9_opus.webm
 ffprobe -v error -select_streams v:0 -show_streams -show_frames -read_intervals "%+#2" validation/generated/av1_mp4.mp4
 ```
+
+## All-frame reference verification
+
+Run the external reference verifier after rebuilding the standalone output:
+
+```powershell
+node tools/build.cjs
+node tools/verify-frame-internals.cjs
+```
+
+The verifier discovers git-tracked video samples and excludes only `avc_10020.mp4`, the requested 10,020-frame stress fixture. It matches FFprobe decoded frames back to parsed samples, checks every exact `sample size * 8` total, rejects synthetic block fields, and applies the strongest available independent comparison for each codec.
+
+The current fixture set covers 10 files and 2,046 video frames. AVC I/P/B traversal is complete for all 1,164 included AVC frames. FFmpeg `-debug mb_type` supplies independently decoded prediction and root-partition characters; 6,666,363 comparable macroblock fields match exactly. FFmpeg derives the partition shape of 588,837 B-direct/skip roots from reference-frame state, so those specific partition characters are reported as unavailable rather than counted as matches. CAVLC/CABAC child geometry is then checked for bounds, complete syntax consumption, and non-synthetic bit accounting.
+
+FFmpeg does not export comparable child trees for the remaining codecs. `trace_headers` independently verifies HEVC SPS dimensions/CTU size and AV1/VP9 sequence dimensions/root size. The result report therefore labels HEVC's 804 frames as exact-root-only, AV1's two 15-frame fixtures as 9 coded root frames plus 6 `show_existing_frame` samples each, and VP9 as 2 decoded keyframe trees plus 46 fail-closed inter frames. None of those unavailable child trees is reported as an FFmpeg match.

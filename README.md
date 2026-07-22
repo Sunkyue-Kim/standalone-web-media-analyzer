@@ -43,9 +43,9 @@ The runtime is fully static. You can use it as a single self-contained HTML file
 This is not a transcoder, decoder, repair tool, or compliance validator.
 
 - It does not decode video frames into pixels or audio frames into PCM samples.
-- Exact detail is syntax-dependent. Progressive AVC intra slices in the implemented CAVLC/CABAC subset and independent VP9 Profile 0 keyframes can expose child partitions. HEVC currently exposes exact SPS-signalled CTU roots; AV1 exposes exact superblock roots only when the frame uses the sequence dimensions without super-resolution. Other variants fall back to proven root units or report unavailable.
+- Exact detail is syntax-dependent. Progressive AVC I, P, and B slices in the implemented CAVLC/CABAC subset and independent VP9 Profile 0 keyframes can expose syntax-signalled child partitions. AVC SP/SI slices, interlaced pictures, and unsupported syntax fall back to proven roots or report unavailable. HEVC currently exposes exact SPS-signalled CTU roots; AV1 exposes exact superblock roots only when the frame uses the sequence dimensions without super-resolution. VP9 inter-frame child syntax remains unavailable rather than being decoded with a reset context.
 - It does not infer block partitions or bit allocation from decoded pixels. The source-frame overlay is only a visual background captured from the browser preview. No random, center-weighted, or area-distributed block bits are generated.
-- CAVLC values are measured RBSP syntax lengths. CABAC values are decoder cursor consumption during renormalization, not a claim that an arithmetic-coded byte has a uniquely separable physical owner. HEVC, VP9, AV1, and root-only results leave per-block physical bits unavailable.
+- CAVLC values are measured RBSP syntax lengths; shared `mb_skip_run` codewords remain unattributed overhead instead of being assigned to an arbitrary skipped block. CABAC values are decoder cursor consumption during renormalization, not a claim that an arithmetic-coded byte has a uniquely separable physical owner. HEVC, VP9, AV1, and root-only results leave per-block physical bits unavailable.
 - It does not rewrite, transmux, optimize, or repair media files.
 - It does not implement DASH/HLS manifest loading.
 - It does not bypass DRM, encrypted media, browser CORS policy, or server range-request policy.
@@ -198,22 +198,23 @@ Source maps are emitted for the chunked `.mjs` assets as separate `.map` files. 
 npm test
 npm run test:coverage
 npm run verify:samples
+npm run verify:frame-internals
 npm run verify:ui
 npm run verify
 ```
 
-`npm run verify` runs the full local verification chain: build, unit/integration tests, sample verification, and UI smoke verification.
+`npm run verify` runs the full local verification chain: build, unit/integration tests, sample verification, FFmpeg/FFprobe frame-internals reference verification, and UI smoke verification. The frame-internals reference step requires `ffmpeg` and `ffprobe` on `PATH`; neither tool is a browser runtime dependency.
 
 Validation samples live under `validation/generated/` and are exposed by the GitHub Pages build when available. They intentionally remain ordinary repository files because GitHub Pages does not serve Git LFS files as normal static sample assets.
 
-The catalog includes a moving high-detail AVC patch used to compare JavaScript macroblock type/QP output with FFmpeg, a 5-second 4K HEVC sample used to verify the 60x34 CTU root grid, and compact VP9/AV1 fixtures for exact-only partition/root regression checks. Reproduction commands and interpretation limits are documented in [`validation/README.md`](validation/README.md).
+The catalog includes a moving high-detail AVC patch used to compare JavaScript macroblock type/QP output with FFmpeg, a 5-second 4K HEVC sample used to verify the 60x34 CTU root grid, and compact VP9/AV1 fixtures for exact-only partition/root regression checks. `npm run verify:frame-internals` checks every video frame in every git-tracked sample except the explicitly excluded 10,020-frame stress sample. Reproduction commands, current comparison counts, and interpretation limits are documented in [`validation/README.md`](validation/README.md).
 
 Current coverage snapshot from `npm run test:coverage`:
 
-- Tests: 97 passed, 0 failed
-- All files: 93.14% line coverage, 79.53% branch coverage, 97.05% function coverage
-- Strong coverage areas: binary readers, HTTP range readers and range failures, remote URL fallback/progress/abort handling, shared media-source preview/download policy, eight-worker frame-internals scheduling and cancellation, bitstream helpers, formatting edge cases, AAC/MP3/Opus parser branches, MP3 ID3v2/ID3v1/Info frame handling, H.264 macroblock syntax/geometry/edge clipping, HEVC CTU roots, VP9 partition syntax, AV1 superblock roots, batched vector block rendering, stable frame-internals interaction wiring, spatial hover lookup, codec registry, i18n, data grid/recycler helpers, UI box-detail/json-viewer/frame-internals/media-row/metrics model boundaries, ISO BMFF sample modeling, ISO BMFF rare/private box parsing, WebM Xiph/fixed/EBML lacing, source-map build wiring, and bundled sample container integration
-- Lower branch coverage remains mainly in browser-worker runtime branches, uncommon or unsupported codec syntax, and malformed/edge container branches such as oversized/invalid MP4 boxes, Ogg page edge cases, uncommon WebM element variants, and recycler/remote UI fallback paths that require live browser event timing
+- Tests: 106 passed, 0 failed
+- All files: 89.29% line coverage, 79.79% branch coverage, 94.02% function coverage
+- Strong coverage areas: binary readers, HTTP range readers and range failures, remote URL fallback/progress/abort handling, shared media-source preview/download policy, eight-worker frame-internals scheduling and cancellation, bitstream helpers, formatting edge cases, AAC/MP3/Opus parser branches, MP3 ID3v2/ID3v1/Info frame handling, H.264 I/P/B macroblock syntax/geometry/edge clipping, display-matrix rotation, HEVC CTU roots, VP9 partition syntax, AV1 superblock roots, batched vector block rendering, stable frame-internals interaction wiring, spatial hover lookup, codec registry, i18n, data grid/recycler helpers, UI box-detail/json-viewer/frame-internals/media-row/metrics model boundaries, ISO BMFF sample modeling, ISO BMFF rare/private box parsing, WebM Xiph/fixed/EBML lacing, source-map build wiring, and bundled sample container integration
+- Lower branch coverage remains mainly in the separately executed FFmpeg validation CLI, browser-worker runtime branches, uncommon or unsupported codec syntax, and malformed/edge container branches such as oversized/invalid MP4 boxes, Ogg page edge cases, uncommon WebM element variants, and recycler/remote UI fallback paths that require live browser event timing
 
 ## Contribution Policy
 

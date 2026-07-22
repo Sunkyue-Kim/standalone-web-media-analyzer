@@ -11,7 +11,8 @@
     "build:chunked": "node tools/build.cjs chunked",
     "test": "node --no-warnings --experimental-vm-modules --test \"tests/*.test.cjs\"",
     "test:coverage": "node --no-warnings --experimental-vm-modules --test --experimental-test-coverage \"tests/*.test.cjs\"",
-    "verify": "node tools/build.cjs && node --no-warnings --experimental-vm-modules --test \"tests/*.test.cjs\" && node tools/verify-samples.cjs && node tools/verify-ui.cjs",
+    "verify": "node tools/build.cjs && node --no-warnings --experimental-vm-modules --test \"tests/*.test.cjs\" && node tools/verify-samples.cjs && node tools/verify-frame-internals.cjs && node tools/verify-ui.cjs",
+    "verify:frame-internals": "node tools/verify-frame-internals.cjs",
     "verify:samples": "node tools/verify-samples.cjs",
     "verify:ui": "node tools/verify-ui.cjs"
   },
